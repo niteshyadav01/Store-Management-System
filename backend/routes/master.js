@@ -1,0 +1,54 @@
+const router   = require('express').Router();
+const Material = require('../models/Material');
+const { authMiddleware, requireRole } = require('../middleware/auth');
+
+// GET /api/master
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const list = await Material.find().sort({ name: 1 }).lean();
+    res.json(list);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/master  — single
+router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const { name, type, code, category, uom } = req.body;
+    if (!name) return res.status(400).json({ error: 'Material name is required' });
+    const mat = await Material.create({ name: name.trim(), type, code, category, uom });
+    res.status(201).json(mat);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Material name already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/master/bulk
+router.post('/bulk', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const { materials } = req.body;
+    if (!Array.isArray(materials) || !materials.length)
+      return res.status(400).json({ error: 'No materials provided' });
+    let added = 0, skipped = 0;
+    for (const m of materials) {
+      if (!m.name) { skipped++; continue; }
+      await Material.findOneAndUpdate(
+        { name: m.name.trim() },
+        { $set: { type: m.type||'', code: m.code||'', category: m.category||'', uom: m.uom||'' } },
+        { upsert: true }
+      );
+      added++;
+    }
+    res.json({ added, skipped });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/master/:id
+router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    await Material.findByIdAndDelete(req.params.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+module.exports = router;
