@@ -76,9 +76,9 @@ async function seedAdmin() {
   const User = require('./models/User');
   const count = await User.countDocuments();
   if (count === 0) {
-    const hash = await bcrypt.hash('admin123', 10);
-    await User.create({ name: 'Administrator', username: 'admin', password: hash, role: 'admin' });
-    console.log('  ✓ Seeded admin user  →  username: admin  |  password: admin123');
+    const hash = await bcrypt.hash('Inv3ntory#2026', 10);
+    await User.create({ name: 'Administrator', username: 'stockadmin', password: hash, role: 'admin' });
+    console.log('  ✓ Seeded admin user  →  username: stockadmin  |  password: Inv3ntory#2026');
   }
 }
 
