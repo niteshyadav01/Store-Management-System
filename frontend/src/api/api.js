@@ -1,10 +1,8 @@
 import axios from 'axios';
 
 // ── Base URL logic ────────────────────────────────────────────────────────────
-// Local dev:   VITE_API_URL is empty → use '/api' so Vite proxy forwards to :5000
-// Production:  VITE_API_URL is full URL → use it directly (e.g. https://api.domain.com/api)
 const BASE_URL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
   : '/api';
 
 const client = axios.create({
