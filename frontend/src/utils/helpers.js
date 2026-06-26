@@ -5,13 +5,17 @@ export function formatNum(n) {
   return Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 }
 
+// Integer format — no decimal points (for qty totals and whole-number values)
+export function formatInt(n) {
+  if (n == null || isNaN(n)) return '0';
+  return Math.round(Number(n)).toLocaleString('en-IN');
+}
+
 // Indian currency format with ₹ symbol — e.g. ₹2,59,30,099.42
 export function formatINR(n) {
-  if (n == null || isNaN(n)) return '₹0.00';
-  return '₹' + Number(n).toLocaleString('en-IN', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
+  if (n == null || isNaN(n)) return '₹0';
+  const rounded = Math.round(Number(n));
+  return '₹' + rounded.toLocaleString('en-IN');
 }
 
 export function todayStr() {
@@ -73,5 +77,5 @@ export function exportXlsx(headers, rows, sheetName, fileName) {
 
 export const ROLE_LABELS = {
   admin: 'Admin', inward: 'Inward team', outward: 'Outward team',
-  purchase: 'Purchase team', viewer: 'Viewer',
+  purchase: 'Purchase team', manager: 'Manager', viewer: 'Viewer',
 };

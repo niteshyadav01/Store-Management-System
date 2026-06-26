@@ -10,6 +10,7 @@ const ROLE_COLORS = {
   inward:   { bg:'#eef2ff', color:'#3730a3' },
   outward:  { bg:'#fef3c7', color:'#92400e' },
   purchase: { bg:'#f8ede7', color:'var(--rust-dark)' },
+  manager:  { bg:'#f3e8ff', color:'#6b21a8' },
   viewer:   { bg:'var(--paper-dim)', color:'#5a5444' },
 };
 
@@ -80,6 +81,7 @@ export default function Users() {
                 <option value="inward">Inward team</option>
                 <option value="outward">Outward team</option>
                 <option value="purchase">Purchase team</option>
+                <option value="manager">Manager — inward + outward</option>
                 <option value="viewer">Viewer — read only</option>
               </select>
             </div>

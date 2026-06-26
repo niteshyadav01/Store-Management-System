@@ -5,10 +5,10 @@ import { ROLE_LABELS } from '../utils/helpers';
 
 const NAV_ITEMS = [
   { num:'01', label:'Master list',    path:'/master',  roles:['admin'] },
-  { num:'02', label:'Inward entry',   path:'/inward',  roles:['admin','inward'] },
-  { num:'03', label:'Outward entry',  path:'/outward', roles:['admin','outward'] },
+  { num:'02', label:'Inward entry',   path:'/inward',  roles:['admin','inward','manager'] },
+  { num:'03', label:'Outward entry',  path:'/outward', roles:['admin','outward','manager'] },
   { num:'04', label:'Price entry',    path:'/price',   roles:['admin','purchase'] },
-  { num:'05', label:'Stock overview', path:'/stock',   roles:['admin','purchase','inward','outward','viewer'] },
+  { num:'05', label:'Stock overview', path:'/stock',   roles:['admin','purchase','inward','outward','manager','viewer'] },
   { num:'06', label:'Users',          path:'/users',   roles:['admin'] },
   { num:'07', label:'Reports',        path:'/reports', roles:['admin','purchase'] },
 ];

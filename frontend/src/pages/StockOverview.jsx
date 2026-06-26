@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getMaster, getInward, getOutward } from '../api/api';
 import { useAuth } from '../context/AuthContext';
-import { formatNum, formatINR } from '../utils/helpers';
+import { formatNum, formatINR, formatInt } from '../utils/helpers';
 
 export default function StockOverview() {
   const { user } = useAuth();
@@ -59,7 +59,7 @@ export default function StockOverview() {
         </div>
         <div className="stat rust">
           <div className="label">Total outward qty</div>
-          <div className="value">{formatNum(totalOut)}</div>
+          <div className="value">{formatInt(totalOut)}</div>
         </div>
         <div className="stat">
           <div className="label">Low / zero stock</div>
@@ -71,7 +71,7 @@ export default function StockOverview() {
         <div className="statrow" style={{gridTemplateColumns:'1fr', marginBottom:24}}>
           <div className="stat teal">
             <div className="label">Total stock value (avg price × stock qty)</div>
-            <div className="value">{formatINR(totalVal)}</div>
+            <div className="value">{'₹' + Math.round(totalVal).toLocaleString('en-IN')}</div>
           </div>
         </div>
       )}

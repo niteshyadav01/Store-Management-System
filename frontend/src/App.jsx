@@ -13,17 +13,20 @@ import Reports from './pages/Reports';
 
 const ROLE_ACCESS = {
   master:  ['admin'],
-  inward:  ['admin','inward'],
-  outward: ['admin','outward'],
+  inward:  ['admin','inward','manager'],
+  outward: ['admin','outward','manager'],
   price:   ['admin','purchase'],
-  stock:   ['admin','purchase','inward','outward','viewer'],
+  stock:   ['admin','purchase','inward','outward','manager','viewer'],
   users:   ['admin'],
   reports: ['admin','purchase'],
 };
 
 function getDefaultPath(role) {
-  if (role === 'inward')  return '/inward';
-  if (role === 'outward') return '/outward';
+  if (role === 'inward')   return '/inward';
+  if (role === 'outward')  return '/outward';
+  if (role === 'manager')  return '/inward';
+  if (role === 'purchase') return '/stock';
+  if (role === 'viewer')   return '/stock';
   return '/stock';
 }
 
@@ -32,7 +35,7 @@ function ProtectedRoute({ page, children }) {
   if (!user) return <Navigate to="/login" replace />;
   const allowed = ROLE_ACCESS[page] || [];
   if (!allowed.includes(user.role)) {
-    const first = Object.entries(ROLE_ACCESS).find(([, roles]) => roles.includes(user.role));
+    const first = Object.entries(ROLE_ACCESS).find(([pg, roles]) => roles.includes(user.role) && pg !== page);
     return <Navigate to={first ? `/${first[0]}` : '/login'} replace />;
   }
   return children;

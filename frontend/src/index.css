@@ -563,3 +563,24 @@ td.mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: .3px; }
   .pagehead h2 { font-size: 17px; }
   .login-card { padding: 28px 22px 24px; }
 }
+
+
+/* ── Table scrollbar always visible ───────────────────────── */
+.tablewrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tablewrap::-webkit-scrollbar-track {
+  background: var(--paper-dim);
+  border-radius: 4px;
+}
+.tablewrap::-webkit-scrollbar-thumb {
+  background: #b0a990;
+  border-radius: 4px;
+}
+.tablewrap::-webkit-scrollbar-thumb:hover {
+  background: #8a8270;
+}
+.tablewrap::-webkit-scrollbar-corner {
+  background: var(--paper-dim);
+}
