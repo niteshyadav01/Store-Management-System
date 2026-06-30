@@ -120,7 +120,7 @@ export default function Reports() {
   const [repMsg, setRepMsg] = useState('');
 
   // Column filters for "both" view
-  const [cfBoth, setCfBoth] = useState({ name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], avgPrice: [], stockVal: [] });
+  const [cfBoth, setCfBoth] = useState({ name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] });
 
   // Column filters for inward/outward view
   const [cfTxn, setCfTxn] = useState({ date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] });
@@ -137,7 +137,7 @@ export default function Reports() {
   const vendors = [...new Set(inward.map(e => e.vendor).filter(Boolean))].sort();
   const materials = [...new Set(master.map(m => m.name).filter(Boolean))].sort();
 
-  const emptyCfBoth = { name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], avgPrice: [], stockVal: [] };
+  const emptyCfBoth = { name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] };
   const emptyCfTxn = { date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] };
 
   function filterEntries(entries) {
@@ -177,12 +177,13 @@ export default function Reports() {
         const inQty = inQtyMap[name] || 0;
         const outQty = outQtyMap[name] || 0;
         const balance = inQty - outQty;
+        const minStock = parseFloat(mat.minStock) || 0;
         const avgPrice = inQty > 0 ? (inValMap[name] || 0) / inQty : 0;
         const stockVal = avgPrice * Math.max(balance, 0);
         return {
           name, type: mat.type || '', category: mat.category || '',
           code: mat.code || '', uom: mat.uom || '',
-          inQty, outQty, balance, avgPrice, stockVal,
+          inQty, outQty, balance, minStock, avgPrice, stockVal,
         };
       }).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -199,10 +200,10 @@ export default function Reports() {
   function exportReport() {
     if (!filteredRows?.length) return;
     if (repType === 'both') {
-      const headers = ['Material Name', 'Type', 'Category', 'Code', 'UOM', 'Inward Qty', 'Outward Qty', 'Balance'];
+      const headers = ['Material Name', 'Type', 'Category', 'Code', 'UOM', 'Inward Qty', 'Outward Qty', 'Balance', 'Minimum Stock'];
       if (canSeePrice) headers.push('Avg Price', 'Stock Value');
       const dataRows = filteredRows.map(r => {
-        const row = [r.name, r.type, r.category, r.code, r.uom, r.inQty, r.outQty, r.balance];
+        const row = [r.name, r.type, r.category, r.code, r.uom, r.inQty, r.outQty, r.balance, r.minStock];
         if (canSeePrice) row.push(r.avgPrice, r.stockVal);
         return row;
       });
@@ -239,6 +240,7 @@ export default function Reports() {
         (!cfBoth.inQty.length || cfBoth.inQty.includes(String(formatNum(r.inQty)))) &&
         (!cfBoth.outQty.length || cfBoth.outQty.includes(String(formatNum(r.outQty)))) &&
         (!cfBoth.balance.length || cfBoth.balance.includes(String(formatNum(r.balance)))) &&
+        (!cfBoth.minStock.length || cfBoth.minStock.includes(String(formatNum(r.minStock)))) &&
         (!cfBoth.avgPrice.length || cfBoth.avgPrice.includes(String(formatINR(r.avgPrice)))) &&
         (!cfBoth.stockVal.length || cfBoth.stockVal.includes(String(formatINR(r.stockVal))))
       );
@@ -428,6 +430,7 @@ export default function Reports() {
                       <th className="num">Inward qty <ColFilter values={(rows || []).map(r => formatNum(r.inQty))} selected={cfBoth.inQty} onChange={v => setCfBoth(f => ({ ...f, inQty: v }))} /></th>
                       <th className="num">Outward qty <ColFilter values={(rows || []).map(r => formatNum(r.outQty))} selected={cfBoth.outQty} onChange={v => setCfBoth(f => ({ ...f, outQty: v }))} /></th>
                       <th className="num">Balance <ColFilter values={(rows || []).map(r => formatNum(r.balance))} selected={cfBoth.balance} onChange={v => setCfBoth(f => ({ ...f, balance: v }))} /></th>
+                      <th className="num">Minimum stock <ColFilter values={(rows || []).map(r => formatNum(r.minStock))} selected={cfBoth.minStock} onChange={v => setCfBoth(f => ({ ...f, minStock: v }))} /></th>
                       {canSeePrice && (
                         <>
                           <th className="num">Avg price <ColFilter values={(rows || []).map(r => formatINR(r.avgPrice))} selected={cfBoth.avgPrice} onChange={v => setCfBoth(f => ({ ...f, avgPrice: v }))} /></th>
@@ -450,6 +453,11 @@ export default function Reports() {
                           <strong style={{ color: r.balance <= 0 ? 'var(--red)' : r.balance < 10 ? 'var(--amber)' : 'var(--teal-dark)' }}>
                             {formatNum(r.balance)}
                           </strong>
+                        </td>
+                        <td className="num">
+                          <span style={{ color: r.balance < r.minStock ? 'var(--red)' : 'inherit' }}>
+                            {formatNum(r.minStock)}
+                          </span>
                         </td>
                         {canSeePrice && (
                           <><td className="num">{formatINR(r.avgPrice)}</td><td className="num">{formatINR(r.stockVal)}</td></>

@@ -207,9 +207,9 @@ export default function OutwardEntry() {
       {/* Recent entries table */}
       <div className="card">
         <h3>Recent outward entries <span className="pill-count">{entries.length || 0}</span></h3>
-        <div className="tablewrap">
-          <table>
-            <thead>
+        <div className="tablewrap" style={{ overflowX: 'scroll', overflowY: 'scroll', maxHeight: '70vh' }}>
+          <table style={{ minWidth: '1300px' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
               <tr>
                 <th>Date</th><th>Project</th><th>Customer PO</th><th>Slip no</th>
                 <th>Department</th><th>Received by</th><th>Issued by</th>

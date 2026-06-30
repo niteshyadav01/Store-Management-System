@@ -13,10 +13,36 @@ router.get('/', authMiddleware, async (req, res) => {
 // POST /api/master  — single
 router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
-    const { name, type, code, category, uom } = req.body;
+    const { name, type, code, category, uom, minStock } = req.body;
     if (!name) return res.status(400).json({ error: 'Material name is required' });
-    const mat = await Material.create({ name: name.trim(), type, code, category, uom });
+    const mat = await Material.create({
+      name: name.trim(), type, code, category, uom,
+      minStock: parseFloat(minStock) || 0,
+    });
     res.status(201).json(mat);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'Material name already exists' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /api/master/:id  — edit existing material
+router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const { name, type, code, category, uom, minStock } = req.body;
+    if (!name) return res.status(400).json({ error: 'Material name is required' });
+    const mat = await Material.findByIdAndUpdate(
+      req.params.id,
+      {
+        $set: {
+          name: name.trim(), type, code, category, uom,
+          minStock: parseFloat(minStock) || 0,
+        },
+      },
+      { new: true, runValidators: true }
+    );
+    if (!mat) return res.status(404).json({ error: 'Material not found' });
+    res.json(mat);
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ error: 'Material name already exists' });
     res.status(500).json({ error: err.message });
@@ -34,7 +60,10 @@ router.post('/bulk', authMiddleware, requireRole('admin'), async (req, res) => {
       if (!m.name) { skipped++; continue; }
       await Material.findOneAndUpdate(
         { name: m.name.trim() },
-        { $set: { type: m.type||'', code: m.code||'', category: m.category||'', uom: m.uom||'' } },
+        { $set: {
+            type: m.type||'', code: m.code||'', category: m.category||'', uom: m.uom||'',
+            minStock: parseFloat(m.minStock) || 0,
+          } },
         { upsert: true }
       );
       added++;

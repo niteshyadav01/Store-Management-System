@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getMaster, addMaterial, bulkMaster, deleteMaterial } from '../api/api';
+import { getMaster, addMaterial, updateMaterial, bulkMaster, deleteMaterial } from '../api/api';
 import { readSheetFile, pickCol, exportXlsx } from '../utils/helpers';
 
-const EMPTY = { name:'', type:'', code:'', category:'', uom:'' };
+const EMPTY = { name:'', type:'', code:'', category:'', uom:'', minStock:'' };
 
 export default function MasterList() {
   const [list,      setList]      = useState([]);
   const [search,    setSearch]    = useState('');
   const [form,      setForm]      = useState(EMPTY);
+  const [editingId, setEditingId] = useState(null);
   const [msg,       setMsg]       = useState({ text:'', ok:true });
   const [uploadMsg, setUploadMsg] = useState({ text:'', ok:true });
 
@@ -26,13 +27,36 @@ export default function MasterList() {
     e.preventDefault();
     setMsg({ text:'', ok:true });
     if (!form.name.trim()) { setMsg({ text:'Material name is required.', ok:false }); return; }
+    const payload = { ...form, minStock: form.minStock === '' ? 0 : parseFloat(form.minStock) || 0 };
     try {
-      await addMaterial(form);
-      setMsg({ text: `"${form.name}" added successfully.`, ok:true });
+      if (editingId) {
+        await updateMaterial(editingId, payload);
+        setMsg({ text: `"${form.name}" updated successfully.`, ok:true });
+        setEditingId(null);
+      } else {
+        await addMaterial(payload);
+        setMsg({ text: `"${form.name}" added successfully.`, ok:true });
+      }
       setForm(EMPTY);
       load();
       setTimeout(() => setMsg({ text:'', ok:true }), 4000);
     } catch (err) { setMsg({ text: err.message, ok:false }); }
+  }
+
+  function handleEdit(m) {
+    setEditingId(m._id);
+    setForm({
+      name: m.name || '', type: m.type || '', code: m.code || '',
+      category: m.category || '', uom: m.uom || '',
+      minStock: m.minStock ?? '',
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setForm(EMPTY);
+    setMsg({ text:'', ok:true });
   }
 
   async function handleDelete(m) {
@@ -54,6 +78,7 @@ export default function MasterList() {
         code:     String(pickCol(row,['materialscode','materialcode','code'])||'').trim(),
         category: String(pickCol(row,['category'])||'').trim(),
         uom:      String(pickCol(row,['uom','unit','unitofmeasure'])||'').trim(),
+        minStock: parseFloat(pickCol(row,['minimumstock','minstock','minqty','minimumquantity','reorderlevel'])) || 0,
       })).filter(m => m.name);
       if (!materials.length) { setUploadMsg({ text:'Could not find a Material Name column.', ok:false }); return; }
       const res = await bulkMaster(materials);
@@ -81,14 +106,14 @@ export default function MasterList() {
             Choose file (.xlsx, .xls, .csv)
           </label>
           <input type="file" id="masterfile" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-          <div className="hint">Expected columns: <strong>Material Name, Material Type, Materials Code, Category, UOM</strong> — column order doesn't matter</div>
+          <div className="hint">Expected columns: <strong>Material Name, Material Type, Materials Code, Category, UOM, Minimum Stock</strong> — column order doesn't matter</div>
           {uploadMsg.text && <div className={`alert ${uploadMsg.ok?'ok':'err'}`} style={{marginTop:14,textAlign:'left'}}>{uploadMsg.text}</div>}
         </div>
       </div>
 
       {/* Manual add */}
       <div className="card">
-        <h3>Add material manually</h3>
+        <h3>{editingId ? 'Edit material' : 'Add material manually'}</h3>
         <form onSubmit={handleAdd}>
           <div className="formgrid">
             <div className="field full">
@@ -111,9 +136,19 @@ export default function MasterList() {
               <label>UOM</label>
               <input value={form.uom} onChange={e=>setForm(f=>({...f,uom:e.target.value}))} placeholder="e.g. Nos / Kg / Mtr" />
             </div>
+            <div className="field">
+              <label>Minimum stock</label>
+              <input
+                type="number" min="0" step="any"
+                value={form.minStock}
+                onChange={e=>setForm(f=>({...f,minStock:e.target.value}))}
+                placeholder="e.g. 10"
+              />
+            </div>
           </div>
           <div className="actionrow">
-            <button className="btn btn-in" type="submit">Add to master list</button>
+            <button className="btn btn-in" type="submit">{editingId ? 'Update material' : 'Add to master list'}</button>
+            {editingId && <button type="button" className="btn btn-ghost" onClick={handleCancelEdit}>Cancel</button>}
             {msg.text && <span className={`msg ${msg.ok?'ok':'err'}`}>{msg.text}</span>}
           </div>
         </form>
@@ -125,22 +160,26 @@ export default function MasterList() {
         <div className="searchbar">
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or code…" />
         </div>
-        <div className="tablewrap">
-          <table>
-            <thead>
+        <div className="tablewrap" style={{ overflowX: 'scroll', overflowY: 'scroll', maxHeight: '70vh' }}>
+          <table style={{ minWidth: '900px' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
               <tr>
-                <th>Material name</th><th>Type</th><th>Code</th><th>Category</th><th>UOM</th><th></th>
+                <th>Material name</th><th>Type</th><th>Code</th><th>Category</th><th>UOM</th><th className="num">Minimum stock</th><th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(m => (
-                <tr key={m._id}>
+                <tr key={m._id} style={editingId === m._id ? { background: 'var(--teal-light, #eef7f6)' } : undefined}>
                   <td style={{fontWeight:500}}>{m.name}</td>
                   <td>{m.type}</td>
                   <td className="mono">{m.code}</td>
                   <td>{m.category}</td>
                   <td>{m.uom}</td>
-                  <td><button className="btn-del btn-sm" onClick={()=>handleDelete(m)}>Remove</button></td>
+                  <td className="num">{m.minStock ?? 0}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm btn-ghost" onClick={()=>handleEdit(m)} style={{ marginRight: 6 }}>Edit</button>
+                    <button className="btn-del btn-sm" onClick={()=>handleDelete(m)}>Remove</button>
+                  </td>
                 </tr>
               ))}
             </tbody>

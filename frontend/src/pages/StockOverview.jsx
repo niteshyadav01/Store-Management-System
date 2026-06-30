@@ -111,10 +111,12 @@ export default function StockOverview() {
   const [outward, setOutward] = useState([]);
   const [search,  setSearch]  = useState('');
 
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+
   // Column filters
   const [cf, setCf] = useState({
     name: [], type: [], category: [], code: [],
-    inQty: [], outQty: [], stock: [], uom: [],
+    inQty: [], outQty: [], stock: [], minStock: [], uom: [],
     avgPrice: [], totalVal: [],
   });
 
@@ -137,12 +139,14 @@ export default function StockOverview() {
     const stock    = inQty - outQty;
     const avgPrice = inQty > 0 ? (inValTotals[m.name]||0) / inQty : 0;
     const totalVal = avgPrice * Math.max(stock, 0);
-    return { ...m, inQty, outQty, stock, avgPrice, totalVal };
+    const minStock = parseFloat(m.minStock) || 0;
+    return { ...m, inQty, outQty, stock, minStock, avgPrice, totalVal };
   });
 
   const searched = allRows.filter(r => !search || r.name.toLowerCase().includes(search.toLowerCase()) || (r.code||'').toLowerCase().includes(search.toLowerCase()));
 
   const rows = searched.filter(r =>
+    (!lowStockOnly || r.stock < r.minStock) &&
     (!cf.name.length     || cf.name.includes(r.name)) &&
     (!cf.type.length     || cf.type.includes(r.type)) &&
     (!cf.category.length || cf.category.includes(r.category)) &&
@@ -150,6 +154,7 @@ export default function StockOverview() {
     (!cf.inQty.length     || cf.inQty.includes(String(formatNum(r.inQty)))) &&
     (!cf.outQty.length    || cf.outQty.includes(String(formatNum(r.outQty)))) &&
     (!cf.stock.length     || cf.stock.includes(String(formatNum(r.stock)))) &&
+    (!cf.minStock.length  || cf.minStock.includes(String(formatNum(r.minStock)))) &&
     (!cf.uom.length       || cf.uom.includes(r.uom)) &&
     (!cf.avgPrice.length  || cf.avgPrice.includes(String(formatINR(r.avgPrice)))) &&
     (!cf.totalVal.length  || cf.totalVal.includes(String(formatINR(r.totalVal))))
@@ -158,7 +163,9 @@ export default function StockOverview() {
   const totalIn  = Object.values(inTotals).reduce((a,b)=>a+b,0);
   const totalOut = Object.values(outTotals).reduce((a,b)=>a+b,0);
   const totalVal = rows.reduce((s,r)=>s+r.totalVal,0);
-  const lowCount = master.filter(m=>((inTotals[m.name]||0)-(outTotals[m.name]||0))<=0).length;
+  // Low stock = current balance below the material's configured minimum stock
+  const lowStockItems = allRows.filter(r => r.stock < r.minStock);
+  const lowCount = lowStockItems.length;
 
   return (
     <>
@@ -182,8 +189,16 @@ export default function StockOverview() {
           <div className="label">Total outward qty</div>
           <div className="value">{formatInt(totalOut)}</div>
         </div>
-        <div className="stat">
-          <div className="label">Low / zero stock</div>
+        <div
+          className="stat"
+          onClick={() => lowCount > 0 && setLowStockOnly(s => !s)}
+          style={{
+            cursor: lowCount > 0 ? 'pointer' : 'default',
+            outline: lowStockOnly ? '2px solid var(--red)' : 'none',
+          }}
+          title={lowCount > 0 ? 'Click to show only low stock items in the table below' : undefined}
+        >
+          <div className="label">Low stock</div>
           <div className="value" style={{color: lowCount > 0 ? 'var(--red)' : 'inherit'}}>{lowCount}</div>
         </div>
       </div>
@@ -198,13 +213,28 @@ export default function StockOverview() {
       )}
 
       <div className="card">
-        <h3>Current balance by material <span className="pill-count">{rows.length || 0}</span></h3>
+        <h3>
+          Current balance by material <span className="pill-count">{rows.length || 0}</span>
+          {lowStockOnly && (
+            <span style={{
+              marginLeft: 10, fontSize: 12, fontWeight: 500, color: 'var(--red)',
+              background: 'var(--red-light)', padding: '3px 9px', borderRadius: 12,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+            }}>
+              ⚠ Low stock only
+              <button
+                onClick={() => setLowStockOnly(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, lineHeight: 1 }}
+              >✕</button>
+            </span>
+          )}
+        </h3>
         <div className="searchbar">
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or code…" />
         </div>
-        <div className="tablewrap">
-          <table>
-            <thead>
+        <div className="tablewrap" style={{ overflowX: 'scroll', overflowY: 'scroll', maxHeight: '70vh' }}>
+          <table style={{ minWidth: '1300px' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
               <tr>
                 <th>
                   <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
@@ -241,6 +271,11 @@ export default function StockOverview() {
                     Balance <ColFilter values={searched.map(r=>formatNum(r.stock))} selected={cf.stock} onChange={v=>setCf(f=>({...f,stock:v}))} />
                   </span>
                 </th>
+                <th className="num">
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
+                    Minimum stock <ColFilter values={searched.map(r=>formatNum(r.minStock))} selected={cf.minStock} onChange={v=>setCf(f=>({...f,minStock:v}))} />
+                  </span>
+                </th>
                 <th>
                   <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>
                     UOM <ColFilter values={searched.map(r=>r.uom)} selected={cf.uom} onChange={v=>setCf(f=>({...f,uom:v}))} />
@@ -274,6 +309,11 @@ export default function StockOverview() {
                     <strong style={{color: r.stock <= 0 ? 'var(--red)' : r.stock < 10 ? 'var(--amber)' : 'var(--teal-dark)'}}>
                       {formatNum(r.stock)}
                     </strong>
+                  </td>
+                  <td className="num">
+                    <span style={{color: r.stock < r.minStock ? 'var(--red)' : 'inherit'}}>
+                      {formatNum(r.minStock)}
+                    </span>
                   </td>
                   <td>{r.uom}</td>
                   {canSeePrice && (

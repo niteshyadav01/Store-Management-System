@@ -49,8 +49,10 @@ export const login = (username, password) =>
   client.post('/auth/login', { username, password });
 
 // ── Master list ───────────────────────────────────────────────────────────────
+// ── Master list ───────────────────────────────────────────────────────────────
 export const getMaster      = ()          => client.get('/master');
 export const addMaterial    = (data)      => client.post('/master', data);
+export const updateMaterial = (id, data)  => client.put(`/master/${id}`, data);
 export const bulkMaster     = (materials) => client.post('/master/bulk', { materials });
 export const deleteMaterial = (id)        => client.delete(`/master/${id}`);
 
