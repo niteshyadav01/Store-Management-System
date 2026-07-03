@@ -39,9 +39,9 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 // ── Rate limiter — login endpoint ─────────────────────────────────────────────
 const rateLimit = require('express-rate-limit');
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 20,                     // 20 attempts per IP per window
-  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+  windowMs: 5 * 60 * 1000,  // 15 minutes
+  max: 5,                     // 20 attempts per IP per window
+  message: { error: 'Too many login attempts. Please try again in 5 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
