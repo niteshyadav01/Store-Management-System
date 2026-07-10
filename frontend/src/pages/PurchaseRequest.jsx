@@ -181,6 +181,7 @@ export default function PurchaseRequest() {
           uom:        it.uom || '',
           remarks:    it.remarks || '',
           orderedQty: String(remaining),  // default = full remaining
+          price:      '',
           maxQty:     remaining,
           prQty:      it.qty,
           alreadyOrdered: already,
@@ -205,8 +206,8 @@ export default function PurchaseRequest() {
     setPoMsg({ text: '', ok: true });
   }
 
-  function updatePoItem(key, orderedQty) {
-    setPoItems(list => list.map(it => it._key === key ? { ...it, orderedQty } : it));
+  function updatePoItem(key, patch) {
+    setPoItems(list => list.map(it => it._key === key ? { ...it, ...patch } : it));
   }
 
   function removePoItem(key) {
@@ -247,6 +248,7 @@ export default function PurchaseRequest() {
           uom:        it.uom,
           remarks:    it.remarks,
           orderedQty: parseFloat(it.orderedQty),
+          price:      parseFloat(it.price) || 0,
         })),
       });
       load();
@@ -522,7 +524,7 @@ export default function PurchaseRequest() {
           <div
             style={{
               background: 'var(--paper)', borderRadius: 10, padding: '28px 32px',
-              minWidth: 360, maxWidth: 620, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+              minWidth: 360, maxWidth: 860, width: '95vw', boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
               maxHeight: '90vh', overflowY: 'auto',
             }}
             onClick={e => e.stopPropagation()}
@@ -577,7 +579,7 @@ export default function PurchaseRequest() {
                   All items in this PR have already been fully ordered.
                 </p>
               ) : (
-                <div className="tablewrap" style={{ marginBottom: 10 }}>
+                <div className="tablewrap" style={{ marginBottom: 10, overflowX: 'auto' }}>
                   <table>
                     <thead>
                       <tr>
@@ -586,6 +588,7 @@ export default function PurchaseRequest() {
                         <th className="num">Already Ordered</th>
                         <th className="num">Remaining</th>
                         <th className="num" style={{ minWidth: 90 }}>PO Qty <span style={{ color: 'var(--red)' }}>*</span></th>
+                        <th className="num" style={{ minWidth: 100 }}>Unit Price</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -605,8 +608,17 @@ export default function PurchaseRequest() {
                               type="number" min="0.0001" step="any"
                               max={it.maxQty}
                               value={it.orderedQty}
-                              onChange={e => updatePoItem(it._key, e.target.value)}
+                              onChange={e => updatePoItem(it._key, { orderedQty: e.target.value })}
                               style={{ width: 80, textAlign: 'right' }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number" min="0" step="any"
+                              value={it.price}
+                              onChange={e => updatePoItem(it._key, { price: e.target.value })}
+                              placeholder="0.00"
+                              style={{ width: 90, textAlign: 'right' }}
                             />
                           </td>
                           <td>
