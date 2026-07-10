@@ -4,13 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS } from '../utils/helpers';
 
 const NAV_ITEMS = [
-  { num:'01', label:'Master list',    path:'/master',  roles:['admin'] },
-  { num:'02', label:'Inward entry',   path:'/inward',  roles:['admin','inward','manager'] },
-  { num:'03', label:'Outward entry',  path:'/outward', roles:['admin','outward','manager'] },
-  { num:'04', label:'Price entry',    path:'/price',   roles:['admin','purchase'] },
-  { num:'05', label:'Stock overview', path:'/stock',   roles:['admin','purchase','inward','outward','manager','viewer'] },
-  { num:'06', label:'Users',          path:'/users',   roles:['admin'] },
-  { num:'07', label:'Reports',        path:'/reports', roles:['admin','purchase'] },
+  { num:'01', label:'Dashboard',         path:'/dashboard',         roles:['admin','inward','outward','manager','purchase'] },
+  { num:'02', label:'Master list',       path:'/master',            roles:['admin'] },
+  { num:'03', label:'Inward entry',      path:'/inward',            roles:['admin','inward','manager'] },
+  { num:'04', label:'Outward entry',     path:'/outward',           roles:['admin','outward','manager'] },
+  { num:'05', label:'Price entry',       path:'/price',             roles:['admin','purchase'] },
+  { num:'06', label:'Stock overview',    path:'/stock',             roles:['admin','purchase','inward','outward','manager','viewer'] },
+  { num:'07', label:'Purchase requests', path:'/purchase-requests', roles:['admin','inward','outward','manager','purchase'] },
+  { num:'08', label:'Users',             path:'/users',             roles:['admin'] },
+  { num:'09', label:'Reports',           path:'/reports',           roles:['admin','purchase'] },
 ];
 
 const BoxIcon = () => (
@@ -36,7 +38,7 @@ export default function Layout() {
 
   function handleHomeClick() {
     const role = user?.role;
-    const path = role === 'inward' ? '/inward' : role === 'outward' ? '/outward' : '/stock';
+    const path = ['admin','inward','outward','manager','purchase'].includes(role) ? '/dashboard' : '/stock';
     navigate(path);
   }
 

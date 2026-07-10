@@ -305,6 +305,29 @@ body {
 
 .price-divider { grid-column: 1/-1; border: none; border-top: 1px dashed var(--line); margin: 4px 0; }
 
+/* Purchase request line-item table inputs — same look as .field inputs, sized for table cells */
+.itemtable input, .itemtable select {
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  font-size: 13px;
+  font-family: 'Poppins', sans-serif;
+  background: #fff;
+  color: var(--ink);
+  width: 100%;
+  min-width: 100px;
+  appearance: none;
+}
+.itemtable input:focus, .itemtable select:focus {
+  outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(31,92,82,.1);
+}
+.itemtable select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b6555' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; min-width: 180px;
+}
+.itemtable input[type="number"] { min-width: 80px; }
+.itemtable-row-remove { padding: 6px 10px !important; }
+
 /* Action row */
 .actionrow { margin-top: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
@@ -406,6 +429,13 @@ td.mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: .3px; }
 .tag.out { background: var(--rust-light);  color: var(--rust-dark); }
 .tag.low { background: var(--red-light);   color: var(--red); }
 .tag.ok2 { background: var(--teal-light);  color: var(--teal-dark); }
+
+/* Purchase request status tags */
+.tag.pending  { background: #fef3c7; color: #92400e; }
+.tag.approved { background: var(--teal-light); color: var(--teal-dark); }
+.tag.rejected { background: var(--red-light);  color: var(--red); }
+.tag.ordered  { background: #eef2ff; color: #3730a3; }
+.tag.received { background: #f3e8ff; color: #6b21a8; }
 
 .role-pill {
   display: inline-flex; align-items: center;

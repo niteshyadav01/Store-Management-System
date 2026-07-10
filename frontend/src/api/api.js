@@ -73,3 +73,16 @@ export const bulkOutward = (entries) => client.post('/outward/bulk', { entries }
 export const getUsers   = ()         => client.get('/users');
 export const saveUser   = (data)     => client.post('/users', data);
 export const deleteUser = (username) => client.delete(`/users/${username}`);
+
+// ── Purchase requests ────────────────────────────────────────────────────────
+export const getPurchaseRequests      = ()          => client.get('/purchase-requests');
+export const createPurchaseRequest    = (data)       => client.post('/purchase-requests', data);
+export const updatePurchaseRequest    = (id, data)   => client.put(`/purchase-requests/${id}`, data);
+export const deletePurchaseRequest    = (id)         => client.delete(`/purchase-requests/${id}`);
+export const setPurchaseRequestStatus = (id, data)   => client.patch(`/purchase-requests/${id}/status`, data);
+
+// ── Purchase orders ──────────────────────────────────────────────────────────
+export const getPONextNumber      = ()      => client.get('/purchase-orders/next-number');
+export const getPurchaseOrders    = ()      => client.get('/purchase-orders');
+export const getPurchaseOrdersByPR = (prId) => client.get(`/purchase-orders?prId=${prId}`);
+export const createPurchaseOrder  = (data)  => client.post('/purchase-orders', data);

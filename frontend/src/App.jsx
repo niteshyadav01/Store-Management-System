@@ -10,8 +10,11 @@ import PriceEntry from './pages/PriceEntry';
 import StockOverview from './pages/StockOverview';
 import Users from './pages/Users';
 import Reports from './pages/Reports';
+import PurchaseRequest from './pages/PurchaseRequest';
+import Dashboard from './pages/Dashboard';
 
 const ROLE_ACCESS = {
+  dashboard: ['admin','inward','outward','manager','purchase'],
   master:  ['admin'],
   inward:  ['admin','inward','manager'],
   outward: ['admin','outward','manager'],
@@ -19,14 +22,12 @@ const ROLE_ACCESS = {
   stock:   ['admin','purchase','inward','outward','manager','viewer'],
   users:   ['admin'],
   reports: ['admin','purchase'],
+  purchaseRequests: ['admin','inward','outward','manager','purchase'],
 };
 
 function getDefaultPath(role) {
-  if (role === 'inward')   return '/inward';
-  if (role === 'outward')  return '/outward';
-  if (role === 'manager')  return '/inward';
-  if (role === 'purchase') return '/stock';
   if (role === 'viewer')   return '/stock';
+  if (ROLE_ACCESS.dashboard.includes(role)) return '/dashboard';
   return '/stock';
 }
 
@@ -48,6 +49,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to={defaultPath} replace /> : <Login />} />
       <Route element={<Layout />}>
+        <Route path="/dashboard" element={<ProtectedRoute page="dashboard"><Dashboard /></ProtectedRoute>} />
         <Route path="/master"  element={<ProtectedRoute page="master"><MasterList /></ProtectedRoute>} />
         <Route path="/inward"  element={<ProtectedRoute page="inward"><InwardEntry /></ProtectedRoute>} />
         <Route path="/outward" element={<ProtectedRoute page="outward"><OutwardEntry /></ProtectedRoute>} />
@@ -55,6 +57,7 @@ function AppRoutes() {
         <Route path="/stock"   element={<ProtectedRoute page="stock"><StockOverview /></ProtectedRoute>} />
         <Route path="/users"   element={<ProtectedRoute page="users"><Users /></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute page="reports"><Reports /></ProtectedRoute>} />
+        <Route path="/purchase-requests" element={<ProtectedRoute page="purchaseRequests"><PurchaseRequest /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to={defaultPath} replace />} />
     </Routes>
