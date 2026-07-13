@@ -82,7 +82,10 @@ export const deletePurchaseRequest    = (id)         => client.delete(`/purchase
 export const setPurchaseRequestStatus = (id, data)   => client.patch(`/purchase-requests/${id}/status`, data);
 
 // ── Purchase orders ──────────────────────────────────────────────────────────
-export const getPONextNumber      = ()      => client.get('/purchase-orders/next-number');
-export const getPurchaseOrders    = ()      => client.get('/purchase-orders');
-export const getPurchaseOrdersByPR = (prId) => client.get(`/purchase-orders?prId=${prId}`);
-export const createPurchaseOrder  = (data)  => client.post('/purchase-orders', data);
+export const getPONextNumber          = ()           => client.get('/purchase-orders/next-number');
+export const getPurchaseOrders        = ()           => client.get('/purchase-orders');
+export const getPurchaseOrdersByPR    = (prId)       => client.get(`/purchase-orders?prId=${prId}`);
+export const getPurchaseOrderByNumber = (poNumber)   => client.get(`/purchase-orders/by-number/${encodeURIComponent(poNumber)}`);
+export const getPendingInwardPOs      = ()           => client.get('/purchase-orders/pending-inward');
+export const getPoMatching            = ()           => client.get('/purchase-orders/po-matching');
+export const createPurchaseOrder      = (data)       => client.post('/purchase-orders', data);

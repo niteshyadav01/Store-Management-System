@@ -6,9 +6,12 @@ import { formatNum } from '../utils/helpers';
 function ColFilter({ values, selected, onChange }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [pending, setPending] = useState([]);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const btnRef = useRef();
   const panelRef = useRef();
+
+  useEffect(() => { if (open) setPending(selected); }, [open]);
 
   useEffect(() => {
     function handler(e) {
@@ -21,95 +24,104 @@ function ColFilter({ values, selected, onChange }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  useEffect(() => {
-    if (open && btnRef.current) {
+  function handleOpen() {
+    if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
-      const panelHeight = 320;
+      const panelH = Math.min(360, window.innerHeight - 24);
       const spaceBelow = window.innerHeight - rect.bottom;
-      const top = spaceBelow < panelHeight ? rect.top - panelHeight : rect.bottom + 4;
-      setPos({ top, left: rect.left });
+      const spaceRight = window.innerWidth - rect.left;
+      const top = spaceBelow < panelH ? Math.max(12, rect.top - panelH - 6) : rect.bottom + 6;
+      const left = Math.min(rect.left, Math.max(12, window.innerWidth - 280));
+      setPos({ top, left });
     }
-  }, [open]);
+    setOpen(v => !v);
+  }
 
-const unique = [...new Set(values.filter(Boolean))];
-
-  // Detect numeric columns (strip currency symbols, commas, % etc. before parsing)
+  const unique = [...new Set(values.filter(Boolean))];
   const toNum = v => {
     const cleaned = String(v).replace(/[^0-9.\-]/g, '');
     return cleaned === '' || cleaned === '-' ? NaN : parseFloat(cleaned);
   };
   const isNumericCol = unique.every(v => !isNaN(toNum(v)));
 
-  unique.sort((a, b) => isNumericCol
-    ? toNum(a) - toNum(b)                 // ascending numeric order
-    : String(a).localeCompare(String(b))  // alphabetical for text columns
-  );
+  unique.sort((a, b) => isNumericCol ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)));
 
-  const filtered = unique.filter(v => v.toLowerCase().includes(search.toLowerCase()));
-  const allSelected = selected.length === 0;
-
+  const filtered = unique.filter(v => String(v).toLowerCase().includes(search.toLowerCase()));
+  const allSelected = pending.length === unique.length && unique.length > 0;
+  const someSelected = pending.length > 0 && pending.length < unique.length;
   function toggle(val) {
-    if (selected.includes(val)) onChange(selected.filter(s => s !== val));
-    else onChange([...selected, val]);
+    setPending(prev => prev.includes(val) ? prev.filter(s => s !== val) : [...prev, val]);
   }
-
-  function clearAll() { onChange([]); setOpen(false); }
+  function toggleAll() {
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
+  }
+  function handleApply() { onChange(pending); setOpen(false); }
+  function handleClear() { setPending([]); onChange([]); setOpen(false); }
+  const hasChanges = JSON.stringify(pending.slice().sort()) !== JSON.stringify(selected.slice().sort());
 
   return (
     <>
       <button
         ref={btnRef}
-        onClick={() => setOpen(v => !v)}
+        onClick={handleOpen}
         style={{
           background: selected.length > 0 ? 'var(--teal)' : 'none',
-          border: 'none', cursor: 'pointer', padding: '2px 4px',
-          borderRadius: 3, fontSize: 10, color: selected.length > 0 ? '#fff' : '#8a8270',
+          border: 'none', cursor: 'pointer', padding: '2px 6px',
+          borderRadius: 4, fontSize: 10, color: selected.length > 0 ? '#fff' : '#8a8270',
           lineHeight: 1,
         }}
-        title="Filter"
+        title={selected.length > 0 ? `${selected.length} filter(s) active` : 'Filter'}
       >▼</button>
       {open && createPortal(
-        <div
-          ref={panelRef}
-          style={{
-            position: 'fixed',
-            top: pos.top, left: pos.left, zIndex: 99999,
-            background: '#fff', border: '1px solid var(--line)',
-            borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.18)',
-            minWidth: 200, maxWidth: 280, padding: '8px 0',
-          }}
-        >
-          <div style={{ padding: '6px 10px' }}>
-            <input
-              autoFocus
-              placeholder="Search…"
-              value={search}
+        <div ref={panelRef} style={{
+          position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
+          background: '#fff', border: '1px solid var(--line)',
+          borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+          minWidth: 240, maxWidth: 320, overflow: 'hidden',
+        }}>
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
+            <input autoFocus placeholder="Search…" value={search}
               onChange={e => setSearch(e.target.value)}
-              style={{
-                width: '100%', padding: '5px 8px', fontSize: 12,
-                border: '1px solid var(--line)', borderRadius: 4,
-                fontFamily: 'Poppins, sans-serif',
-              }}
-            />
+              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
+                borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
+              onFocus={e => e.target.style.borderColor = 'var(--teal)'}
+              onBlur={e => e.target.style.borderColor = 'var(--line)'} />
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto', borderTop: '1px solid var(--line)' }}>
-            <label style={itemStyle}>
-              <input type="checkbox" checked={allSelected} onChange={clearAll} style={{ marginRight: 7 }} />
-              <span style={{ fontStyle: 'italic', color: '#8a8270' }}>(Select all)</span>
-            </label>
+          <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined }}>
+            <input type="checkbox"
+              ref={el => { if (el) el.indeterminate = someSelected; }}
+              checked={allSelected}
+              onChange={toggleAll}
+              style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14 }}
+              onClick={e => e.stopPropagation()} />
+            <span style={{ fontSize: 12.5, fontStyle: 'italic', color: 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif' }}>
+              {someSelected ? `${pending.length} of ${unique.length} selected` : allSelected ? 'All selected' : '(Select all)'}
+            </span>
+            {pending.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, background: someSelected ? 'var(--amber)' : 'var(--teal)', color: '#fff', borderRadius: 10, padding: '1px 7px', fontWeight: 600 }}>{pending.length}</span>}
+          </div>
+          <div style={{ maxHeight: 200, overflowY: 'auto' }}>
             {filtered.map(v => (
-              <label key={v} style={itemStyle}>
-                <input type="checkbox" checked={selected.includes(v)} onChange={() => toggle(v)} style={{ marginRight: 7 }} />
-                {v}
-              </label>
+              <div key={v} onClick={() => toggle(v)} style={{ display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 14px', cursor: 'pointer', fontSize: 13,
+                fontFamily: 'Inter, Poppins, sans-serif',
+                background: pending.includes(v) ? 'var(--teal-light)' : undefined, transition: 'background 100ms' }}>
+                <input type="checkbox" checked={pending.includes(v)} onChange={() => toggle(v)}
+                  style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14, flexShrink: 0 }}
+                  onClick={e => e.stopPropagation()} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+              </div>
             ))}
-            {!filtered.length && <div style={{ padding: '8px 12px', fontSize: 12, color: '#8a8270' }}>No results</div>}
+            {!filtered.length && <div style={{ padding: '12px 14px', fontSize: 12.5, color: 'var(--text-3)', textAlign: 'center' }}>No results</div>}
           </div>
-          <div style={{ padding: '6px 10px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={clearAll} style={{
-              fontSize: 11, padding: '4px 10px', border: '1px solid var(--line)',
-              borderRadius: 4, cursor: 'pointer', background: 'none', fontFamily: 'Poppins, sans-serif',
-            }}>Clear</button>
+          <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--line)', background: 'var(--paper-dim)' }}>
+            <button onClick={handleClear} style={{ flex: 1, fontSize: 12.5, padding: '7px 0', border: '1.5px solid var(--line)',
+              borderRadius: 6, cursor: 'pointer', background: '#fff', fontFamily: 'Inter, Poppins, sans-serif', color: 'var(--ink)' }}>Clear</button>
+            <button onClick={handleApply} style={{ flex: 2, fontSize: 12.5, padding: '7px 0', border: 'none', borderRadius: 6,
+              cursor: 'pointer', background: hasChanges ? 'var(--teal)' : 'var(--paper-dim)',
+              color: hasChanges ? '#fff' : 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif', fontWeight: 600 }}>Apply</button>
           </div>
         </div>,
         document.body
@@ -129,6 +141,7 @@ export default function PriceEntry() {
   const [search,  setSearch]  = useState('');
   const [prices,  setPrices]  = useState({});
   const [saved,   setSaved]   = useState({});
+  const [recentPrices, setRecentPrices] = useState([]);
 
   const [cf, setCf] = useState({ date:[], vendor:[], name:[], code:[], qty:[], uom:[], price:[] });
 
@@ -171,7 +184,16 @@ export default function PriceEntry() {
 
   async function handleSave(id) {
     try {
-      await updatePrice(id, prices[id] === '' ? 0 : (prices[id] ?? 0));
+      const priceValue = prices[id] === '' ? 0 : (prices[id] ?? 0);
+      await updatePrice(id, priceValue);
+      const entry = entries.find(e => e._id === id);
+      setRecentPrices(prev => [{
+        _id: id,
+        name: entry?.name || '',
+        code: entry?.code || '',
+        price: priceValue,
+        updatedAt: new Date().toISOString(),
+      }, ...prev].slice(0, 6));
       setSaved(s => ({ ...s, [id]: true }));
       await load();
       setTimeout(() => setSaved(s => ({ ...s, [id]: false })), 1800);
@@ -270,6 +292,28 @@ export default function PriceEntry() {
         </div>
         {!entries.length && <div className="empty">No inward entries yet.<p>Add inward entries first to set prices.</p></div>}
         {entries.length > 0 && !filtered.length && <div className="empty">No entries match your filter.</div>}
+      </div>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <h3>Recently updated prices</h3>
+        {recentPrices.length ? (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {recentPrices.map(item => (
+              <div key={item._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--paper-dim)' }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{item.name || 'Unnamed item'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{item.code || '—'}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 700, color: 'var(--teal)' }}>{formatNum(item.price)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{new Date(item.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty">No recent price updates yet. Save a price to see it here.</div>
+        )}
       </div>
     </>
   );

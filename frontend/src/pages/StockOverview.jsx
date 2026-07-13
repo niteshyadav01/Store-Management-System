@@ -1,100 +1,131 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { getMaster, getInward, getOutward } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { formatNum, formatINR, formatInt } from '../utils/helpers';
 
-// ── Excel-style dropdown filter component ─────────────────────────────────────
+// ── Excel-style dropdown filter — portal-based so it's never clipped ──────────
 function ColFilter({ values, selected, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const ref = useRef();
+  const [open, setOpen]       = useState(false);
+  const [search, setSearch]   = useState('');
+  const [pending, setPending] = useState([]);
+  const [pos, setPos]         = useState({ top: 0, left: 0 });
+  const btnRef   = useRef();
+  const panelRef = useRef();
+
+  useEffect(() => { if (open) setPending(selected); }, [open]); // eslint-disable-line
 
   useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    function handler(e) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target) &&
+        btnRef.current   && !btnRef.current.contains(e.target)
+      ) setOpen(false);
+    }
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const unique = [...new Set(values.filter(Boolean))];
-
-  // Detect numeric columns (strip currency symbols, commas, % etc. before parsing)
-  const toNum = v => {
-    const cleaned = String(v).replace(/[^0-9.\-]/g, '');
-    return cleaned === '' || cleaned === '-' ? NaN : parseFloat(cleaned);
-  };
-  const isNumericCol = unique.every(v => !isNaN(toNum(v)));
-
-  unique.sort((a, b) => isNumericCol
-    ? toNum(a) - toNum(b)                 // ascending numeric order
-    : String(a).localeCompare(String(b))  // alphabetical for text columns
-  );
-
-  const filtered = unique.filter(v => v.toLowerCase().includes(search.toLowerCase()));
-  const allSelected = selected.length === 0;
-
-  function toggle(val) {
-    if (selected.includes(val)) onChange(selected.filter(s => s !== val));
-    else onChange([...selected, val]);
+  function handleOpen() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const panelH = 360;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setPos({
+        top:  spaceBelow < panelH ? rect.top - panelH + window.scrollY : rect.bottom + window.scrollY + 2,
+        left: rect.left + window.scrollX,
+      });
+    }
+    setOpen(v => !v);
   }
 
-  function clearAll() { onChange([]); setOpen(false); }
+  const unique = [...new Set(values.filter(Boolean))];
+  const toNum  = v => { const c = String(v).replace(/[^0-9.\-]/g, ''); return c === '' || c === '-' ? NaN : parseFloat(c); };
+  const isNum  = unique.every(v => !isNaN(toNum(v)));
+  unique.sort((a, b) => isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)));
 
-  return (
-    <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        onClick={() => setOpen(v => !v)}
-        style={{
-          background: selected.length > 0 ? 'var(--teal)' : 'none',
-          border: 'none', cursor: 'pointer', padding: '2px 4px',
-          borderRadius: 3, fontSize: 10, color: selected.length > 0 ? '#fff' : '#8a8270',
-          lineHeight: 1,
-        }}
-        title="Filter"
-      >▼</button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, zIndex: 999,
-          background: '#fff', border: '1px solid var(--line)',
-          borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.12)',
-          minWidth: 200, maxWidth: 280, padding: '8px 0',
-        }}>
-          <div style={{ padding: '6px 10px' }}>
-            <input
-              autoFocus
-              placeholder="Search…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{
-                width: '100%', padding: '5px 8px', fontSize: 12,
-                border: '1px solid var(--line)', borderRadius: 4,
-                fontFamily: 'Poppins, sans-serif',
-              }}
-            />
+  const filtered    = unique.filter(v => String(v).toLowerCase().includes(search.toLowerCase()));
+  const allSelected  = pending.length === unique.length && unique.length > 0;
+  const someSelected = pending.length > 0 && pending.length < unique.length;
+  const noneSelected = pending.length === 0;
+
+  function toggle(val) {
+    setPending(prev => prev.includes(val) ? prev.filter(s => s !== val) : [...prev, val]);
+  }
+  function toggleAll() {
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
+  }
+  function handleApply() { onChange(pending); setOpen(false); }
+  function handleClear()  { setPending([]); onChange([]); setOpen(false); }
+
+  const hasChanges = JSON.stringify(pending.slice().sort()) !== JSON.stringify(selected.slice().sort());
+
+  const panel = (
+    <div ref={panelRef} style={{
+      position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
+      background: '#fff', border: '1px solid var(--line)',
+      borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+      minWidth: 240, maxWidth: 320, overflow: 'hidden',
+    }}>
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
+        <input autoFocus placeholder="Search…" value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
+            borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
+          onFocus={e => e.target.style.borderColor = 'var(--teal)'}
+          onBlur={e  => e.target.style.borderColor = 'var(--line)'} />
+      </div>
+      <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+        background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined }}>
+        <input type="checkbox"
+          ref={el => { if (el) el.indeterminate = someSelected; }}
+          checked={allSelected}
+          onChange={toggleAll}
+          style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14 }}
+          onClick={e => e.stopPropagation()} />
+        <span style={{ fontSize: 12.5, fontStyle: 'italic', color: 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif' }}>
+          {someSelected ? `${pending.length} of ${unique.length} selected` : allSelected ? 'All selected' : '(Select all)'}
+        </span>
+        {pending.length > 0 && <span style={{ marginLeft: 'auto', fontSize: 11, background: someSelected ? 'var(--amber)' : 'var(--teal)', color: '#fff', borderRadius: 10, padding: '1px 7px', fontWeight: 600 }}>{pending.length}</span>}
+      </div>
+      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+        {filtered.map(v => (
+          <div key={v} onClick={() => toggle(v)} style={{ display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 14px', cursor: 'pointer', fontSize: 13,
+            fontFamily: 'Inter, Poppins, sans-serif',
+            background: pending.includes(v) ? 'var(--teal-light)' : undefined, transition: 'background 100ms' }}>
+            <input type="checkbox" checked={pending.includes(v)} onChange={() => toggle(v)}
+              style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14, flexShrink: 0 }}
+              onClick={e => e.stopPropagation()} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
           </div>
-          <div style={{ maxHeight: 220, overflowY: 'auto', borderTop: '1px solid var(--line)' }}>
-            <label style={itemStyle}>
-              <input type="checkbox" checked={allSelected} onChange={clearAll} style={{ marginRight: 7 }} />
-              <span style={{ fontStyle: 'italic', color: '#8a8270' }}>(Select all)</span>
-            </label>
-            {filtered.map(v => (
-              <label key={v} style={itemStyle}>
-                <input type="checkbox" checked={selected.includes(v)} onChange={() => toggle(v)} style={{ marginRight: 7 }} />
-                {v}
-              </label>
-            ))}
-            {!filtered.length && <div style={{ padding: '8px 12px', fontSize: 12, color: '#8a8270' }}>No results</div>}
-          </div>
-          <div style={{ padding: '6px 10px', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={clearAll} style={{
-              fontSize: 11, padding: '4px 10px', border: '1px solid var(--line)',
-              borderRadius: 4, cursor: 'pointer', background: 'none', fontFamily: 'Poppins, sans-serif',
-            }}>Clear</button>
-          </div>
-        </div>
-      )}
+        ))}
+        {!filtered.length && <div style={{ padding: '12px 14px', fontSize: 12.5, color: 'var(--text-3)', textAlign: 'center' }}>No results</div>}
+      </div>
+      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--line)', background: 'var(--paper-dim)' }}>
+        <button onClick={handleClear} style={{ flex: 1, fontSize: 12.5, padding: '7px 0', border: '1.5px solid var(--line)',
+          borderRadius: 6, cursor: 'pointer', background: '#fff', fontFamily: 'Inter, Poppins, sans-serif', color: 'var(--ink)' }}>Clear</button>
+        <button onClick={handleApply} style={{ flex: 2, fontSize: 12.5, padding: '7px 0', border: 'none', borderRadius: 6,
+          cursor: 'pointer', background: hasChanges ? 'var(--teal)' : 'var(--paper-dim)',
+          color: hasChanges ? '#fff' : 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif', fontWeight: 600 }}>Apply</button>
+      </div>
     </div>
   );
+
+  return (
+    <>
+      <button ref={btnRef} onClick={handleOpen} style={{
+        background: selected.length > 0 ? 'var(--teal)' : 'none',
+        border: 'none', cursor: 'pointer', padding: '2px 6px',
+        borderRadius: 4, fontSize: 10, color: selected.length > 0 ? '#fff' : '#8a8270', lineHeight: 1,
+      }} title={selected.length > 0 ? `${selected.length} filter(s) active` : 'Filter'}>▼</button>
+      {open && createPortal(panel, document.body)}
+    </>
+  );
 }
+
 
 const itemStyle = {
   display: 'flex', alignItems: 'center', padding: '6px 12px',
@@ -171,8 +202,8 @@ export default function StockOverview() {
     <>
       <div className="pagehead">
         <div className="pagehead-text">
-          <h2>Stock Overview</h2>
-          <p>Real-time balance per material — inward minus outward quantities.</p>
+          <h2>Live Stock</h2>
+          <p>Real-time balance per material inward minus outward quantities.</p>
         </div>
       </div>
 
@@ -201,16 +232,13 @@ export default function StockOverview() {
           <div className="label">Low stock</div>
           <div className="value" style={{color: lowCount > 0 ? 'var(--red)' : 'inherit'}}>{lowCount}</div>
         </div>
-      </div>
-
-      {canSeePrice && (
-        <div className="statrow" style={{gridTemplateColumns:'1fr', marginBottom:24}}>
+        {canSeePrice && (
           <div className="stat teal">
             <div className="label">Total stock value (avg price × stock qty)</div>
             <div className="value">{'₹' + Math.round(totalVal).toLocaleString('en-IN')}</div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="card">
         <h3>

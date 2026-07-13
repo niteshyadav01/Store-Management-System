@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getMaster, getInward, addInward, bulkInward, updateInward, deleteInward } from '../api/api';
+import { getMaster, getInward, addInward, bulkInward, updateInward, deleteInward, getPendingInwardPOs, getPurchaseOrderByNumber } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx } from '../utils/helpers';
 
@@ -201,22 +201,63 @@ const styles = {
 /* ── Main component ──────────────────────────────────────────────────── */
 export default function InwardEntry() {
   const { user } = useAuth();
-  const canSeePrice = user?.role === 'admin' || user?.role === 'purchase';
+  const canSeePrice  = user?.role === 'admin' || user?.role === 'purchase';
   const canEditDelete = user?.role === 'admin' || user?.role === 'inward';
 
-  const [master, setMaster] = useState([]);
-  const [entries, setEntries] = useState([]);
-  const [form, setForm] = useState(EMPTY);
-  const [msg, setMsg] = useState({ text: '', ok: true });
-  const [bulkMsg, setBulkMsg] = useState({ text: '', ok: true });
-  const [loading, setLoading] = useState(false);
-  const [editEntry, setEditEntry] = useState(null);   // entry being edited
+  const [master,    setMaster]    = useState([]);
+  const [entries,   setEntries]   = useState([]);
+  const [poList,    setPoList]    = useState([]);
+  const [form,      setForm]      = useState(EMPTY);
+  const [msg,       setMsg]       = useState({ text: '', ok: true });
+  const [bulkMsg,   setBulkMsg]   = useState({ text: '', ok: true });
+  const [loading,   setLoading]   = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
+  const [poManual, setPoManual] = useState(false); // true when user chose "Enter manually"
+  const [poRows,    setPoRows]    = useState([]);
+  const [poLoading, setPoLoading] = useState(false);
 
   const load = useCallback(async () => {
-    const [m, e] = await Promise.all([getMaster(), getInward()]);
-    setMaster(m); setEntries(e);
+    const [m, e, pos] = await Promise.all([getMaster(), getInward(), getPendingInwardPOs()]);
+    setMaster(m); setEntries(e); setPoList(pos);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // When PO is selected, fetch it and build per-item rows
+  async function handlePoSelect(poNumber) {
+    setForm(f => ({ ...f, po: poNumber, vendor: '' }));
+    setPoRows([]);
+    setPoManual(false);
+    if (!poNumber) return;
+    setPoLoading(true);
+    try {
+      const po = await getPurchaseOrderByNumber(poNumber);
+      setForm(f => ({ ...f, vendor: po.vendorName || '' }));
+      const rows = (po.items || []).map(it => {
+        const mat = master.find(m => m.name === it.name || m.code === it.code);
+        return {
+          _key:     Math.random().toString(36).slice(2),
+          name:     it.name,
+          type:     mat?.type     || '',
+          code:     it.code       || mat?.code     || '',
+          category: it.category   || mat?.category || '',
+          uom:      it.uom        || mat?.uom      || '',
+          poQty:    it.orderedQty,
+          price:    it.price      || 0,
+          qty:      String(it.orderedQty),
+          location: '',
+          remarks:  '',
+        };
+      });
+      setPoRows(rows);
+    } catch (err) {
+      // PO not found in system — allow manual entry with this PO number
+      setPoRows([]);
+    } finally { setPoLoading(false); }
+  }
+
+  function updatePoRow(key, patch) {
+    setPoRows(list => list.map(r => r._key === key ? { ...r, ...patch } : r));
+  }
 
   function autofill(name) {
     const m = master.find(x => x.name === name);
@@ -227,18 +268,43 @@ export default function InwardEntry() {
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ text: '', ok: true });
-    if (!form.name) { setMsg({ text: 'Please select a material.', ok: false }); return; }
-    if (!form.qty || parseFloat(form.qty) <= 0) { setMsg({ text: 'Enter a valid received quantity.', ok: false }); return; }
-    setLoading(true);
-    try {
-      await addInward({ ...form, qty: parseFloat(form.qty), price: parseFloat(form.price) || 0 });
-      setMsg({ text: 'Inward entry saved successfully.', ok: true });
-      setForm({ ...EMPTY, date: todayStr() });
-      load();
-      setTimeout(() => setMsg({ text: '', ok: true }), 4000);
-    } catch (err) {
-      setMsg({ text: 'Error: ' + err.message, ok: false });
-    } finally { setLoading(false); }
+
+    if (form.po && poRows.length > 0) {
+      // PO mode — save one inward entry per row
+      const invalid = poRows.find(r => !r.qty || parseFloat(r.qty) <= 0);
+      if (invalid) { setMsg({ text: `"${invalid.name}": enter a valid received qty.`, ok: false }); return; }
+      setLoading(true);
+      try {
+        const batch = poRows.map(r => ({
+          date: form.date, invdate: form.invdate, challan: form.challan,
+          po: form.po, vendor: form.vendor,
+          name: r.name, type: r.type, code: r.code, category: r.category, uom: r.uom,
+          qty: parseFloat(r.qty),
+          by: form.by, location: r.location, remarks: r.remarks,
+          price: canSeePrice ? (parseFloat(r.price) || 0) : 0,
+        }));
+        await bulkInward(batch);
+        setMsg({ text: `✓ ${batch.length} inward entr${batch.length === 1 ? 'y' : 'ies'} saved from ${form.po}.`, ok: true });
+        setForm({ ...EMPTY, date: form.date });
+        setPoRows([]);
+        load();
+        setTimeout(() => setMsg({ text: '', ok: true }), 5000);
+      } catch (err) { setMsg({ text: 'Error: ' + err.message, ok: false }); }
+      finally { setLoading(false); }
+    } else {
+      // Manual mode
+      if (!form.name) { setMsg({ text: 'Please select a material.', ok: false }); return; }
+      if (!form.qty || parseFloat(form.qty) <= 0) { setMsg({ text: 'Enter a valid received quantity.', ok: false }); return; }
+      setLoading(true);
+      try {
+        await addInward({ ...form, qty: parseFloat(form.qty), price: parseFloat(form.price) || 0 });
+        setMsg({ text: 'Inward entry saved successfully.', ok: true });
+        setForm({ ...EMPTY, date: todayStr() });
+        load();
+        setTimeout(() => setMsg({ text: '', ok: true }), 4000);
+      } catch (err) { setMsg({ text: 'Error: ' + err.message, ok: false }); }
+      finally { setLoading(false); }
+    }
   }
 
   /* ── Save edited entry ─── */
@@ -354,35 +420,166 @@ export default function InwardEntry() {
             <div className="field"><label>Entry date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
             <div className="field"><label>Invoice date</label><input type="date" value={form.invdate} onChange={e => setForm(f => ({ ...f, invdate: e.target.value }))} /></div>
             <div className="field"><label>Challan / Invoice no</label><input value={form.challan} onChange={e => setForm(f => ({ ...f, challan: e.target.value }))} placeholder="e.g. INV-1023" /></div>
-            <div className="field"><label>PO no</label><input value={form.po} onChange={e => setForm(f => ({ ...f, po: e.target.value }))} placeholder="e.g. PO-4456" /></div>
-            <div className="field full"><label>Vendor name</label><input value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="e.g. ABC Vendors Pvt. Ltd." /></div>
-            <div className="field full">
-              <label>Material description <span style={{ color: 'var(--red)' }}>*</span></label>
-              <select value={form.name} onChange={e => autofill(e.target.value)}>
-                <option value="">— Select material —</option>
-                {master.map(m => <option key={m._id} value={m.name}>{m.name}</option>)}
-              </select>
-            </div>
-            <div className="field code"><label>Material type</label><input readOnly value={form.type} placeholder="Auto-filled" /></div>
-            <div className="field code"><label>Material code</label><input readOnly value={form.code} placeholder="Auto-filled" /></div>
-            <div className="field"><label>Category</label><input readOnly value={form.category} placeholder="Auto-filled" /></div>
-            <div className="field"><label>UOM</label><input readOnly value={form.uom} placeholder="Auto-filled" /></div>
-            <div className="field"><label>Received qty <span style={{ color: 'var(--red)' }}>*</span></label><input type="number" min="0" step="any" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} placeholder="0" /></div>
-            <div className="field"><label>Received by</label><input value={form.by} onChange={e => setForm(f => ({ ...f, by: e.target.value }))} placeholder="Your name" /></div>
-            <div className="field"><label>Storage location</label><input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Warehouse A / Rack 3" /></div>
-            <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes" /></div>
-            {canSeePrice && (
-              <>
-                <hr className="price-divider" />
-                <div className="field full">
-                  <label>Unit price <span style={{ fontWeight: 400, color: '#8a8270', marginLeft: 6 }}>(purchase team only)</span></label>
-                  <input type="number" min="0" step="any" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+
+            {/* PO Number — dropdown with fallback to manual text */}
+            <div className="field">
+              <label>PO Number</label>
+              {poManual ? (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    value={form.po}
+                    onChange={e => setForm(f => ({ ...f, po: e.target.value }))}
+                    placeholder="Enter PO number manually"
+                    autoFocus
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ whiteSpace: 'nowrap' }}
+                    onClick={() => { setPoManual(false); setForm(f => ({ ...f, po: '' })); setPoRows([]); }}
+                  >
+                    ← Back
+                  </button>
                 </div>
-              </>
-            )}
+              ) : (
+                <select
+                  value={form.po}
+                  onChange={e => {
+                    if (e.target.value === '__manual__') {
+                      setPoManual(true);
+                      setForm(f => ({ ...f, po: '' }));
+                      setPoRows([]);
+                    } else {
+                      handlePoSelect(e.target.value);
+                    }
+                  }}
+                >
+                  <option value="">— Select PO (optional) —</option>
+                  {poList.map(po => (
+                    <option key={po._id} value={po.poNumber}>
+                      {po.poNumber} — {po.vendorName} ({po.remainingItems ?? po.items?.length ?? 0} items pending)
+                    </option>
+                  ))}
+                  <option value="__manual__">✎ Enter PO number manually…</option>
+                </select>
+              )}
+            </div>
+
+            <div className="field full">
+              <label>Vendor name</label>
+              <input value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Auto-filled from PO, or enter manually" />
+            </div>
+            <div className="field">
+              <label>Received by</label>
+              <input value={form.by} onChange={e => setForm(f => ({ ...f, by: e.target.value }))} placeholder="Your name" />
+            </div>
           </div>
-          <div className="actionrow">
-            <button className="btn btn-in" type="submit" disabled={loading}>{loading ? 'Saving…' : 'Save inward entry'}</button>
+
+          {/* PO loading indicator */}
+          {poLoading && <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '12px 0' }}>Loading PO items…</p>}
+
+          {/* PO Mode — editable items table */}
+          {form.po && poRows.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                Materials from {form.po}
+                <span style={{ fontWeight: 400, color: 'var(--text-3)', fontSize: 12 }}>
+                  Edit received qty, location and remarks per item
+                </span>
+              </div>
+              <div className="tablewrap">
+                <table style={{ minWidth: 700 }}>
+                  <thead>
+                    <tr>
+                      <th>Material</th><th>Code</th>
+                      <th>Category</th><th>UOM</th>
+                      <th className="num">PO Qty</th>
+                      <th className="num" style={{ minWidth: 90 }}>Recv Qty *</th>
+                      {canSeePrice && <th className="num" style={{ minWidth: 90 }}>Unit Price</th>}
+                      <th style={{ minWidth: 130 }}>Location</th>
+                      <th style={{ minWidth: 130 }}>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poRows.map(r => (
+                      <tr key={r._key}>
+                        <td style={{ fontWeight: 500 }}>{r.name}</td>
+                        <td className="mono">{r.code || '—'}</td>
+                        <td>{r.category || '—'}</td>
+                        <td>{r.uom || '—'}</td>
+                        <td className="num" style={{ color: 'var(--text-3)' }}>{r.poQty}</td>
+                        <td style={tdS}>
+                          <input type="number" min="0.0001" step="any" value={r.qty}
+                            onChange={e => updatePoRow(r._key, { qty: e.target.value })}
+                            style={{ width: 80, textAlign: 'right' }} />
+                        </td>
+                        {canSeePrice && (
+                          <td style={tdS}>
+                            <input type="number" min="0" step="any" value={r.price}
+                              onChange={e => updatePoRow(r._key, { price: e.target.value })}
+                              style={{ width: 80, textAlign: 'right' }} />
+                          </td>
+                        )}
+                        <td style={tdS}>
+                          <input value={r.location} onChange={e => updatePoRow(r._key, { location: e.target.value })}
+                            placeholder="e.g. Rack A" style={{ width: '100%' }} />
+                        </td>
+                        <td style={tdS}>
+                          <input value={r.remarks} onChange={e => updatePoRow(r._key, { remarks: e.target.value })}
+                            placeholder="Optional" style={{ width: '100%' }} />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Mode — single material row: shown when no PO selected, or PO has no items */}
+          {(!form.po || poManual || (!poLoading && poRows.length === 0)) && (
+            <div className="formgrid" style={{ marginTop: 8 }}>
+              <div className="field full">
+                <label>Material description <span style={{ color: 'var(--red)' }}>*</span></label>
+                <select value={form.name} onChange={e => autofill(e.target.value)}>
+                  <option value="">— Select material —</option>
+                  {master.map(m => <option key={m._id} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+              <div className="field code"><label>Material type</label><input readOnly value={form.type} placeholder="Auto-filled" /></div>
+              <div className="field code"><label>Material code</label><input readOnly value={form.code} placeholder="Auto-filled" /></div>
+              <div className="field"><label>Category</label><input readOnly value={form.category} placeholder="Auto-filled" /></div>
+              <div className="field"><label>UOM</label><input readOnly value={form.uom} placeholder="Auto-filled" /></div>
+              <div className="field">
+                <label>Received qty <span style={{ color: 'var(--red)' }}>*</span></label>
+                <input type="number" min="0" step="any" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} placeholder="0" />
+              </div>
+              <div className="field"><label>Storage location</label><input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Warehouse A / Rack 3" /></div>
+              <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes" /></div>
+              {canSeePrice && (
+                <>
+                  <hr className="price-divider" />
+                  <div className="field full">
+                    <label>Unit price <span style={{ fontWeight: 400, color: '#8a8270', marginLeft: 6 }}>(purchase team only)</span></label>
+                    <input type="number" min="0" step="any" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="actionrow" style={{ marginTop: 16 }}>
+            <button className="btn btn-in" type="submit" disabled={loading || poLoading}>
+              {loading ? 'Saving…' : (form.po && poRows.length > 0)
+                ? `Save ${poRows.length} inward entr${poRows.length === 1 ? 'y' : 'ies'}`
+                : 'Save inward entry'}
+            </button>
+            {form.po && (
+              <button type="button" className="btn btn-ghost" onClick={() => { handlePoSelect(''); }}>
+                Clear PO
+              </button>
+            )}
             {msg.text && <span className={`msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</span>}
           </div>
         </form>
@@ -451,3 +648,7 @@ export default function InwardEntry() {
     </>
   );
 }
+
+// ── Inline table styles for PO items grid ─────────────────────────────────────
+const thS = { padding: '8px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11.5, letterSpacing: '0.04em', whiteSpace: 'nowrap', borderBottom: '2px solid var(--line)' };
+const tdS = { padding: '7px 10px', verticalAlign: 'middle' };
