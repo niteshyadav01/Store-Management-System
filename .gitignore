@@ -1,0 +1,8 @@
+# Never commit these from either folder
+node_modules/
+.env
+dist/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
