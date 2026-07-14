@@ -14,6 +14,8 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
+      { label: 'Dashboard',          path: '/dashboard',         roles: ['admin','store','store_manager','purchase'] },
+      { label: 'Live Stock',         path: '/stock',             roles: ['admin','purchase','store','store_manager','viewer'] },
       { label: 'Inward Entry',       path: '/inward',            roles: ['admin','store','store_manager'] },
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
       { label: 'Purchase Requests',  path: '/purchase-requests', roles: ['admin','store','store_manager'] },
@@ -33,19 +35,7 @@ const NAV_SECTIONS = [
       { label: 'Price Entry',     path: '/price',            roles: ['admin','purchase'] },
       { label: 'Purchase Orders', path: '/purchase-orders',  roles: ['admin','purchase'] },
       { label: 'PO Matching',     path: '/po-matching',      roles: ['admin','purchase','store_manager'] },
-    ],
-  },
-  {
-    label: 'Reports',
-    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
-        <line x1="6" y1="20" x2="6" y2="14"/>
-      </svg>
-    ),
-    items: [
-      { label: 'Live stock', path: '/stock', roles: ['admin','purchase','store','store_manager','viewer'] },
-      { label: 'Reports',        path: '/reports',  roles: ['admin','purchase'] },
+      { label: 'Reports',         path: '/reports',          roles: ['admin','purchase'] },
     ],
   },
   {
@@ -62,8 +52,8 @@ const NAV_SECTIONS = [
   },
 ];
 
-// Dashboard is top-level (not in a group)
-const DASHBOARD = { label: 'Dashboard', path: '/dashboard', roles: ['admin','store','store_manager','purchase'] };
+// Dashboard is now inside the Store section — no separate top-level entry needed
+const DASHBOARD = null;
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -106,7 +96,7 @@ export default function Layout() {
 
   function handleHomeClick() {
     const role = user?.role;
-    navigate(['admin','inward','outward','manager','purchase'].includes(role) ? '/dashboard' : '/stock');
+    navigate(['admin','store','store_manager','purchase'].includes(role) ? '/dashboard' : '/stock');
   }
 
   useEffect(() => {
@@ -126,12 +116,9 @@ export default function Layout() {
 
   // Current page label for topbar
   let currentPage = 'Stock Management';
-  if (location.pathname === DASHBOARD.path) currentPage = DASHBOARD.label;
-  else {
-    for (const s of NAV_SECTIONS) {
-      const found = s.items.find(i => i.path === location.pathname);
-      if (found) { currentPage = found.label; break; }
-    }
+  for (const s of NAV_SECTIONS) {
+    const found = s.items.find(i => i.path === location.pathname);
+    if (found) { currentPage = found.label; break; }
   }
 
   return (
@@ -185,21 +172,6 @@ export default function Layout() {
 
           {/* Nav list */}
           <ul className="navlist">
-
-            {/* Dashboard — top level */}
-            {DASHBOARD.roles.includes(role) && (
-              <li>
-                <NavLink to={DASHBOARD.path} className={({ isActive }) => isActive ? 'active' : undefined}>
-                  <span className="nav-item-icon">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-                      <rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
-                    </svg>
-                  </span>
-                  Dashboard
-                </NavLink>
-              </li>
-            )}
 
             {/* Grouped sections */}
             {NAV_SECTIONS.map(section => {
