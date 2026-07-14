@@ -313,6 +313,7 @@ export default function PurchaseOrders() {
                 <input
                   type="date"
                   value={poDate}
+                  min={todayStr()}
                   onChange={(e) => setPoDate(e.target.value)}
                 />
               </div>
@@ -322,8 +323,8 @@ export default function PurchaseOrders() {
                 <input
                   type="date"
                   value={poExpectedDate}
+                  min={poDate || todayStr()}
                   onChange={(e) => setPoExpectedDate(e.target.value)}
-                  min={poDate || undefined}
                 />
               </div>
             </div>

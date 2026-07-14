@@ -303,7 +303,7 @@ export default function PurchaseRequest() {
             <div className="formgrid">
               <div className="field">
                 <label>Date</label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                <input type="date" value={date} min={todayStr()} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div className="field">
                 <label>Project Name</label>
