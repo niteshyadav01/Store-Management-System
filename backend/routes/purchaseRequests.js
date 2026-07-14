@@ -4,7 +4,7 @@ const { nextSeq } = require('../models/Counter');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Roles that can raise a Purchase Request
-const CREATOR_ROLES = ['admin', 'inward', 'outward', 'manager'];
+const CREATOR_ROLES = ['admin', 'inward', 'outward', 'store', 'manager'];
 // Roles that can approve / reject / progress a Purchase Request
 const APPROVER_ROLES = ['admin', 'manager'];
 
@@ -38,12 +38,15 @@ function sanitizeItems(items) {
   return clean.length ? clean : null;
 }
 
+// Roles that can see ALL requests (not just their own)
+const VIEWER_ROLES = ['admin', 'purchase', 'manager', 'inward', 'outward', 'store'];
+
 // GET /api/purchase-requests
-// Admin / purchase team see every request. Everyone else sees only their own.
+// Admin / purchase / manager / inward / outward see every request. viewer sees only their own.
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const isReviewer = APPROVER_ROLES.includes(req.user.role);
-    const filter = isReviewer ? {} : { requestedByUsername: req.user.username };
+    const canViewAll = VIEWER_ROLES.includes(req.user.role);
+    const filter = canViewAll ? {} : { requestedByUsername: req.user.username };
     const list = await PurchaseRequest.find(filter).sort({ createdAt: -1 }).lean();
     res.json(list);
   } catch (err) { res.status(500).json({ error: err.message }); }

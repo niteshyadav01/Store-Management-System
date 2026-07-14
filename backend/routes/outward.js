@@ -11,7 +11,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/outward — single
-router.post('/', authMiddleware, requireRole('admin','outward'), async (req, res) => {
+router.post('/', authMiddleware, requireRole('admin','outward','store'), async (req, res) => {
   try {
     const entry = await Outward.create(req.body);
     res.status(201).json(entry);
@@ -19,7 +19,7 @@ router.post('/', authMiddleware, requireRole('admin','outward'), async (req, res
 });
 
 // POST /api/outward/bulk
-router.post('/bulk', authMiddleware, requireRole('admin','outward'), async (req, res) => {
+router.post('/bulk', authMiddleware, requireRole('admin','outward','store'), async (req, res) => {
   try {
     const { entries } = req.body;
     if (!Array.isArray(entries) || !entries.length)

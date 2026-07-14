@@ -84,7 +84,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/inward — single entry
-router.post('/', authMiddleware, requireRole('admin','inward','purchase'), async (req, res) => {
+router.post('/', authMiddleware, requireRole('admin','inward','purchase','store'), async (req, res) => {
   try {
     const data = pickFields(req.body, INWARD_FIELDS);
     if (!data.name)                             return res.status(400).json({ error: 'Material name is required.' });
@@ -104,7 +104,7 @@ router.post('/', authMiddleware, requireRole('admin','inward','purchase'), async
 });
 
 // POST /api/inward/bulk
-router.post('/bulk', authMiddleware, requireRole('admin','inward','purchase'), async (req, res) => {
+router.post('/bulk', authMiddleware, requireRole('admin','inward','purchase','store'), async (req, res) => {
   try {
     const { entries } = req.body;
     if (!Array.isArray(entries) || !entries.length)
@@ -144,8 +144,8 @@ router.patch('/:id', authMiddleware, requireRole('admin','purchase'), async (req
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/inward/:id — full edit (admin + inward team)
-router.put('/:id', authMiddleware, requireRole('admin','inward'), async (req, res) => {
+// PUT /api/inward/:id — full edit (admin + inward + store team)
+router.put('/:id', authMiddleware, requireRole('admin','inward','store'), async (req, res) => {
   try {
     const data = pickFields(req.body, INWARD_FIELDS);
     if (data.qty   !== undefined) data.qty   = parseFloat(data.qty)   || 0;
@@ -165,7 +165,7 @@ router.put('/:id', authMiddleware, requireRole('admin','inward'), async (req, re
 });
 
 // DELETE /api/inward/:id
-router.delete('/:id', authMiddleware, requireRole('admin','inward'), async (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin','inward','store'), async (req, res) => {
   try {
     const doc = await Inward.findByIdAndDelete(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found.' });

@@ -14,9 +14,9 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Inward Entry',       path: '/inward',            roles: ['admin','inward','manager'] },
-      { label: 'Outward Entry',      path: '/outward',           roles: ['admin','outward','manager'] },
-      { label: 'Purchase Requests',  path: '/purchase-requests', roles: ['admin','inward','outward','manager'] },
+      { label: 'Inward Entry',       path: '/inward',            roles: ['admin','inward','store','manager'] },
+      { label: 'Outward Entry',      path: '/outward',           roles: ['admin','outward','store','manager'] },
+      { label: 'Purchase Requests',  path: '/purchase-requests', roles: ['admin','inward','outward','store','manager'] },
     ],
   },
   {
@@ -32,7 +32,7 @@ const NAV_SECTIONS = [
       { label: 'Material List',   path: '/master',           roles: ['admin'] },
       { label: 'Price Entry',     path: '/price',            roles: ['admin','purchase'] },
       { label: 'Purchase Orders', path: '/purchase-orders',  roles: ['admin','purchase'] },
-      { label: 'PO Matching',     path: '/po-matching',      roles: ['admin','purchase','inward','manager'] },
+      { label: 'PO Matching',     path: '/po-matching',      roles: ['admin','purchase','inward','store','manager'] },
     ],
   },
   {
@@ -44,7 +44,7 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Live stock', path: '/stock',    roles: ['admin','purchase','inward','outward','manager','viewer'] },
+      { label: 'Live stock', path: '/stock',    roles: ['admin','purchase','inward','outward','store','manager','viewer'] },
       { label: 'Reports',        path: '/reports',  roles: ['admin','purchase'] },
     ],
   },
@@ -63,7 +63,7 @@ const NAV_SECTIONS = [
 ];
 
 // Dashboard is top-level (not in a group)
-const DASHBOARD = { label: 'Dashboard', path: '/dashboard', roles: ['admin','inward','outward','manager','purchase'] };
+const DASHBOARD = { label: 'Dashboard', path: '/dashboard', roles: ['admin','inward','outward','store','manager','purchase'] };
 
 export default function Layout() {
   const { user, logout } = useAuth();
