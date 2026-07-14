@@ -12,8 +12,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { formatNum, todayStr } from "../utils/helpers";
 
-const CREATOR_ROLES = ["admin", "inward", "outward", "manager"];
-const APPROVER_ROLES = ["admin", "manager"];
+const CREATOR_ROLES  = ["admin", "store", "store_manager"];
+const APPROVER_ROLES = ["admin", "store_manager"];
 
 const STATUS_LABEL = {
   pending: "Pending",

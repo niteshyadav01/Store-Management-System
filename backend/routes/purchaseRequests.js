@@ -4,9 +4,9 @@ const { nextSeq } = require('../models/Counter');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Roles that can raise a Purchase Request
-const CREATOR_ROLES = ['admin', 'inward', 'outward', 'store', 'manager'];
+const CREATOR_ROLES = ['admin', 'store', 'store_manager'];
 // Roles that can approve / reject / progress a Purchase Request
-const APPROVER_ROLES = ['admin', 'manager'];
+const APPROVER_ROLES = ['admin', 'store_manager'];
 
 // Valid lifecycle transitions
 const TRANSITIONS = {
@@ -39,7 +39,7 @@ function sanitizeItems(items) {
 }
 
 // Roles that can see ALL requests (not just their own)
-const VIEWER_ROLES = ['admin', 'purchase', 'manager', 'inward', 'outward', 'store'];
+const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store'];
 
 // GET /api/purchase-requests
 // Admin / purchase / manager / inward / outward see every request. viewer sees only their own.

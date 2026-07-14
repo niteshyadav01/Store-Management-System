@@ -76,12 +76,9 @@ export function exportXlsx(headers, rows, sheetName, fileName) {
 }
 
 export const ROLE_LABELS = {
-  admin:    'Admin',
-  inward:   'Inward team',
-  outward:  'Outward team',
-  store:    'Store team',
-  purchase: 'Purchase team',
-  manager:  'Manager',
-  viewer:   'Viewer',
-};
+  admin:         'Admin',
+  store:         'Store Team',
+  store_manager: 'Store Manager',
+  purchase:      'Purchase Team',
+  viewer:        'Viewer',
 };

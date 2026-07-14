@@ -16,17 +16,17 @@ import PoMatching from './pages/PoMatching';
 import PurchaseOrders from './pages/PurchaseOrders';
 
 const ROLE_ACCESS = {
-  dashboard:        ['admin', 'inward', 'outward', 'store', 'manager', 'purchase'],
+  dashboard:        ['admin', 'store', 'store_manager', 'purchase'],
   master:           ['admin'],
-  inward:           ['admin', 'inward', 'store', 'manager'],
-  outward:          ['admin', 'outward', 'store', 'manager'],
+  inward:           ['admin', 'store', 'store_manager'],
+  outward:          ['admin', 'store', 'store_manager'],
   price:            ['admin', 'purchase'],
-  stock:            ['admin', 'purchase', 'inward', 'outward', 'store', 'manager', 'viewer'],
+  stock:            ['admin', 'purchase', 'store', 'store_manager', 'viewer'],
   users:            ['admin'],
   reports:          ['admin', 'purchase'],
-  purchaseRequests: ['admin', 'inward', 'outward', 'store', 'manager'],
+  purchaseRequests: ['admin', 'store', 'store_manager'],
   purchaseOrders:   ['admin', 'purchase'],
-  poMatching:       ['admin', 'purchase', 'inward', 'store', 'manager'],
+  poMatching:       ['admin', 'purchase', 'store_manager'],
 };
 
 function getDefaultPath(role) {

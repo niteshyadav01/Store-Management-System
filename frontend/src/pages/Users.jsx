@@ -78,11 +78,9 @@ export default function Users() {
               <label>Role</label>
               <select value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>
                 <option value="admin">Admin — full access</option>
-                <option value="store">Store team — inward + outward</option>
-                <option value="inward">Inward team only</option>
-                <option value="outward">Outward team only</option>
-                <option value="manager">Manager — approve requests</option>
-                <option value="purchase">Purchase team</option>
+                <option value="store">Store Team — inward + outward</option>
+                <option value="store_manager">Store Manager — approve requests</option>
+                <option value="purchase">Purchase Team</option>
                 <option value="viewer">Viewer — read only</option>
               </select>
             </div>
