@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   getMaster,
@@ -12,7 +13,7 @@ import { useAuth } from "../context/AuthContext";
 import { formatNum, todayStr } from "../utils/helpers";
 
 const CREATOR_ROLES = ["admin", "inward", "outward", "manager"];
-const APPROVER_ROLES = ["admin", "purchase"];
+const APPROVER_ROLES = ["admin", "manager"];
 
 const STATUS_LABEL = {
   pending: "Pending",
@@ -23,25 +24,103 @@ const STATUS_LABEL = {
   received: "Received",
 };
 const STATUS_TABS = [
-  "all",
-  "pending",
-  "approved",
-  "partial",
-  "ordered",
-  "received",
-  "rejected",
+  "all", "pending", "approved", "partial", "ordered", "received", "rejected",
 ];
 
 const emptyItem = () => ({
   _key: Math.random().toString(36).slice(2),
-  name: "",
-  type: "",
-  code: "",
-  category: "",
-  uom: "",
-  qty: "",
-  remarks: "",
+  name: "", type: "", code: "", category: "", uom: "", qty: "", remarks: "",
 });
+
+// ── Searchable select component (portal-based, never clipped) ─────────────────
+function SearchSelect({ options, value, onChange, placeholder }) {
+  const [search, setSearch] = useState('');
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const inputRef = useRef();
+  const panelRef = useRef();
+
+  useEffect(() => {
+    function handler(e) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target) &&
+        inputRef.current && !inputRef.current.contains(e.target)
+      ) setOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (open && inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const top = spaceBelow < 220 ? rect.top - 220 : rect.bottom + 2;
+      setPos({ top, left: rect.left, width: rect.width });
+    }
+  }, [open]);
+
+  const filtered = options.filter(o =>
+    o.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function select(val) {
+    onChange(val);
+    setSearch('');
+    setOpen(false);
+  }
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        value={open ? search : (value || '')}
+        onFocus={() => { setOpen(true); setSearch(''); }}
+        onChange={e => { setSearch(e.target.value); setOpen(true); }}
+        placeholder={placeholder || '— Search —'}
+        autoComplete="off"
+        style={{
+          width: '100%', padding: '6px 10px', fontSize: 13,
+          border: '1.5px solid var(--line)', borderRadius: 'var(--radius)',
+          fontFamily: 'Poppins, sans-serif', background: '#fff', color: 'var(--ink)',
+        }}
+      />
+      {open && createPortal(
+        <div
+          ref={panelRef}
+          style={{
+            position: 'fixed',
+            top: pos.top, left: pos.left, width: pos.width,
+            zIndex: 99999,
+            background: '#fff', border: '1px solid var(--line)',
+            borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,.15)',
+            maxHeight: 220, overflowY: 'auto',
+          }}
+        >
+          {filtered.length === 0 && (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: '#8a8270' }}>No results</div>
+          )}
+          {filtered.map(o => (
+            <div
+              key={o}
+              onMouseDown={() => select(o)}
+              style={{
+                padding: '8px 12px', fontSize: 13, cursor: 'pointer',
+                background: o === value ? 'var(--teal-light)' : '#fff',
+                color: o === value ? 'var(--teal-dark)' : 'var(--ink)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--paper-dim)'}
+              onMouseLeave={e => e.currentTarget.style.background = o === value ? 'var(--teal-light)' : '#fff'}
+            >
+              {o}
+            </div>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 export default function PurchaseRequest() {
   const { user } = useAuth();
@@ -69,9 +148,11 @@ export default function PurchaseRequest() {
     setMaster(m);
     setRequests(r);
   }, []);
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
+
+  const uniqueTypes = [...new Set(master.map(m => m.type).filter(Boolean))].sort();
+  const uniqueCodes = [...new Set(master.map(m => m.code).filter(Boolean))].sort();
+  const uniqueCategories = [...new Set(master.map(m => m.category).filter(Boolean))].sort();
 
   function resetForm() {
     setDate(todayStr());
@@ -83,10 +164,9 @@ export default function PurchaseRequest() {
   }
 
   function updateItem(key, patch) {
-    setItems((list) =>
-      list.map((it) => (it._key === key ? { ...it, ...patch } : it)),
-    );
+    setItems((list) => list.map((it) => (it._key === key ? { ...it, ...patch } : it)));
   }
+
   function autofillItem(key, name) {
     const m = master.find((x) => x.name === name);
     updateItem(key, {
@@ -97,13 +177,26 @@ export default function PurchaseRequest() {
       uom: m?.uom || "",
     });
   }
+
+  function autofillFromType(key, type) {
+    updateItem(key, { type, name: '', code: '', category: '', uom: '' });
+  }
+
+  function autofillFromCode(key, code) {
+    const m = master.find(x => x.code === code);
+    updateItem(key, { code, ...(m ? { name: m.name, type: m.type, category: m.category, uom: m.uom } : {}) });
+  }
+
+  function autofillFromCategory(key, category) {
+    updateItem(key, { category, name: '', code: '', uom: '' });
+  }
+
   function addItemRow() {
     setItems((list) => [...list, emptyItem()]);
   }
+
   function removeItemRow(key) {
-    setItems((list) =>
-      list.length > 1 ? list.filter((it) => it._key !== key) : list,
-    );
+    setItems((list) => list.length > 1 ? list.filter((it) => it._key !== key) : list);
   }
 
   async function handleSubmit(e) {
@@ -111,20 +204,13 @@ export default function PurchaseRequest() {
     setMsg({ text: "", ok: true });
     const valid = items.filter((it) => it.name && parseFloat(it.qty) > 0);
     if (!valid.length) {
-      setMsg({
-        text: "Add at least one item with a material and quantity.",
-        ok: false,
-      });
+      setMsg({ text: "Add at least one item with a material and quantity.", ok: false });
       return;
     }
-
     setLoading(true);
     try {
       const payload = {
-        date,
-        projectName,
-        requestFrom,
-        remarks,
+        date, projectName, requestFrom, remarks,
         items: valid.map((it) => ({ ...it, qty: parseFloat(it.qty) })),
       };
       if (editingId) {
@@ -155,53 +241,41 @@ export default function PurchaseRequest() {
         ...it,
         _key: Math.random().toString(36).slice(2),
         qty: String(it.qty),
-      })),
+      }))
     );
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleCancel(pr) {
-    if (
-      !window.confirm(`Cancel request ${pr.prNumber}? This cannot be undone.`)
-    )
-      return;
+    if (!window.confirm(`Cancel request ${pr.prNumber}? This cannot be undone.`)) return;
     try {
       await deletePurchaseRequest(pr._id);
       load();
-    } catch (err) {
-      alert(err.message);
-    }
+    } catch (err) { alert(err.message); }
   }
 
   async function handleApprove(pr) {
     try {
       await setPurchaseRequestStatus(pr._id, { status: "approved" });
       load();
-    } catch (err) {
-      alert(err.message);
-    }
+    } catch (err) { alert(err.message); }
   }
+
   async function handleReject(pr) {
-    const note = window.prompt(
-      "Reason for rejecting this request (optional):",
-      "",
-    );
+    const note = window.prompt("Reason for rejecting this request (optional):", "");
     if (note === null) return;
     try {
       await setPurchaseRequestStatus(pr._id, { status: "rejected", note });
       load();
-    } catch (err) {
-      alert(err.message);
-    }
+    } catch (err) { alert(err.message); }
   }
+
   async function handleReceive(pr) {
     if (!window.confirm(`Mark ${pr.prNumber} as received?`)) return;
     try {
       await setPurchaseRequestStatus(pr._id, { status: "received" });
       load();
-    } catch (err) {
-      alert(err.message);
-    }
+    } catch (err) { alert(err.message); }
   }
 
   const visible =
@@ -224,22 +298,17 @@ export default function PurchaseRequest() {
 
       {canCreate && (
         <div className="card">
-          <h3>{editingId ? `Edit request` : "New purchase request"}</h3>
+          <h3>{editingId ? "Edit request" : "New purchase request"}</h3>
           <form onSubmit={handleSubmit}>
             <div className="formgrid">
               <div className="field">
                 <label>Date</label>
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
+                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div className="field">
                 <label>Project Name</label>
                 <input
-                  type="text"
-                  value={projectName}
+                  type="text" value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
                   placeholder="e.g. Site A, Phase 2"
                 />
@@ -247,8 +316,7 @@ export default function PurchaseRequest() {
               <div className="field">
                 <label>Request From</label>
                 <input
-                  type="text"
-                  value={requestFrom}
+                  type="text" value={requestFrom}
                   onChange={(e) => setRequestFrom(e.target.value)}
                   placeholder="e.g. Civil Dept, Mr. Sharma"
                 />
@@ -259,84 +327,176 @@ export default function PurchaseRequest() {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ minWidth: 200 }}>Material</th>
-                    <th>Type</th>
-                    <th>Code</th>
-                    <th>Category</th>
+                    <th style={{ minWidth: 220 }}>Material</th>
+                    <th style={{ minWidth: 160 }}>Type</th>
+                    <th style={{ minWidth: 180 }}>Code</th>
+                    <th style={{ minWidth: 180 }}>Category</th>
                     <th>UOM</th>
                     <th style={{ width: 100 }}>Qty</th>
                     <th style={{ minWidth: 160 }}>Item remarks</th>
-                    <th></th>
+                    <th style={{ minWidth: 100 }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((it) => (
-                    <tr key={it._key}>
-                      <td>
-                        <select
-                          value={it.name}
-                          onChange={(e) =>
-                            autofillItem(it._key, e.target.value)
-                          }
-                        >
-                          <option value="">— Select material —</option>
-                          {master.map((m) => (
-                            <option key={m._id} value={m.name}>
-                              {m.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        {it.type || (
-                          <span style={{ color: "var(--text-3)" }}>—</span>
-                        )}
-                      </td>
-                      <td className="mono">{it.code || "—"}</td>
-                      <td>{it.category || "—"}</td>
-                      <td>{it.uom || "—"}</td>
-                      <td>
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={it.qty}
-                          onChange={(e) =>
-                            updateItem(it._key, { qty: e.target.value })
-                          }
-                          placeholder="0"
-                        />
-                      </td>
-                      <td>
-                        <input
-                          value={it.remarks}
-                          onChange={(e) =>
-                            updateItem(it._key, { remarks: e.target.value })
-                          }
-                          placeholder="Optional"
-                        />
-                      </td>
-                      <td>
-                        <button
-                          type="button"
-                          className="btn-del btn-sm itemtable-row-remove"
-                          onClick={() => removeItemRow(it._key)}
-                          disabled={items.length === 1}
-                        >
-                          ✕
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {items.map((it) => {
+                    // For each field, filter master by ALL OTHER selected fields
+                    const byAll = master
+                      .filter(m => (!it.type || m.type === it.type))
+                      .filter(m => (!it.category || m.category === it.category))
+                      .filter(m => (!it.code || m.code === it.code))
+                      .filter(m => (!it.name || m.name === it.name));
+
+                    // Name options — filter by type + category + code
+                    const nameOptions = [...new Set(
+                      master
+                        .filter(m => (!it.type || m.type === it.type))
+                        .filter(m => (!it.category || m.category === it.category))
+                        .filter(m => (!it.code || m.code === it.code))
+                        .map(m => m.name).filter(Boolean)
+                    )].sort();
+
+                    // Type options — filter by name + category + code
+                    const typeOptions = [...new Set(
+                      master
+                        .filter(m => (!it.name || m.name === it.name))
+                        .filter(m => (!it.category || m.category === it.category))
+                        .filter(m => (!it.code || m.code === it.code))
+                        .map(m => m.type).filter(Boolean)
+                    )].sort();
+
+                    // Category options — filter by name + type + code
+                    const categoryOptions = [...new Set(
+                      master
+                        .filter(m => (!it.name || m.name === it.name))
+                        .filter(m => (!it.type || m.type === it.type))
+                        .filter(m => (!it.code || m.code === it.code))
+                        .map(m => m.category).filter(Boolean)
+                    )].sort();
+
+                    // Code options — filter by name + type + category
+                    const codeOptions = [...new Set(
+                      master
+                        .filter(m => (!it.name || m.name === it.name))
+                        .filter(m => (!it.type || m.type === it.type))
+                        .filter(m => (!it.category || m.category === it.category))
+                        .map(m => m.code).filter(Boolean)
+                    )].sort();
+
+                    return (
+                      <tr key={it._key}>
+                        <td>
+                          <SearchSelect
+                            options={nameOptions}
+                            value={it.name}
+                            onChange={(val) => {
+                              const m = master.find(x => x.name === val);
+                              updateItem(it._key, {
+                                name: val,
+                                type: m?.type || '',
+                                code: m?.code || '',
+                                category: m?.category || '',
+                                uom: m?.uom || '',
+                              });
+                            }}
+                            placeholder="— Search material —"
+                          />
+                        </td>
+                        <td>
+                          <SearchSelect
+                            options={typeOptions}
+                            value={it.type}
+                            onChange={(val) => {
+                              updateItem(it._key, {
+                                type: val,
+                                // only clear fields not consistent with new type
+                                name: it.name && master.find(m => m.name === it.name && m.type === val) ? it.name : '',
+                                code: it.code && master.find(m => m.code === it.code && m.type === val) ? it.code : '',
+                                category: it.category && master.find(m => m.category === it.category && m.type === val) ? it.category : '',
+                                uom: '',
+                              });
+                            }}
+                            placeholder="— Search type —"
+                          />
+                        </td>
+                        <td>
+                          <SearchSelect
+                            options={codeOptions}
+                            value={it.code}
+                            onChange={(val) => {
+                              const m = master.find(x => x.code === val);
+                              updateItem(it._key, {
+                                code: val,
+                                name: m?.name || '',
+                                type: m?.type || '',
+                                category: m?.category || '',
+                                uom: m?.uom || '',
+                              });
+                            }}
+                            placeholder="— Search code —"
+                          />
+                        </td>
+                        <td>
+                          <SearchSelect
+                            options={categoryOptions}
+                            value={it.category}
+                            onChange={(val) => {
+                              updateItem(it._key, {
+                                category: val,
+                                // only clear fields not consistent with new category
+                                name: it.name && master.find(m => m.name === it.name && m.category === val) ? it.name : '',
+                                code: it.code && master.find(m => m.code === it.code && m.category === val) ? it.code : '',
+                                type: it.type && master.find(m => m.type === it.type && m.category === val) ? it.type : '',
+                                uom: '',
+                              });
+                            }}
+                            placeholder="— Search category —"
+                          />
+                        </td>
+                        <td>{it.uom || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                        <td>
+                          <input
+                            type="number" min="0" step="any"
+                            value={it.qty}
+                            onChange={(e) => updateItem(it._key, { qty: e.target.value })}
+                            placeholder="0"
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={it.remarks}
+                            onChange={(e) => updateItem(it._key, { remarks: e.target.value })}
+                            placeholder="Optional"
+                          />
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              title="Clear filters for this row"
+                              onClick={() => updateItem(it._key, {
+                                name: '', type: '', code: '', category: '', uom: ''
+                              })}
+                            >
+                              Clear
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-del btn-sm itemtable-row-remove"
+                              onClick={() => removeItemRow(it._key)}
+                              disabled={items.length === 1}
+                            >✕</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+
             <div className="actionrow">
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={addItemRow}
-              >
+              <button type="button" className="btn btn-ghost" onClick={addItemRow}>
                 + Add item
               </button>
             </div>
@@ -344,8 +504,7 @@ export default function PurchaseRequest() {
             <div className="field full" style={{ marginTop: 16 }}>
               <label>Overall remarks</label>
               <textarea
-                rows="2"
-                value={remarks}
+                rows="2" value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 placeholder="Reason for this request, project, urgency, etc."
               />
@@ -353,25 +512,15 @@ export default function PurchaseRequest() {
 
             <div className="actionrow">
               <button className="btn btn-in" type="submit" disabled={loading}>
-                {loading
-                  ? "Saving…"
-                  : editingId
-                    ? "Update request"
-                    : "Submit request"}
+                {loading ? "Saving…" : editingId ? "Update request" : "Submit request"}
               </button>
               {editingId && (
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={resetForm}
-                >
+                <button type="button" className="btn btn-ghost" onClick={resetForm}>
                   Cancel edit
                 </button>
               )}
               {msg.text && (
-                <span className={`msg ${msg.ok ? "ok" : "err"}`}>
-                  {msg.text}
-                </span>
+                <span className={`msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>
               )}
             </div>
           </form>
@@ -384,26 +533,11 @@ export default function PurchaseRequest() {
           <span className="pill-count">{visible.length}</span>
         </h3>
 
-        <div
-          style={{
-            marginTop: -6,
-            marginBottom: 14,
-            overflowX: "auto",
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: 6,
-              flexWrap: "nowrap",
-              paddingBottom: 2,
-            }}
-          >
+        <div style={{ marginTop: -6, marginBottom: 14, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", paddingBottom: 2 }}>
             {STATUS_TABS.map((s) => (
               <button
-                key={s}
-                type="button"
+                key={s} type="button"
                 className={`btn btn-sm ${statusFilter === s ? "btn-in" : "btn-ghost"}`}
                 onClick={() => setStatusFilter(s)}
                 style={{ flexShrink: 0 }}
@@ -435,85 +569,36 @@ export default function PurchaseRequest() {
                   <React.Fragment key={pr._id}>
                     <tr
                       style={{ cursor: "pointer" }}
-                      onClick={() =>
-                        setExpanded((x) => (x === pr._id ? null : pr._id))
-                      }
+                      onClick={() => setExpanded((x) => (x === pr._id ? null : pr._id))}
                     >
-                      <td className="mono" style={{ fontWeight: 600 }}>
-                        {pr.prNumber}
-                      </td>
+                      <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
                       <td>{pr.date}</td>
-                      <td>
-                        {pr.projectName || (
-                          <span style={{ color: "var(--text-3)" }}>—</span>
-                        )}
-                      </td>
-                      <td>
-                        {pr.requestFrom || (
-                          <span style={{ color: "var(--text-3)" }}>—</span>
-                        )}
-                      </td>
+                      <td>{pr.projectName || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
+                      <td>{pr.requestFrom || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                       <td>{pr.requestedByName}</td>
                       <td>{pr.items.length}</td>
                       <td>
-                        <span className={`tag ${pr.status}`}>
-                          {STATUS_LABEL[pr.status]}
-                        </span>
+                        <span className={`tag ${pr.status}`}>{STATUS_LABEL[pr.status]}</span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        <div
-                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-                        >
-                          {pr.status === "pending" &&
-                            (isOwner || user?.role === "admin") && (
-                              <>
-                                <button
-                                  className="btn btn-sm btn-ghost"
-                                  onClick={() => startEdit(pr)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className="btn-del btn-sm"
-                                  onClick={() => handleCancel(pr)}
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            )}
-                          {canReview && pr.status === "pending" && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {pr.status === "pending" && (isOwner || user?.role === "admin") && (
                             <>
-                              <button
-                                className="btn btn-sm btn-in"
-                                onClick={() => handleApprove(pr)}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                className="btn-del btn-sm"
-                                onClick={() => handleReject(pr)}
-                              >
-                                Reject
-                              </button>
+                              <button className="btn btn-sm btn-ghost" onClick={() => startEdit(pr)}>Edit</button>
+                              <button className="btn-del btn-sm" onClick={() => handleCancel(pr)}>Cancel</button>
                             </>
                           )}
-                          {canReview &&
-                            (pr.status === "approved" ||
-                              pr.status === "partial") && (
-                              <button
-                                className="btn btn-sm btn-in"
-                                onClick={() => navigate(`/purchase-orders`)}
-                              >
-                                Create PO
-                              </button>
-                            )}
+                          {canReview && pr.status === "pending" && (
+                            <>
+                              <button className="btn btn-sm btn-in" onClick={() => handleApprove(pr)}>Approve</button>
+                              <button className="btn-del btn-sm" onClick={() => handleReject(pr)}>Reject</button>
+                            </>
+                          )}
+                          {canReview && (pr.status === "approved" || pr.status === "partial") && (
+                            <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Create PO</button>
+                          )}
                           {canReview && pr.status === "ordered" && (
-                            <button
-                              className="btn btn-sm btn-in"
-                              onClick={() => handleReceive(pr)}
-                            >
-                              Mark received
-                            </button>
+                            <button className="btn btn-sm btn-in" onClick={() => handleReceive(pr)}>Mark received</button>
                           )}
                         </div>
                       </td>
@@ -521,15 +606,9 @@ export default function PurchaseRequest() {
 
                     {expanded === pr._id && (
                       <tr>
-                        <td
-                          colSpan={8}
-                          style={{ background: "var(--paper-dim)" }}
-                        >
+                        <td colSpan={8} style={{ background: "var(--paper-dim)" }}>
                           <div style={{ padding: "14px 6px" }}>
-                            <div
-                              className="tablewrap"
-                              style={{ marginBottom: 12 }}
-                            >
+                            <div className="tablewrap" style={{ marginBottom: 12 }}>
                               <table>
                                 <thead>
                                   <tr>
@@ -548,9 +627,7 @@ export default function PurchaseRequest() {
                                       <td className="mono">{it.code || "—"}</td>
                                       <td>{it.category || "—"}</td>
                                       <td>{it.uom || "—"}</td>
-                                      <td className="num">
-                                        {formatNum(it.qty)}
-                                      </td>
+                                      <td className="num">{formatNum(it.qty)}</td>
                                       <td>{it.remarks || "—"}</td>
                                     </tr>
                                   ))}
@@ -565,51 +642,25 @@ export default function PurchaseRequest() {
                             )}
                             {(pr.projectName || pr.requestFrom) && (
                               <p style={{ fontSize: 12.5, marginBottom: 8 }}>
-                                {pr.projectName && (
-                                  <>
-                                    <strong>Project Name:</strong>{" "}
-                                    {pr.projectName}&nbsp;&nbsp;
-                                  </>
-                                )}
-                                {pr.requestFrom && (
-                                  <>
-                                    <strong>Request From:</strong>{" "}
-                                    {pr.requestFrom}
-                                  </>
-                                )}
+                                {pr.projectName && <><strong>Project Name:</strong> {pr.projectName}&nbsp;&nbsp;</>}
+                                {pr.requestFrom && <><strong>Request From:</strong> {pr.requestFrom}</>}
                               </p>
                             )}
                             {pr.status === "rejected" && pr.rejectReason && (
-                              <p
-                                style={{
-                                  fontSize: 12.5,
-                                  marginBottom: 8,
-                                  color: "var(--red)",
-                                }}
-                              >
-                                <strong>Rejection reason:</strong>{" "}
-                                {pr.rejectReason}
+                              <p style={{ fontSize: 12.5, marginBottom: 8, color: "var(--red)" }}>
+                                <strong>Rejection reason:</strong> {pr.rejectReason}
                               </p>
                             )}
                             {(pr.poNumber || pr.vendor) && (
                               <p style={{ fontSize: 12.5, marginBottom: 8 }}>
-                                <strong>PO number:</strong> {pr.poNumber || "—"}{" "}
-                                &nbsp;&nbsp;
+                                <strong>PO number:</strong> {pr.poNumber || "—"}&nbsp;&nbsp;
                                 <strong>Vendor:</strong> {pr.vendor || "—"}
                               </p>
                             )}
-
-                            <div
-                              style={{
-                                fontSize: 11.5,
-                                color: "#8a8270",
-                                lineHeight: 1.7,
-                              }}
-                            >
+                            <div style={{ fontSize: 11.5, color: "#8a8270", lineHeight: 1.7 }}>
                               {pr.history.map((h, i) => (
                                 <div key={i}>
-                                  • {STATUS_LABEL[h.status]} by {h.byName} —{" "}
-                                  {new Date(h.at).toLocaleString("en-IN")}
+                                  • {STATUS_LABEL[h.status]} by {h.byName} — {new Date(h.at).toLocaleString("en-IN")}
                                   {h.note ? ` — ${h.note}` : ""}
                                 </div>
                               ))}
@@ -627,14 +678,8 @@ export default function PurchaseRequest() {
 
         {!visible.length && (
           <div className="empty">
-            No purchase requests
-            {statusFilter !== "all"
-              ? ` with status "${STATUS_LABEL[statusFilter]}"`
-              : ""}
-            .
-            {canCreate && (
-              <p>Use the form above to raise your first request.</p>
-            )}
+            No purchase requests{statusFilter !== "all" ? ` with status "${STATUS_LABEL[statusFilter]}"` : ""}.
+            {canCreate && <p>Use the form above to raise your first request.</p>}
           </div>
         )}
       </div>

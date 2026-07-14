@@ -6,7 +6,7 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 // Roles that can raise a Purchase Request
 const CREATOR_ROLES = ['admin', 'inward', 'outward', 'manager'];
 // Roles that can approve / reject / progress a Purchase Request
-const APPROVER_ROLES = ['admin', 'purchase'];
+const APPROVER_ROLES = ['admin', 'manager'];
 
 // Valid lifecycle transitions
 const TRANSITIONS = {
