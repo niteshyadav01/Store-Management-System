@@ -42,7 +42,7 @@ function sanitizeItems(items) {
 const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store'];
 
 // GET /api/purchase-requests
-// Admin / purchase / manager / inward / outward see every request. viewer sees only their own.
+// Admin / purchase / store_manager / store see all requests. viewer sees only their own.
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const canViewAll = VIEWER_ROLES.includes(req.user.role);

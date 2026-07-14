@@ -23,7 +23,7 @@ const ROLE_ACCESS = {
   price:            ['admin', 'purchase'],
   stock:            ['admin', 'purchase', 'store', 'store_manager', 'viewer'],
   users:            ['admin'],
-  reports:          ['admin', 'purchase'],
+  reports:          ['admin', 'purchase', 'store_manager'],
   purchaseRequests: ['admin', 'store', 'store_manager'],
   purchaseOrders:   ['admin', 'purchase'],
   poMatching:       ['admin', 'purchase', 'store_manager'],

@@ -129,7 +129,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Stat cards ─────────────────────────────────────────────────────── */}
-      <div className="statrow">
+      <div className="statrow" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
 
         {[
           { key: 'pending',       label: 'Pending PRs',           value: counts.pending || 0,    color: (counts.pending || 0) > 0 ? 'var(--red)' : undefined, cls: '' },
@@ -147,12 +147,13 @@ export default function Dashboard() {
               cursor: 'pointer',
               outline: activeFilter === card.key ? '2px solid var(--teal)' : undefined,
               outlineOffset: 2,
+              minWidth: 0,
             }}
             onClick={() => handleCardClick(card.key)}
             title={activeFilter === card.key ? 'Click to clear filter' : `Click to filter by ${card.label}`}
           >
             <div className="label">{card.label}</div>
-            <div className="value" style={{ color: card.color || 'inherit' }}>{card.value}</div>
+            <div className="value" style={{ color: card.color || 'inherit', fontSize: 'clamp(18px, 2vw, 30px)' }}>{card.value}</div>
             {activeFilter === card.key && (
               <div style={{ fontSize: 10, color: 'var(--teal)', fontWeight: 600, marginTop: 4, letterSpacing: '0.5px' }}>
                 FILTERED ✓

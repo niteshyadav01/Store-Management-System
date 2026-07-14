@@ -207,18 +207,18 @@ export default function StockOverview() {
         </div>
       </div>
 
-      <div className="statrow">
+      <div className="statrow" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
         <div className="stat">
           <div className="label">Materials tracked</div>
           <div className="value">{master.length}</div>
         </div>
         <div className="stat teal">
           <div className="label">Total inward qty</div>
-          <div className="value">{formatNum(totalIn)}</div>
+          <div className="value" style={{ fontSize: 'clamp(16px, 2vw, 28px)' }}>{formatNum(totalIn)}</div>
         </div>
         <div className="stat rust">
           <div className="label">Total outward qty</div>
-          <div className="value">{formatInt(totalOut)}</div>
+          <div className="value" style={{ fontSize: 'clamp(16px, 2vw, 28px)' }}>{formatInt(totalOut)}</div>
         </div>
         <div
           className="stat"
@@ -230,12 +230,14 @@ export default function StockOverview() {
           title={lowCount > 0 ? 'Click to show only low stock items in the table below' : undefined}
         >
           <div className="label">Low stock</div>
-          <div className="value" style={{color: lowCount > 0 ? 'var(--red)' : 'inherit'}}>{lowCount}</div>
+          <div className="value" style={{ color: lowCount > 0 ? 'var(--red)' : 'inherit' }}>{lowCount}</div>
         </div>
         {canSeePrice && (
           <div className="stat teal">
-            <div className="label">Total stock value (avg price × stock qty)</div>
-            <div className="value">{'₹' + Math.round(totalVal).toLocaleString('en-IN')}</div>
+            <div className="label">Total stock value</div>
+            <div className="value" style={{ fontSize: 'clamp(14px, 1.8vw, 26px)' }}>
+              {'₹' + Math.round(totalVal).toLocaleString('en-IN')}
+            </div>
           </div>
         )}
       </div>

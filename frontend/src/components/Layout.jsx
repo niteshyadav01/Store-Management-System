@@ -14,11 +14,12 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Dashboard',          path: '/dashboard',         roles: ['admin','store','store_manager','purchase'] },
-      { label: 'Live Stock',         path: '/stock',             roles: ['admin','purchase','store','store_manager','viewer'] },
+      { label: 'Dashboard',          path: '/dashboard',         roles: ['admin','store','store_manager'] },
+      { label: 'Live Stock',         path: '/stock',             roles: ['admin','store','store_manager','viewer'] },
       { label: 'Inward Entry',       path: '/inward',            roles: ['admin','store','store_manager'] },
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
       { label: 'Purchase Requests',  path: '/purchase-requests', roles: ['admin','store','store_manager'] },
+      { label: 'PO Matching',        path: '/po-matching',       roles: ['admin','store_manager'] },
     ],
   },
   {
@@ -31,11 +32,24 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Material List',   path: '/master',           roles: ['admin'] },
-      { label: 'Price Entry',     path: '/price',            roles: ['admin','purchase'] },
-      { label: 'Purchase Orders', path: '/purchase-orders',  roles: ['admin','purchase'] },
-      { label: 'PO Matching',     path: '/po-matching',      roles: ['admin','purchase','store_manager'] },
-      { label: 'Reports',         path: '/reports',          roles: ['admin','purchase'] },
+      { label: 'Dashboard',       path: '/dashboard',          roles: ['admin','purchase'] },
+      { label: 'Live Stock',      path: '/stock',              roles: ['admin','purchase'] },
+      { label: 'Material List',   path: '/master',             roles: ['admin'] },
+      { label: 'Price Entry',     path: '/price',              roles: ['admin','purchase'] },
+      { label: 'Purchase Orders', path: '/purchase-orders',    roles: ['admin','purchase'] },
+      { label: 'PO Matching',     path: '/po-matching',        roles: ['admin','purchase','store_manager'] },
+    ],
+  },
+  {
+    label: 'Reports',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/>
+        <line x1="6" y1="20" x2="6" y2="14"/>
+      </svg>
+    ),
+    items: [
+      { label: 'Reports', path: '/reports', roles: ['admin','purchase','store_manager'] },
     ],
   },
   {
@@ -52,8 +66,11 @@ const NAV_SECTIONS = [
   },
 ];
 
-// Dashboard is now inside the Store section — no separate top-level entry needed
-const DASHBOARD = null;
+// Top-level links (above all sections) — visible to admin only
+const TOP_LINKS = [
+  { label: 'Dashboard', path: '/dashboard', roles: ['admin'] },
+  { label: 'Live Stock', path: '/stock',    roles: ['admin'] },
+];
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -172,6 +189,16 @@ export default function Layout() {
 
           {/* Nav list */}
           <ul className="navlist">
+
+            {/* Top-level links — Dashboard + Live Stock (admin only, above all sections) */}
+            {TOP_LINKS.filter(l => l.roles.includes(role)).map(link => (
+              <li key={link.path}>
+                <NavLink to={link.path} className={({ isActive }) => isActive ? 'active' : undefined}>
+                  <span className="nav-sub-dot" />
+                  {link.label}
+                </NavLink>
+              </li>
+            ))}
 
             {/* Grouped sections */}
             {NAV_SECTIONS.map(section => {

@@ -8,6 +8,8 @@ import {
   updatePurchaseRequest,
   deletePurchaseRequest,
   setPurchaseRequestStatus,
+  getInward,
+  getOutward,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, todayStr } from "../utils/helpers";
@@ -29,7 +31,7 @@ const STATUS_TABS = [
 
 const emptyItem = () => ({
   _key: Math.random().toString(36).slice(2),
-  name: "", type: "", code: "", category: "", uom: "", qty: "", remarks: "",
+  name: "", type: "", code: "", category: "", uom: "", qty: "", projectName: "", remarks: "",
 });
 
 // ── Searchable select component (portal-based, never clipped) ─────────────────
@@ -132,10 +134,8 @@ export default function PurchaseRequest() {
   const [requests, setRequests] = useState([]);
 
   const [date, setDate] = useState(todayStr());
-  const [projectName, setProjectName] = useState("");
   const [requestFrom, setRequestFrom] = useState("");
   const [items, setItems] = useState([emptyItem()]);
-  const [remarks, setRemarks] = useState("");
   const [editingId, setEditingId] = useState(null);
 
   const [msg, setMsg] = useState({ text: "", ok: true });
@@ -143,10 +143,25 @@ export default function PurchaseRequest() {
   const [expanded, setExpanded] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
 
+  const [stockMap, setStockMap] = useState({});
+
   const load = useCallback(async () => {
-    const [m, r] = await Promise.all([getMaster(), getPurchaseRequests()]);
+    const [m, r, inw, out] = await Promise.all([
+      getMaster(), getPurchaseRequests(), getInward(), getOutward(),
+    ]);
     setMaster(m);
     setRequests(r);
+    // Build balance map: inward - outward per material
+    const inTotals = {}, outTotals = {};
+    (Array.isArray(inw) ? inw : (inw?.entries ?? [])).forEach(e => {
+      inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+    });
+    (Array.isArray(out) ? out : (out?.entries ?? [])).forEach(e => {
+      outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+    });
+    const map = {};
+    m.forEach(mat => { map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0); });
+    setStockMap(map);
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -156,10 +171,8 @@ export default function PurchaseRequest() {
 
   function resetForm() {
     setDate(todayStr());
-    setProjectName("");
     setRequestFrom("");
     setItems([emptyItem()]);
-    setRemarks("");
     setEditingId(null);
   }
 
@@ -209,8 +222,10 @@ export default function PurchaseRequest() {
     }
     setLoading(true);
     try {
+      const uniqueProjectNames = [...new Set(valid.map((it) => it.projectName).filter(Boolean))];
       const payload = {
-        date, projectName, requestFrom, remarks,
+        date, requestFrom,
+        projectName: uniqueProjectNames.join(", "),
         items: valid.map((it) => ({ ...it, qty: parseFloat(it.qty) })),
       };
       if (editingId) {
@@ -233,14 +248,13 @@ export default function PurchaseRequest() {
   function startEdit(pr) {
     setEditingId(pr._id);
     setDate(pr.date);
-    setProjectName(pr.projectName || "");
     setRequestFrom(pr.requestFrom || "");
-    setRemarks(pr.remarks || "");
     setItems(
       pr.items.map((it) => ({
         ...it,
         _key: Math.random().toString(36).slice(2),
         qty: String(it.qty),
+        projectName: it.projectName || pr.projectName || "",
       }))
     );
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -285,6 +299,42 @@ export default function PurchaseRequest() {
 
   return (
     <>
+      {/* Responsive layout overrides — scoped to this page */}
+      <style>{`
+        .pr-formgrid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 10px 14px;
+        }
+        .pr-formgrid .field { min-width: 0; }
+        .pr-formgrid .field input,
+        .pr-formgrid .field select {
+          width: 100%;
+          box-sizing: border-box;
+        }
+
+        .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        .actionrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+
+        @media (max-width: 900px) {
+          .pr-formgrid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 600px) {
+          .pagehead { flex-direction: column; align-items: flex-start; gap: 8px; }
+          .card { padding: 12px; }
+          .itemtable table { min-width: 1050px; }
+          .actionrow { flex-direction: column; align-items: stretch; }
+          .actionrow .btn { width: 100%; }
+        }
+
+        @media (max-width: 420px) {
+          .card h3 { font-size: 15px; }
+          .pagehead-text h2 { font-size: 18px; }
+        }
+      `}</style>
+
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>Purchase Requests</h2>
@@ -300,18 +350,10 @@ export default function PurchaseRequest() {
         <div className="card">
           <h3>{editingId ? "Edit request" : "New purchase request"}</h3>
           <form onSubmit={handleSubmit}>
-            <div className="formgrid">
+            <div className="pr-formgrid">
               <div className="field">
                 <label>Date</label>
                 <input type="date" value={date} min={todayStr()} onChange={(e) => setDate(e.target.value)} />
-              </div>
-              <div className="field">
-                <label>Project Name</label>
-                <input
-                  type="text" value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="e.g. Site A, Phase 2"
-                />
               </div>
               <div className="field">
                 <label>Request From</label>
@@ -333,6 +375,7 @@ export default function PurchaseRequest() {
                     <th style={{ minWidth: 180 }}>Category</th>
                     <th>UOM</th>
                     <th style={{ width: 100 }}>Qty</th>
+                    <th style={{ minWidth: 160 }}>Project Name</th>
                     <th style={{ minWidth: 160 }}>Item remarks</th>
                     <th style={{ minWidth: 100 }}></th>
                   </tr>
@@ -463,6 +506,13 @@ export default function PurchaseRequest() {
                         </td>
                         <td>
                           <input
+                            value={it.projectName}
+                            onChange={(e) => updateItem(it._key, { projectName: e.target.value })}
+                            placeholder="e.g. Site A, Phase 2"
+                          />
+                        </td>
+                        <td>
+                          <input
                             value={it.remarks}
                             onChange={(e) => updateItem(it._key, { remarks: e.target.value })}
                             placeholder="Optional"
@@ -501,16 +551,7 @@ export default function PurchaseRequest() {
               </button>
             </div>
 
-            <div className="field full" style={{ marginTop: 16 }}>
-              <label>Overall remarks</label>
-              <textarea
-                rows="2" value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Reason for this request, project, urgency, etc."
-              />
-            </div>
-
-            <div className="actionrow">
+            <div className="actionrow" style={{ marginTop: 16 }}>
               <button className="btn btn-in" type="submit" disabled={loading}>
                 {loading ? "Saving…" : editingId ? "Update request" : "Submit request"}
               </button>
@@ -594,7 +635,7 @@ export default function PurchaseRequest() {
                               <button className="btn-del btn-sm" onClick={() => handleReject(pr)}>Reject</button>
                             </>
                           )}
-                          {canReview && (pr.status === "approved" || pr.status === "partial") && (
+                          {canReview && (pr.status === "approved" || pr.status === "partial") && (user?.role === 'admin' || user?.role === 'purchase') && (
                             <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Create PO</button>
                           )}
                           {canReview && pr.status === "ordered" && (
@@ -616,34 +657,42 @@ export default function PurchaseRequest() {
                                     <th>Code</th>
                                     <th>Category</th>
                                     <th>UOM</th>
-                                    <th className="num">Qty</th>
+                                    <th className="num">Requested Qty</th>
+                                    <th className="num">Current Stock</th>
+                                    <th>Project Name</th>
                                     <th>Remarks</th>
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {pr.items.map((it, i) => (
-                                    <tr key={i}>
-                                      <td>{it.name}</td>
-                                      <td className="mono">{it.code || "—"}</td>
-                                      <td>{it.category || "—"}</td>
-                                      <td>{it.uom || "—"}</td>
-                                      <td className="num">{formatNum(it.qty)}</td>
-                                      <td>{it.remarks || "—"}</td>
-                                    </tr>
-                                  ))}
+                                  {pr.items.map((it, i) => {
+                                    const stock = stockMap[it.name] ?? null;
+                                    const isLow = stock !== null && stock < it.qty;
+                                    return (
+                                      <tr key={i}>
+                                        <td>{it.name}</td>
+                                        <td className="mono">{it.code || "—"}</td>
+                                        <td>{it.category || "—"}</td>
+                                        <td>{it.uom || "—"}</td>
+                                        <td className="num">{formatNum(it.qty)}</td>
+                                        <td className="num">
+                                          {stock !== null ? (
+                                            <strong style={{ color: stock <= 0 ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--teal-dark)' }}>
+                                              {formatNum(stock)}
+                                            </strong>
+                                          ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
+                                        </td>
+                                        <td>{it.projectName || "—"}</td>
+                                        <td>{it.remarks || "—"}</td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
 
-                            {pr.remarks && (
+                            {pr.requestFrom && (
                               <p style={{ fontSize: 12.5, marginBottom: 8 }}>
-                                <strong>Remarks:</strong> {pr.remarks}
-                              </p>
-                            )}
-                            {(pr.projectName || pr.requestFrom) && (
-                              <p style={{ fontSize: 12.5, marginBottom: 8 }}>
-                                {pr.projectName && <><strong>Project Name:</strong> {pr.projectName}&nbsp;&nbsp;</>}
-                                {pr.requestFrom && <><strong>Request From:</strong> {pr.requestFrom}</>}
+                                <strong>Request From:</strong> {pr.requestFrom}
                               </p>
                             )}
                             {pr.status === "rejected" && pr.rejectReason && (

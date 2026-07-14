@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  getMaster,
   getPurchaseRequests,
   getPurchaseOrdersByPR,
   createPurchaseOrder,
   getPurchaseOrders,
+  getInward,
+  getOutward,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { todayStr } from "../utils/helpers";
@@ -40,15 +43,31 @@ export default function PurchaseOrders() {
   const [initLoading, setInitLoading] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [msg, setMsg] = useState({ text: "", ok: true });
+  const [stockMap, setStockMap] = useState({});
 
   // ── Load data ─────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
-    const [reqs, pos] = await Promise.all([
+    const [m, reqs, pos, inw, out] = await Promise.all([
+      getMaster(),
       getPurchaseRequests(),
       getPurchaseOrders(),
+      getInward(),
+      getOutward(),
     ]);
     setRequests(reqs);
     setPoList(pos);
+    // Build stock balance map — same logic as Purchase Request page,
+    // based on ALL master materials (not just ones already in a PR).
+    const inTotals = {}, outTotals = {};
+    (Array.isArray(inw) ? inw : (inw?.entries ?? [])).forEach(e => {
+      inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+    });
+    (Array.isArray(out) ? out : (out?.entries ?? [])).forEach(e => {
+      outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+    });
+    const map = {};
+    m.forEach(mat => { map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0); });
+    setStockMap(map);
   }, []);
   useEffect(() => {
     load();
@@ -394,6 +413,7 @@ export default function PurchaseOrders() {
                             "PR Qty",
                             "Already Ordered",
                             "Remaining",
+                            "Current Stock",
                             "PO Qty *",
                             "Unit Price",
                             "",
@@ -467,6 +487,19 @@ export default function PurchaseOrders() {
                               }}
                             >
                               {it.maxQty}
+                            </td>
+                            <td style={{ padding: "7px 10px", textAlign: "right" }}>
+                              {(() => {
+                                const stock = stockMap[it.name] ?? null;
+                                if (stock === null) return <span style={{ color: 'var(--text-3)' }}>—</span>;
+                                const isLow = stock < it.prQty;
+                                const color = stock <= 0 ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--teal-dark)';
+                                return (
+                                  <strong style={{ color }}>
+                                    {Number(stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                                  </strong>
+                                );
+                              })()}
                             </td>
                             <td style={{ padding: "7px 10px" }}>
                               <input
