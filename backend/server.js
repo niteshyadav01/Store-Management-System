@@ -78,20 +78,20 @@ async function seedAdmin() {
   const User = require('./models/User');
   const count = await User.countDocuments();
   if (count === 0) {
-    const hash = await bcrypt.hash('admin123', 10);
+    const hash = await bcrypt.hash('admin@2026', 10);
     await User.create({ name: 'Administrator', username: 'admin', password: hash, role: 'admin' });
-    console.log('  ✓ Seeded admin user  →  username: admin  |  password: admin123');
+    console.log('  ✓ Seeded admin user  →  username: admin  |  password: admin@2026');
   }
 }
 
 // ── Connect + Start ───────────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI)
   .then(async () => {
-    console.log('✓ MongoDB connected:', process.env.MONGODB_URI);
+    console.log('✓ MongoDB connected');
     await seedAdmin();
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
-      console.log(`✓ Stockyard API → http://localhost:${PORT}`);
+      console.log(`✓ Stock Management System → http://localhost:${PORT}`);
       console.log(`✓ CORS allowed  → ${allowedOrigins.join(', ')}`);
       console.log(`✓ Environment   → ${process.env.NODE_ENV || 'development'}`);
     });

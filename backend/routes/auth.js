@@ -10,11 +10,29 @@ router.post('/login', async (req, res) => {
     if (!username || !password)
       return res.status(400).json({ error: 'Username and password required' });
 
-    const user = await User.findOne({ username: username.toLowerCase().trim() });
-    if (!user) return res.status(401).json({ error: 'Incorrect username or password' });
+    const user = await User.findOne({
+  username: username.toLowerCase().trim(),
+});
 
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: 'Incorrect username or password' });
+console.log("Entered username:", username);
+console.log("User found:", user);
+
+if (!user) {
+  console.log("❌ User not found");
+  return res.status(401).json({ error: "Incorrect username or password" });
+}
+
+console.log("Stored password:", user.password);
+
+const match = await bcrypt.compare(password, user.password);
+
+console.log("Entered password:", password);
+console.log("Password match:", match);
+
+if (!match) {
+  console.log("❌ Password incorrect");
+  return res.status(401).json({ error: "Incorrect username or password" });
+}
 
     const token = jwt.sign(
       { id: user._id, username: user.username, name: user.name, role: user.role },
