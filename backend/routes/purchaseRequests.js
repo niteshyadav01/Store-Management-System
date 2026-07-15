@@ -46,6 +46,7 @@ const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store'];
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const canViewAll = VIEWER_ROLES.includes(req.user.role);
+    console.log(`[GET LIST] role=${JSON.stringify(req.user.role)} canViewAll=${canViewAll}`);
     const filter = canViewAll ? {} : { requestedByUsername: req.user.username };
     const list = await PurchaseRequest.find(filter).sort({ createdAt: -1 }).lean();
     res.json(list);
