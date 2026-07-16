@@ -349,8 +349,6 @@ export default function InwardEntry() {
         const location = pickCol(row, ['location', 'rack', 'warehouse']);
         const po       = pickCol(row, ['pono', 'po']);
         const challan  = pickCol(row, ['challanno', 'invoiceno', 'challan', 'invoice']);
-        if (!vendor || !by || !location) { skipped++; continue; }
-        if (!po && !challan) { skipped++; continue; }
         batch.push({
           date: parseExcelDate(pickCol(row, ['date', 'entrydate'])) || today,
           invdate: parseExcelDate(pickCol(row, ['invoicedate', 'invdate'])),
@@ -358,7 +356,7 @@ export default function InwardEntry() {
           name: m.name, type: m.type, code: m.code, category: m.category, uom: m.uom,
           qty, by, location,
           remarks: pickCol(row, ['remarks', 'notes']),
-          price: 0,
+          price: canSeePrice ? (parseFloat(pickCol(row, ['price', 'rate', 'unitprice', 'unitrate', 'mrp'])) || 0) : 0,
         });
       }
       if (!batch.length) { setBulkMsg({ text: `No valid rows found. ${skipped} row(s) skipped.`, ok: false }); return; }
@@ -372,11 +370,13 @@ export default function InwardEntry() {
   }
 
   function downloadTemplate() {
-    exportXlsx(
-      ['Date', 'Invoice Date', 'Challan No', 'PO No', 'Vendor Name', 'Material Name', 'Qty', 'Received By', 'Location', 'Remarks'],
-      [[todayStr(), '', 'INV-1001', 'PO-2001', 'ABC Suppliers', '[Material Name from master]', '10', 'Store Keeper', 'Rack A', '']],
-      'Inward Template', 'Stockyard_Inward_Template.xlsx'
-    );
+    const headers = ['Date', 'Invoice Date', 'Challan No', 'PO No', 'Vendor Name', 'Material Name', 'Qty', 'Received By', 'Location', 'Remarks'];
+    const example = [todayStr(), '', 'INV-1001', 'PO-2001', 'ABC Suppliers', '[Material Name from master]', '10', 'Store Keeper', 'Rack A', ''];
+    if (canSeePrice) {
+      headers.push('Price');
+      example.push('500');
+    }
+    exportXlsx(headers, [example], 'Inward Template', 'Stockyard_Inward_Template.xlsx');
   }
 
   const validManualCount = manualRows.filter(r => r.name && parseFloat(r.qty) > 0).length;
@@ -432,7 +432,8 @@ export default function InwardEntry() {
           </label>
           <input type="file" id="inward-bulk" accept=".xlsx,.xls,.csv" onChange={handleBulk} />
           <div className="hint">
-            Required: <strong>Material Name, Qty, Vendor Name, Received By, Location</strong>, plus <strong>either</strong> PO No <strong>or</strong> Challan No — Optional: Date, Invoice Date, Remarks<br />
+            Required: <strong>Material Name, Qty</strong> — All other columns optional: Date, Invoice Date, Challan No, PO No, Vendor Name, Received By, Location, Remarks{canSeePrice ? ', Price' : ''}<br />
+            Material Name must match an entry in the master list.{' '}
             <button onClick={downloadTemplate}>Download template</button>
           </div>
           {bulkMsg.text && <div className={`alert ${bulkMsg.ok ? 'ok' : 'err'}`} style={{ marginTop: 14, textAlign: 'left' }}>{bulkMsg.text}</div>}

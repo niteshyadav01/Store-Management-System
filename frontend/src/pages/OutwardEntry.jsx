@@ -94,14 +94,11 @@ export default function OutwardEntry() {
         const qty = parseFloat(pickCol(row, ['qty', 'quantity', 'issuedqty', 'issuedquantity']));
         if (!qty || qty <= 0) { skipped++; continue; }
         const project = pickCol(row, ['projectname', 'project']);
-        if (!project) { skipped++; continue; }
-        const custpo = pickCol(row, ['customerpodetails', 'customerpo', 'custpo']);
-        const slip   = pickCol(row, ['issueslipno', 'slipno', 'slip']);
-        if (!custpo && !slip) { skipped++; continue; }
-        const dept  = pickCol(row, ['department', 'dept']);
-        const recby = pickCol(row, ['materialreceivedby', 'receivedby', 'recby']);
-        const by    = pickCol(row, ['materialissuedby', 'issuedby', 'by']);
-        if (!dept || !recby || !by) { skipped++; continue; }
+        const custpo  = pickCol(row, ['customerpodetails', 'customerpo', 'custpo']);
+        const slip    = pickCol(row, ['issueslipno', 'slipno', 'slip']);
+        const dept    = pickCol(row, ['department', 'dept']);
+        const recby   = pickCol(row, ['materialreceivedby', 'receivedby', 'recby']);
+        const by      = pickCol(row, ['materialissuedby', 'issuedby', 'by']);
         batch.push({
           date: parseExcelDate(pickCol(row, ['date', 'entrydate', 'issuedate'])) || today,
           project, custpo, slip, dept, recby, by,
@@ -245,7 +242,7 @@ export default function OutwardEntry() {
           </label>
           <input type="file" id="outward-bulk" accept=".xlsx,.xls,.csv" onChange={handleBulk} />
           <div className="hint">
-            Required columns: <strong>Project Name, Material Name, Qty, Department, Received By, Issued By</strong>, plus <strong>either</strong> Customer PO Details <strong>or</strong> Issue Slip No — Optional: Date<br />
+            Required: <strong>Material Name, Qty</strong> — All other columns optional: Date, Project Name, Customer PO Details, Issue Slip No, Department, Received By, Issued By<br />
             Material Name must exactly match an entry in the master list.{' '}
             <button onClick={downloadTemplate}>Download template</button>
           </div>

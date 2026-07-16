@@ -106,7 +106,7 @@ export default function MasterList() {
             Choose file (.xlsx, .xls, .csv)
           </label>
           <input type="file" id="masterfile" accept=".xlsx,.xls,.csv" onChange={handleFileUpload} />
-          <div className="hint">Expected columns: <strong>Material Name, Material Type, Materials Code, Category, UOM, Minimum Stock</strong> — column order doesn't matter</div>
+          <div className="hint">Expected columns: <strong>Material Name</strong> (required), <strong>Qty</strong> — Optional: Material Type, Materials Code, Category, UOM, Minimum Stock — column order doesn't matter</div>
           {uploadMsg.text && <div className={`alert ${uploadMsg.ok?'ok':'err'}`} style={{marginTop:14,textAlign:'left'}}>{uploadMsg.text}</div>}
         </div>
       </div>
