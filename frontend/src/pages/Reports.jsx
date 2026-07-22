@@ -8,12 +8,11 @@ import { formatNum, formatINR, exportXlsx, todayStr } from '../utils/helpers';
 function ColFilter({ values, selected, onChange }) {
   const [open, setOpen]       = useState(false);
   const [search, setSearch]   = useState('');
-  const [pending, setPending] = useState([]); // local selection before Apply
+  const [pending, setPending] = useState([]);
   const [pos, setPos]         = useState({ top: 0, left: 0 });
   const btnRef   = useRef();
   const panelRef = useRef();
 
-  // Sync pending with external selection when opening
   useEffect(() => {
     if (open) setPending(selected);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -48,190 +47,112 @@ function ColFilter({ values, selected, onChange }) {
   const isNum  = unique.every(v => !isNaN(toNum(v)));
   unique.sort((a, b) => isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)));
 
-  const filtered    = unique.filter(v => String(v).toLowerCase().includes(search.toLowerCase()));
+  const filtered     = unique.filter(v => String(v).toLowerCase().includes(search.toLowerCase()));
   const allSelected  = pending.length === unique.length && unique.length > 0;
   const someSelected = pending.length > 0 && pending.length < unique.length;
-  const noneSelected = pending.length === 0;
 
   function toggle(val) {
     setPending(prev => prev.includes(val) ? prev.filter(s => s !== val) : [...prev, val]);
   }
-
   function toggleAll() {
-    // nothing or all selected → select all; partial → select all; all already selected → clear
-    if (pending.length === unique.length) {
-      setPending([]); // all selected → clear
-    } else {
-      setPending(unique); // none or partial → select all
-    }
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
   }
-
-  function handleApply() {
-    onChange(pending);
-    setOpen(false);
-  }
-
-  function handleClear() {
-    setPending([]);
-    onChange([]);
-    setOpen(false);
-  }
+  function handleApply() { onChange(pending); setOpen(false); }
+  function handleClear()  { setPending([]); onChange([]); setOpen(false); }
 
   const hasChanges = JSON.stringify(pending.slice().sort()) !== JSON.stringify(selected.slice().sort());
 
   const panel = (
-    <div
-      ref={panelRef}
-      style={{
-        position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
-        background: '#fff', border: '1px solid var(--line)',
-        borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
-        minWidth: 240, maxWidth: 320, padding: '0',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Search */}
+    <div ref={panelRef} style={{
+      position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
+      background: '#fff', border: '1px solid var(--line)',
+      borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+      minWidth: 240, maxWidth: 320, overflow: 'hidden',
+    }}>
       <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
-        <input
-          autoFocus placeholder="Search…" value={search}
+        <input autoFocus placeholder="Search…" value={search}
           onChange={e => setSearch(e.target.value)}
-          style={{
-            width: '100%', padding: '7px 10px', fontSize: 13,
-            border: '1.5px solid var(--line)', borderRadius: 6,
-            fontFamily: 'Inter, Poppins, sans-serif', outline: 'none',
-            background: '#fafaf8', color: 'var(--ink)',
-          }}
+          style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
+            borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
           onFocus={e => e.target.style.borderColor = 'var(--teal)'}
-          onBlur={e  => e.target.style.borderColor = 'var(--line)'}
-        />
+          onBlur={e  => e.target.style.borderColor = 'var(--line)'} />
       </div>
-
-      {/* Select all */}
-      <div
-        style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
-          display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-          background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined,
-        }}
-        onClick={toggleAll}
-      >
-        <input
-          type="checkbox"
+      <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
+        display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+        background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined }}>
+        <input type="checkbox"
           ref={el => { if (el) el.indeterminate = someSelected; }}
-          checked={allSelected}
-          onChange={toggleAll}
+          checked={allSelected} onChange={toggleAll}
           style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14 }}
-          onClick={e => e.stopPropagation()}
-        />
+          onClick={e => e.stopPropagation()} />
         <span style={{ fontSize: 12.5, fontStyle: 'italic', color: 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif' }}>
           {someSelected ? `${pending.length} of ${unique.length} selected` : allSelected ? 'All selected' : '(Select all)'}
         </span>
         {pending.length > 0 && (
-          <span style={{ marginLeft: 'auto', fontSize: 11, background: someSelected ? 'var(--amber)' : 'var(--teal)', color: '#fff',
-            borderRadius: 10, padding: '1px 7px', fontWeight: 600 }}>
+          <span style={{ marginLeft: 'auto', fontSize: 11, background: someSelected ? 'var(--amber)' : 'var(--teal)',
+            color: '#fff', borderRadius: 10, padding: '1px 7px', fontWeight: 600 }}>
             {pending.length}
           </span>
         )}
       </div>
-
-      {/* Items list */}
       <div style={{ maxHeight: 200, overflowY: 'auto' }}>
         {filtered.map(v => (
-          <div
-            key={v}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '7px 14px', cursor: 'pointer', fontSize: 13,
-              fontFamily: 'Inter, Poppins, sans-serif',
-              background: pending.includes(v) ? 'var(--teal-light)' : undefined,
-              transition: 'background 100ms',
-            }}
-            onClick={() => toggle(v)}
-          >
-            <input
-              type="checkbox"
-              checked={pending.includes(v)}
-              onChange={() => toggle(v)}
+          <div key={v} onClick={() => toggle(v)} style={{ display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 14px', cursor: 'pointer', fontSize: 13, fontFamily: 'Inter, Poppins, sans-serif',
+            background: pending.includes(v) ? 'var(--teal-light)' : undefined, transition: 'background 100ms' }}>
+            <input type="checkbox" checked={pending.includes(v)} onChange={() => toggle(v)}
               style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14, flexShrink: 0 }}
-              onClick={e => e.stopPropagation()}
-            />
+              onClick={e => e.stopPropagation()} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
           </div>
         ))}
-        {!filtered.length && (
-          <div style={{ padding: '12px 14px', fontSize: 12.5, color: 'var(--text-3)', textAlign: 'center' }}>
-            No results
-          </div>
-        )}
+        {!filtered.length && <div style={{ padding: '12px 14px', fontSize: 12.5, color: 'var(--text-3)', textAlign: 'center' }}>No results</div>}
       </div>
-
-      {/* Footer: Clear + Apply */}
-      <div style={{
-        display: 'flex', gap: 8, padding: '10px 12px',
-        borderTop: '1px solid var(--line)', background: 'var(--paper-dim)',
-      }}>
-        <button onClick={handleClear} style={{
-          flex: 1, fontSize: 12.5, padding: '7px 0',
-          border: '1.5px solid var(--line)', borderRadius: 6,
-          cursor: 'pointer', background: '#fff',
-          fontFamily: 'Inter, Poppins, sans-serif', color: 'var(--ink)',
-          transition: 'background 120ms',
-        }}>Clear</button>
-        <button onClick={handleApply} style={{
-          flex: 2, fontSize: 12.5, padding: '7px 0',
-          border: 'none', borderRadius: 6, cursor: 'pointer',
-          background: hasChanges ? 'var(--teal)' : 'var(--paper-dim)',
-          color: hasChanges ? '#fff' : 'var(--text-3)',
-          fontFamily: 'Inter, Poppins, sans-serif', fontWeight: 600,
-          transition: 'background 120ms',
-        }}>Apply</button>
+      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--line)', background: 'var(--paper-dim)' }}>
+        <button onClick={handleClear} style={{ flex: 1, fontSize: 12.5, padding: '7px 0', border: '1.5px solid var(--line)',
+          borderRadius: 6, cursor: 'pointer', background: '#fff', fontFamily: 'Inter, Poppins, sans-serif', color: 'var(--ink)' }}>Clear</button>
+        <button onClick={handleApply} style={{ flex: 2, fontSize: 12.5, padding: '7px 0', border: 'none', borderRadius: 6,
+          cursor: 'pointer', background: hasChanges ? 'var(--teal)' : 'var(--paper-dim)',
+          color: hasChanges ? '#fff' : 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif', fontWeight: 600 }}>Apply</button>
       </div>
     </div>
   );
 
   return (
     <>
-      <button
-        ref={btnRef}
-        onClick={handleOpen}
-        style={{
-          background: selected.length > 0 ? 'var(--teal)' : 'none',
-          border: selected.length > 0 ? 'none' : '1px solid transparent',
-          cursor: 'pointer', padding: '2px 6px',
-          borderRadius: 4, fontSize: 10,
-          color: selected.length > 0 ? '#fff' : '#8a8270', lineHeight: 1,
-          transition: 'background 150ms',
-        }}
-        title={selected.length > 0 ? `${selected.length} filter(s) active` : 'Filter'}
-      >▼</button>
+      <button ref={btnRef} onClick={handleOpen} style={{
+        background: selected.length > 0 ? 'var(--teal)' : 'none',
+        border: selected.length > 0 ? 'none' : '1px solid transparent',
+        cursor: 'pointer', padding: '2px 6px', borderRadius: 4, fontSize: 10,
+        color: selected.length > 0 ? '#fff' : '#8a8270', lineHeight: 1, transition: 'background 150ms',
+      }} title={selected.length > 0 ? `${selected.length} filter(s) active` : 'Filter'}>▼</button>
       {open && createPortal(panel, document.body)}
     </>
   );
 }
-const itemStyle = { display: 'flex', alignItems: 'center', padding: '7px 12px', fontSize: 13, cursor: 'pointer', userSelect: 'none' };
 
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function Reports() {
   const { user } = useAuth();
   const canSeePrice = user?.role === 'admin' || user?.role === 'purchase';
 
-  const [master, setMaster] = useState([]);
-  const [inward, setInward] = useState([]);
+  const [master,  setMaster]  = useState([]);
+  const [inward,  setInward]  = useState([]);
   const [outward, setOutward] = useState([]);
 
-  const [repType, setRepType] = useState('inward');
+  const [repType,  setRepType]  = useState('inward');
   const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateTo,   setDateTo]   = useState('');
   const [category, setCategory] = useState('');
-  const [vendor, setVendor] = useState('');
+  const [vendor,   setVendor]   = useState('');
   const [material, setMaterial] = useState('');
-  const [rows, setRows] = useState(null);
-  const [repMsg, setRepMsg] = useState('');
+  const [project,  setProject]  = useState('');
+  const [rows,     setRows]     = useState(null);
+  const [repMsg,   setRepMsg]   = useState('');
 
-  // Column filters for "both" view
   const [cfBoth, setCfBoth] = useState({ name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] });
-
-  // Column filters for inward/outward view
-  const [cfTxn, setCfTxn] = useState({ date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] });
+  const [cfTxn,  setCfTxn]  = useState({ date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] });
 
   const load = useCallback(async () => {
     const [m, i, o] = await Promise.all([getMaster(), getInward(), getOutward()]);
@@ -242,19 +163,21 @@ export default function Reports() {
   useEffect(() => { load(); }, [load]);
 
   const categories = [...new Set(master.map(m => m.category).filter(Boolean))].sort();
-  const vendors = [...new Set(inward.map(e => e.vendor).filter(Boolean))].sort();
-  const materials = [...new Set(master.map(m => m.name).filter(Boolean))].sort();
+  const vendors    = [...new Set(inward.map(e => e.vendor).filter(Boolean))].sort();
+  const materials  = [...new Set(master.map(m => m.name).filter(Boolean))].sort();
+  const projects   = [...new Set(outward.map(e => e.project).filter(Boolean))].sort();
 
   const emptyCfBoth = { name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] };
-  const emptyCfTxn = { date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] };
+  const emptyCfTxn  = { date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] };
 
   function filterEntries(entries) {
     return entries.filter(e => {
-      if (dateFrom && e.date < dateFrom) return false;
-      if (dateTo && e.date > dateTo) return false;
+      if (dateFrom && e.date     < dateFrom)   return false;
+      if (dateTo   && e.date     > dateTo)     return false;
       if (category && e.category !== category) return false;
-      if (vendor && e.vendor !== vendor) return false;
-      if (material && e.name !== material) return false;
+      if (vendor   && e.vendor   !== vendor)   return false;
+      if (material && e.name     !== material) return false;
+      if (project  && e.project  !== project)  return false;
       return true;
     });
   }
@@ -263,13 +186,13 @@ export default function Reports() {
     setCfBoth(emptyCfBoth);
     setCfTxn(emptyCfTxn);
     if (repType === 'both') {
-      const filteredIn = filterEntries(inward);
+      const filteredIn  = filterEntries(inward);
       const filteredOut = filterEntries(outward);
 
       const inQtyMap = {}, inValMap = {}, outQtyMap = {};
       filteredIn.forEach(e => {
         inQtyMap[e.name] = (inQtyMap[e.name] || 0) + (parseFloat(e.qty) || 0);
-        inValMap[e.name] = (inValMap[e.name] || 0) + ((parseFloat(e.qty) || 0) * (parseFloat(e.price) || 0));
+        inValMap[e.name] = (inValMap[e.name]  || 0) + ((parseFloat(e.qty) || 0) * (parseFloat(e.price) || 0));
       });
       filteredOut.forEach(e => {
         outQtyMap[e.name] = (outQtyMap[e.name] || 0) + (parseFloat(e.qty) || 0);
@@ -281,10 +204,10 @@ export default function Reports() {
       ])];
 
       const result = names.map(name => {
-        const mat = master.find(m => m.name === name) || {};
-        const inQty = inQtyMap[name] || 0;
-        const outQty = outQtyMap[name] || 0;
-        const balance = inQty - outQty;
+        const mat      = master.find(m => m.name === name) || {};
+        const inQty    = inQtyMap[name]  || 0;
+        const outQty   = outQtyMap[name] || 0;
+        const balance  = inQty - outQty;
         const minStock = parseFloat(mat.minStock) || 0;
         const avgPrice = inQty > 0 ? (inValMap[name] || 0) / inQty : 0;
         const stockVal = avgPrice * Math.max(balance, 0);
@@ -298,7 +221,7 @@ export default function Reports() {
       setRows(result);
       setRepMsg(result.length ? `${result.length} material(s) found.` : 'No records match the selected filters.');
     } else {
-      const src = repType === 'inward' ? inward : outward;
+      const src    = repType === 'inward' ? inward : outward;
       const result = filterEntries(src).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       setRows(result);
       setRepMsg(result.length ? `${result.length} record(s) found.` : 'No records match the selected filters.');
@@ -340,14 +263,14 @@ export default function Reports() {
   const filteredRows = (rows || []).filter(r => {
     if (repType === 'both') {
       return (
-        (!cfBoth.name.length || cfBoth.name.includes(r.name)) &&
-        (!cfBoth.type.length || cfBoth.type.includes(r.type)) &&
+        (!cfBoth.name.length     || cfBoth.name.includes(r.name)) &&
+        (!cfBoth.type.length     || cfBoth.type.includes(r.type)) &&
         (!cfBoth.category.length || cfBoth.category.includes(r.category)) &&
-        (!cfBoth.code.length || cfBoth.code.includes(r.code)) &&
-        (!cfBoth.uom.length || cfBoth.uom.includes(r.uom)) &&
-        (!cfBoth.inQty.length || cfBoth.inQty.includes(String(formatNum(r.inQty)))) &&
-        (!cfBoth.outQty.length || cfBoth.outQty.includes(String(formatNum(r.outQty)))) &&
-        (!cfBoth.balance.length || cfBoth.balance.includes(String(formatNum(r.balance)))) &&
+        (!cfBoth.code.length     || cfBoth.code.includes(r.code)) &&
+        (!cfBoth.uom.length      || cfBoth.uom.includes(r.uom)) &&
+        (!cfBoth.inQty.length    || cfBoth.inQty.includes(String(formatNum(r.inQty)))) &&
+        (!cfBoth.outQty.length   || cfBoth.outQty.includes(String(formatNum(r.outQty)))) &&
+        (!cfBoth.balance.length  || cfBoth.balance.includes(String(formatNum(r.balance)))) &&
         (!cfBoth.minStock.length || cfBoth.minStock.includes(String(formatNum(r.minStock)))) &&
         (!cfBoth.avgPrice.length || cfBoth.avgPrice.includes(String(formatINR(r.avgPrice)))) &&
         (!cfBoth.stockVal.length || cfBoth.stockVal.includes(String(formatINR(r.stockVal))))
@@ -355,21 +278,21 @@ export default function Reports() {
     } else {
       const value = (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0);
       return (
-        (!cfTxn.date.length || cfTxn.date.includes(r.date)) &&
-        (!cfTxn.name.length || cfTxn.name.includes(r.name)) &&
+        (!cfTxn.date.length     || cfTxn.date.includes(r.date)) &&
+        (!cfTxn.name.length     || cfTxn.name.includes(r.name)) &&
         (!cfTxn.category.length || cfTxn.category.includes(r.category)) &&
-        (!cfTxn.code.length || cfTxn.code.includes(r.code)) &&
-        (!cfTxn.uom.length || cfTxn.uom.includes(r.uom)) &&
-        (!cfTxn.qty.length || cfTxn.qty.includes(String(formatNum(r.qty)))) &&
-        (!cfTxn.vendor.length || cfTxn.vendor.includes(r.vendor || '—')) &&
-        (!cfTxn.price.length || cfTxn.price.includes(String(formatINR(r.price)))) &&
-        (!cfTxn.value.length || cfTxn.value.includes(String(formatINR(value)))) &&
-        (!cfTxn.project.length || cfTxn.project.includes(r.project || '—'))
+        (!cfTxn.code.length     || cfTxn.code.includes(r.code)) &&
+        (!cfTxn.uom.length      || cfTxn.uom.includes(r.uom)) &&
+        (!cfTxn.qty.length      || cfTxn.qty.includes(String(formatNum(r.qty)))) &&
+        (!cfTxn.vendor.length   || cfTxn.vendor.includes(r.vendor || '—')) &&
+        (!cfTxn.price.length    || cfTxn.price.includes(String(formatINR(r.price)))) &&
+        (!cfTxn.value.length    || cfTxn.value.includes(String(formatINR(value)))) &&
+        (!cfTxn.project.length  || cfTxn.project.includes(r.project || '—'))
       );
     }
   });
 
-  // ── Summary stats — based on filteredRows so column filters are reflected ──
+  // ── Summary stats ──────────────────────────────────────────────────────────
   const totalIn = repType === 'both'
     ? filteredRows?.reduce((s, r) => s + r.inQty, 0) || 0
     : filteredRows?.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0) || 0;
@@ -405,7 +328,13 @@ export default function Reports() {
         <div className="formgrid">
           <div className="field">
             <label>Report type</label>
-            <select value={repType} onChange={e => { setRepType(e.target.value); setRows(null); setCfBoth(emptyCfBoth); setCfTxn(emptyCfTxn); }}>
+            <select value={repType} onChange={e => {
+              setRepType(e.target.value);
+              setRows(null);
+              setCfBoth(emptyCfBoth);
+              setCfTxn(emptyCfTxn);
+              setProject('');
+            }}>
               <option value="inward">Inward entries</option>
               <option value="outward">Outward entries</option>
               <option value="both">Both (combined) — stock summary</option>
@@ -442,6 +371,15 @@ export default function Reports() {
               {materials.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
+          {repType !== 'inward' && (
+            <div className="field">
+              <label>Project</label>
+              <select value={project} onChange={e => setProject(e.target.value)}>
+                <option value="">All projects</option>
+                {projects.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          )}
         </div>
         <div className="actionrow" style={{ marginTop: 20 }}>
           <button className="btn btn-in" onClick={runReport}>Generate report</button>
@@ -530,19 +468,19 @@ export default function Reports() {
                 <>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
                     <tr>
-                      <th>Material name <ColFilter values={(rows || []).map(r => r.name)} selected={cfBoth.name} onChange={v => setCfBoth(f => ({ ...f, name: v }))} /></th>
-                      <th>Type <ColFilter values={(rows || []).map(r => r.type)} selected={cfBoth.type} onChange={v => setCfBoth(f => ({ ...f, type: v }))} /></th>
-                      <th>Category <ColFilter values={(rows || []).map(r => r.category)} selected={cfBoth.category} onChange={v => setCfBoth(f => ({ ...f, category: v }))} /></th>
-                      <th>Code <ColFilter values={(rows || []).map(r => r.code)} selected={cfBoth.code} onChange={v => setCfBoth(f => ({ ...f, code: v }))} /></th>
-                      <th>UOM <ColFilter values={(rows || []).map(r => r.uom)} selected={cfBoth.uom} onChange={v => setCfBoth(f => ({ ...f, uom: v }))} /></th>
-                      <th className="num">Inward qty <ColFilter values={(rows || []).map(r => formatNum(r.inQty))} selected={cfBoth.inQty} onChange={v => setCfBoth(f => ({ ...f, inQty: v }))} /></th>
-                      <th className="num">Outward qty <ColFilter values={(rows || []).map(r => formatNum(r.outQty))} selected={cfBoth.outQty} onChange={v => setCfBoth(f => ({ ...f, outQty: v }))} /></th>
-                      <th className="num">Balance <ColFilter values={(rows || []).map(r => formatNum(r.balance))} selected={cfBoth.balance} onChange={v => setCfBoth(f => ({ ...f, balance: v }))} /></th>
-                      <th className="num">Minimum stock <ColFilter values={(rows || []).map(r => formatNum(r.minStock))} selected={cfBoth.minStock} onChange={v => setCfBoth(f => ({ ...f, minStock: v }))} /></th>
+                      <th>Material name <ColFilter values={(rows||[]).map(r=>r.name)} selected={cfBoth.name} onChange={v=>setCfBoth(f=>({...f,name:v}))} /></th>
+                      <th>Type <ColFilter values={(rows||[]).map(r=>r.type)} selected={cfBoth.type} onChange={v=>setCfBoth(f=>({...f,type:v}))} /></th>
+                      <th>Category <ColFilter values={(rows||[]).map(r=>r.category)} selected={cfBoth.category} onChange={v=>setCfBoth(f=>({...f,category:v}))} /></th>
+                      <th>Code <ColFilter values={(rows||[]).map(r=>r.code)} selected={cfBoth.code} onChange={v=>setCfBoth(f=>({...f,code:v}))} /></th>
+                      <th>UOM <ColFilter values={(rows||[]).map(r=>r.uom)} selected={cfBoth.uom} onChange={v=>setCfBoth(f=>({...f,uom:v}))} /></th>
+                      <th className="num">Inward qty <ColFilter values={(rows||[]).map(r=>formatNum(r.inQty))} selected={cfBoth.inQty} onChange={v=>setCfBoth(f=>({...f,inQty:v}))} /></th>
+                      <th className="num">Outward qty <ColFilter values={(rows||[]).map(r=>formatNum(r.outQty))} selected={cfBoth.outQty} onChange={v=>setCfBoth(f=>({...f,outQty:v}))} /></th>
+                      <th className="num">Balance <ColFilter values={(rows||[]).map(r=>formatNum(r.balance))} selected={cfBoth.balance} onChange={v=>setCfBoth(f=>({...f,balance:v}))} /></th>
+                      <th className="num">Minimum stock <ColFilter values={(rows||[]).map(r=>formatNum(r.minStock))} selected={cfBoth.minStock} onChange={v=>setCfBoth(f=>({...f,minStock:v}))} /></th>
                       {canSeePrice && (
                         <>
-                          <th className="num">Avg price <ColFilter values={(rows || []).map(r => formatINR(r.avgPrice))} selected={cfBoth.avgPrice} onChange={v => setCfBoth(f => ({ ...f, avgPrice: v }))} /></th>
-                          <th className="num">Stock value <ColFilter values={(rows || []).map(r => formatINR(r.stockVal))} selected={cfBoth.stockVal} onChange={v => setCfBoth(f => ({ ...f, stockVal: v }))} /></th>
+                          <th className="num">Avg price <ColFilter values={(rows||[]).map(r=>formatINR(r.avgPrice))} selected={cfBoth.avgPrice} onChange={v=>setCfBoth(f=>({...f,avgPrice:v}))} /></th>
+                          <th className="num">Stock value <ColFilter values={(rows||[]).map(r=>formatINR(r.stockVal))} selected={cfBoth.stockVal} onChange={v=>setCfBoth(f=>({...f,stockVal:v}))} /></th>
                         </>
                       )}
                     </tr>
@@ -578,23 +516,23 @@ export default function Reports() {
                 <>
                   <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
                     <tr>
-                      <th>Date <ColFilter values={(rows || []).map(r => r.date)} selected={cfTxn.date} onChange={v => setCfTxn(f => ({ ...f, date: v }))} /></th>
-                      <th>Material <ColFilter values={(rows || []).map(r => r.name)} selected={cfTxn.name} onChange={v => setCfTxn(f => ({ ...f, name: v }))} /></th>
-                      <th>Category <ColFilter values={(rows || []).map(r => r.category)} selected={cfTxn.category} onChange={v => setCfTxn(f => ({ ...f, category: v }))} /></th>
-                      <th>Code <ColFilter values={(rows || []).map(r => r.code)} selected={cfTxn.code} onChange={v => setCfTxn(f => ({ ...f, code: v }))} /></th>
-                      <th>UOM <ColFilter values={(rows || []).map(r => r.uom)} selected={cfTxn.uom} onChange={v => setCfTxn(f => ({ ...f, uom: v }))} /></th>
-                      <th className="num">Qty <ColFilter values={(rows || []).map(r => formatNum(r.qty))} selected={cfTxn.qty} onChange={v => setCfTxn(f => ({ ...f, qty: v }))} /></th>
+                      <th>Date <ColFilter values={(rows||[]).map(r=>r.date)} selected={cfTxn.date} onChange={v=>setCfTxn(f=>({...f,date:v}))} /></th>
+                      <th>Material <ColFilter values={(rows||[]).map(r=>r.name)} selected={cfTxn.name} onChange={v=>setCfTxn(f=>({...f,name:v}))} /></th>
+                      <th>Category <ColFilter values={(rows||[]).map(r=>r.category)} selected={cfTxn.category} onChange={v=>setCfTxn(f=>({...f,category:v}))} /></th>
+                      <th>Code <ColFilter values={(rows||[]).map(r=>r.code)} selected={cfTxn.code} onChange={v=>setCfTxn(f=>({...f,code:v}))} /></th>
+                      <th>UOM <ColFilter values={(rows||[]).map(r=>r.uom)} selected={cfTxn.uom} onChange={v=>setCfTxn(f=>({...f,uom:v}))} /></th>
+                      <th className="num">Qty <ColFilter values={(rows||[]).map(r=>formatNum(r.qty))} selected={cfTxn.qty} onChange={v=>setCfTxn(f=>({...f,qty:v}))} /></th>
                       {repType !== 'outward' && (
-                        <th>Vendor <ColFilter values={(rows || []).map(r => r.vendor || '—')} selected={cfTxn.vendor} onChange={v => setCfTxn(f => ({ ...f, vendor: v }))} /></th>
+                        <th>Vendor <ColFilter values={(rows||[]).map(r=>r.vendor||'—')} selected={cfTxn.vendor} onChange={v=>setCfTxn(f=>({...f,vendor:v}))} /></th>
                       )}
                       {repType !== 'outward' && canSeePrice && (
                         <>
-                          <th className="num">Price <ColFilter values={(rows || []).map(r => formatINR(r.price))} selected={cfTxn.price} onChange={v => setCfTxn(f => ({ ...f, price: v }))} /></th>
-                          <th className="num">Value <ColFilter values={(rows || []).map(r => formatINR((parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0)))} selected={cfTxn.value} onChange={v => setCfTxn(f => ({ ...f, value: v }))} /></th>
+                          <th className="num">Price <ColFilter values={(rows||[]).map(r=>formatINR(r.price))} selected={cfTxn.price} onChange={v=>setCfTxn(f=>({...f,price:v}))} /></th>
+                          <th className="num">Value <ColFilter values={(rows||[]).map(r=>formatINR((parseFloat(r.qty)||0)*(parseFloat(r.price)||0)))} selected={cfTxn.value} onChange={v=>setCfTxn(f=>({...f,value:v}))} /></th>
                         </>
                       )}
                       {repType !== 'inward' && (
-                        <th>Project <ColFilter values={(rows || []).map(r => r.project || '—')} selected={cfTxn.project} onChange={v => setCfTxn(f => ({ ...f, project: v }))} /></th>
+                        <th>Project <ColFilter values={(rows||[]).map(r=>r.project||'—')} selected={cfTxn.project} onChange={v=>setCfTxn(f=>({...f,project:v}))} /></th>
                       )}
                     </tr>
                   </thead>
@@ -610,7 +548,7 @@ export default function Reports() {
                         {repType !== 'outward' && <td>{r.vendor || '—'}</td>}
                         {repType !== 'outward' && canSeePrice && (
                           <><td className="num">{formatINR(r.price)}</td>
-                            <td className="num">{formatINR((parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0))}</td></>
+                          <td className="num">{formatINR((parseFloat(r.qty)||0)*(parseFloat(r.price)||0))}</td></>
                         )}
                         {repType !== 'inward' && <td>{r.project || '—'}</td>}
                       </tr>

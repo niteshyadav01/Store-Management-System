@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getMaster, getOutward, addOutward, bulkOutward } from '../api/api';
+import { getMaster, getOutward, addOutward, bulkOutward, updateOutward, deleteOutward } from '../api/api';
+import { useAuth } from '../context/AuthContext';
 import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx } from '../utils/helpers';
 
 const EMPTY_HEADER = {
@@ -8,20 +9,138 @@ const EMPTY_HEADER = {
 
 const EMPTY_ITEM = { name: '', type: '', code: '', category: '', uom: '', qty: '' };
 
+/* ── Edit Modal ──────────────────────────────────────────────────────────── */
+function EditModal({ entry, master, onSave, onClose }) {
+  const [form, setForm] = useState({
+    date:    entry.date    || '',
+    project: entry.project || '',
+    custpo:  entry.custpo  || '',
+    slip:    entry.slip    || '',
+    dept:    entry.dept    || '',
+    recby:   entry.recby   || '',
+    by:      entry.by      || '',
+    name:    entry.name    || '',
+    type:    entry.type    || '',
+    code:    entry.code    || '',
+    category:entry.category|| '',
+    uom:     entry.uom     || '',
+    qty:     entry.qty     || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  function autofill(name) {
+    const m = master.find(x => x.name === name);
+    setForm(f => ({ ...f, name, type: m?.type||'', code: m?.code||'', category: m?.category||'', uom: m?.uom||'' }));
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setErr('');
+    if (!form.name) { setErr('Please select a material.'); return; }
+    if (!form.qty || parseFloat(form.qty) <= 0) { setErr('Enter a valid quantity.'); return; }
+    setSaving(true);
+    try {
+      await onSave(entry._id, { ...form, qty: parseFloat(form.qty) });
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  const modalStyles = {
+    overlay: { position:'fixed', inset:0, background:'rgba(28,26,22,0.55)', backdropFilter:'blur(3px)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' },
+    modal:   { background:'var(--card)', border:'1px solid var(--line)', borderRadius:'var(--radius-lg)', boxShadow:'var(--shadow-lg)', width:'100%', maxWidth:'700px', height:'min(90vh,660px)', display:'flex', flexDirection:'column', overflow:'hidden' },
+    header:  { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'20px 28px', borderBottom:'1px solid var(--line)', flexShrink:0 },
+    body:    { padding:'24px 28px', overflowY:'auto', flex:1, minHeight:0 },
+    footer:  { display:'flex', gap:10, justifyContent:'flex-end', padding:'16px 28px', borderTop:'1px solid var(--line)', flexShrink:0, background:'var(--paper-dim)' },
+  };
+
+  return (
+    <div style={modalStyles.overlay} onClick={onClose}>
+      <div style={modalStyles.modal} onClick={e => e.stopPropagation()}>
+        <div style={modalStyles.header}>
+          <h2 style={{ fontSize:16, fontWeight:700, margin:0 }}>Edit Outward Entry</h2>
+          <button onClick={onClose} style={{ background:'none', border:'none', cursor:'pointer', fontSize:18, color:'#8a8270', padding:'4px 8px', borderRadius:4 }}>✕</button>
+        </div>
+        <form onSubmit={handleSave} style={{ display:'flex', flexDirection:'column', flex:1, minHeight:0 }}>
+          <div style={modalStyles.body}>
+            <div className="formgrid">
+              <div className="field"><label>Issue date</label><input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} /></div>
+              <div className="field"><label>Project name</label><input value={form.project} onChange={e=>setForm(f=>({...f,project:e.target.value}))} placeholder="e.g. Project Alpha" /></div>
+              <div className="field"><label>Customer PO details</label><input value={form.custpo} onChange={e=>setForm(f=>({...f,custpo:e.target.value}))} placeholder="e.g. CPO-2291" /></div>
+              <div className="field"><label>Issue slip no</label><input value={form.slip} onChange={e=>setForm(f=>({...f,slip:e.target.value}))} placeholder="e.g. ISS-0087" /></div>
+              <div className="field"><label>Department</label><input value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))} placeholder="e.g. Production" /></div>
+              <div className="field"><label>Received by</label><input value={form.recby} onChange={e=>setForm(f=>({...f,recby:e.target.value}))} placeholder="Receiver's name" /></div>
+              <div className="field"><label>Issued by (store)</label><input value={form.by} onChange={e=>setForm(f=>({...f,by:e.target.value}))} placeholder="Store keeper's name" /></div>
+              <div className="field full">
+                <label>Material description <span style={{color:'var(--red)'}}>*</span></label>
+                <select value={form.name} onChange={e=>autofill(e.target.value)}>
+                  <option value="">— Select material —</option>
+                  {master.map(m=><option key={m._id} value={m.name}>{m.name}</option>)}
+                </select>
+              </div>
+              <div className="field code"><label>Material type</label><input readOnly value={form.type} /></div>
+              <div className="field code"><label>Material code</label><input readOnly value={form.code} /></div>
+              <div className="field"><label>Category</label><input readOnly value={form.category} /></div>
+              <div className="field"><label>UOM</label><input readOnly value={form.uom} /></div>
+              <div className="field">
+                <label>Qty <span style={{color:'var(--red)'}}>*</span></label>
+                <input type="number" min="0" step="any" value={form.qty} onChange={e=>setForm(f=>({...f,qty:e.target.value}))} placeholder="0" />
+              </div>
+            </div>
+            {err && <div className="alert err" style={{marginTop:14}}>{err}</div>}
+          </div>
+          <div style={modalStyles.footer}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-out" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function OutwardEntry() {
-  const [master,  setMaster]  = useState([]);
-  const [entries, setEntries] = useState([]);
-  const [header,  setHeader]  = useState(EMPTY_HEADER);
-  const [items,   setItems]   = useState([{ ...EMPTY_ITEM }]);
-  const [msg,     setMsg]     = useState({ text: '', ok: true });
-  const [bulkMsg, setBulkMsg] = useState({ text: '', ok: true });
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const canEditDelete = user?.role === 'admin' || user?.role === 'store' || user?.role === 'store_manager';
+
+  const [master,    setMaster]    = useState([]);
+  const [entries,   setEntries]   = useState([]);
+  const [header,    setHeader]    = useState(EMPTY_HEADER);
+  const [items,     setItems]     = useState([{ ...EMPTY_ITEM }]);
+  const [msg,       setMsg]       = useState({ text: '', ok: true });
+  const [bulkMsg,   setBulkMsg]   = useState({ text: '', ok: true });
+  const [loading,   setLoading]   = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
 
   const load = useCallback(async () => {
     const [m, e] = await Promise.all([getMaster(), getOutward()]);
     setMaster(m); setEntries(e);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  async function handleEditSave(id, data) {
+    await updateOutward(id, data);
+    setEditEntry(null);
+    load();
+  }
+
+  async function handleDelete(e) {
+    if (!window.confirm(`Delete outward entry for "${e.name}" (Qty: ${e.qty})?\n\nThis will affect the stock balance.`)) return;
+    try { await deleteOutward(e._id); load(); }
+    catch (err) { alert('Error: ' + err.message); }
+  }
 
   function autofillItem(idx, name) {
     const m = master.find(x => x.name === name);
@@ -222,6 +341,15 @@ export default function OutwardEntry() {
         }
       `}</style>
 
+      {editEntry && (
+        <EditModal
+          entry={editEntry}
+          master={master}
+          onSave={handleEditSave}
+          onClose={() => setEditEntry(null)}
+        />
+      )}
+
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>Outward Entry</h2>
@@ -371,6 +499,7 @@ export default function OutwardEntry() {
                 <th>Department</th><th>Received by</th><th>Issued by</th>
                 <th>Material</th><th>Type</th><th>Code</th>
                 <th>Category</th><th>UOM</th><th className="num">Qty</th>
+                {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -389,6 +518,14 @@ export default function OutwardEntry() {
                   <td>{e.category}</td>
                   <td>{e.uom}</td>
                   <td className="num">{formatNum(e.qty)}</td>
+                  {canEditDelete && (
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-ghost btn-sm" onClick={() => setEditEntry(e)} title="Edit">✏ Edit</button>
+                        <button className="btn-del btn-sm" onClick={() => handleDelete(e)} title="Delete">🗑 Delete</button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

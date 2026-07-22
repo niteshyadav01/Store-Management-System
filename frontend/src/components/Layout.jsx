@@ -49,7 +49,7 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Reports', path: '/reports', roles: ['admin','purchase','store_manager'] },
+      { label: 'Reports', path: '/reports', roles: ['admin','purchase','store_manager','viewer'] },
     ],
   },
   {

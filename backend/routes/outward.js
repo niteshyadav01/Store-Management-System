@@ -29,4 +29,22 @@ router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// PUT /api/outward/:id — full edit (admin + store team)
+router.put('/:id', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+  try {
+    const doc = await Outward.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    if (!doc) return res.status(404).json({ error: 'Not found.' });
+    res.json(doc);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/outward/:id (admin + store team)
+router.delete('/:id', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+  try {
+    const doc = await Outward.findByIdAndDelete(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Not found.' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;

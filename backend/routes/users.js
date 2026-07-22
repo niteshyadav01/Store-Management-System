@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const User   = require('../models/User');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
-// GET /api/users
+// GET /api/users — returns plainPassword too (admin only)
 router.get('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const list = await User.find().select('-password').lean();
@@ -11,7 +11,7 @@ router.get('/', authMiddleware, requireRole('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/users — create or update
+// POST /api/users — create or update, stores plainPassword
 router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
     const { name, username, password, role } = req.body;
@@ -20,10 +20,29 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
     const hash = await bcrypt.hash(password, 10);
     const user = await User.findOneAndUpdate(
       { username: username.toLowerCase().trim() },
-      { $set: { name: name.trim(), password: hash, role } },
+      { $set: { name: name.trim(), password: hash, plainPassword: password, role } },
       { upsert: true, new: true }
     );
-    res.status(201).json({ name: user.name, username: user.username, role: user.role });
+    res.status(201).json({ name: user.name, username: user.username, role: user.role, plainPassword: user.plainPassword });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/users/:username/password — record plain password for existing user
+router.patch('/:username/password', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const { plainPassword, newPassword } = req.body;
+    if (!plainPassword) return res.status(400).json({ error: 'plainPassword is required' });
+    const update = { plainPassword };
+    if (newPassword) {
+      update.password = await bcrypt.hash(newPassword, 10);
+    }
+    const user = await User.findOneAndUpdate(
+      { username: req.params.username },
+      { $set: update },
+      { new: true }
+    );
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json({ ok: true, plainPassword: user.plainPassword });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

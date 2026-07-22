@@ -65,14 +65,18 @@ export const updateInward   = (id, data)  => client.put(`/inward/${id}`, data);
 export const deleteInward   = (id)        => client.delete(`/inward/${id}`);
 
 // ── Outward ───────────────────────────────────────────────────────────────────
-export const getOutward  = ()        => client.get('/outward');
-export const addOutward  = (data)    => client.post('/outward', data);
-export const bulkOutward = (entries) => client.post('/outward/bulk', { entries });
+export const getOutward   = ()        => client.get('/outward');
+export const addOutward   = (data)    => client.post('/outward', data);
+export const bulkOutward  = (entries) => client.post('/outward/bulk', { entries });
+export const updateOutward = (id, data) => client.put(`/outward/${id}`, data);
+export const deleteOutward = (id)       => client.delete(`/outward/${id}`);
 
 // ── Users ─────────────────────────────────────────────────────────────────────
-export const getUsers   = ()         => client.get('/users');
-export const saveUser   = (data)     => client.post('/users', data);
-export const deleteUser = (username) => client.delete(`/users/${username}`);
+export const getUsers         = ()              => client.get('/users');
+export const saveUser         = (data)          => client.post('/users', data);
+export const deleteUser       = (username)      => client.delete(`/users/${username}`);
+export const recordUserPassword = (username, plainPassword) =>
+  client.patch(`/users/${username}/password`, { plainPassword });
 
 // ── Purchase requests ────────────────────────────────────────────────────────
 export const getPurchaseRequests      = ()          => client.get('/purchase-requests');
