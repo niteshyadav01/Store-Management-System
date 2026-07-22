@@ -196,7 +196,7 @@ export default function Users() {
                       ) : (
                         <button type="button" onClick={() => startRecording(u.username)}
                           style={{ background: 'none', border: '1px dashed var(--line)', borderRadius: 6, padding: '3px 10px', fontSize: 11.5, color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          + Record password
+                          + set new password
                         </button>
                       )}
                     </td>
