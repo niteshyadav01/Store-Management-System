@@ -132,8 +132,8 @@ export default function Dashboard() {
       <div className="statrow" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
 
         {[
-          { key: 'pending',       label: 'Pending PRs',           value: counts.pending || 0,    color: (counts.pending || 0) > 0 ? 'var(--red)' : undefined, cls: '' },
-          { key: 'approved',      label: 'INPROCESS',value: counts.approved || 0,   color: undefined, cls: 'teal' },
+          { key: 'pending',       label: 'PR Approval',           value: counts.pending || 0,    color: (counts.pending || 0) > 0 ? 'var(--red)' : undefined, cls: '' },
+          { key: 'approved',      label: 'PR Request',value: counts.approved || 0,   color: undefined, cls: 'teal' },
           { key: 'partial',       label: 'Partially Ordered',     value: counts.partial || 0,    color: undefined, cls: 'rust' },
           { key: 'items-to-order',label: 'Items Still to Order',  value: remainingItemsCount,    color: remainingItemsCount > 0 ? 'var(--red)' : undefined, cls: '' },
           { key: 'low-stock',     label: 'Low Stock',              value: lowStockCount,         color: lowStockCount > 0 ? 'var(--red)' : undefined, cls: 'rust' },

@@ -337,7 +337,7 @@ export default function PurchaseRequest() {
 
       <div className="pagehead">
         <div className="pagehead-text">
-          <h2>Purchase Requests</h2>
+          <h2>PR Requests</h2>
           <p>
             {canReview
               ? "Review requests raised by the store team and move them through to receiving."

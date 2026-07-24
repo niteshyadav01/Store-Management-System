@@ -92,7 +92,7 @@ export default function MasterList() {
     <>
       <div className="pagehead">
         <div className="pagehead-text">
-          <h2>Master Material List</h2>
+          <h2>Item Material</h2>
           <p>Manage your material library. These details auto-fill every inward and outward entry.</p>
         </div>
       </div>
