@@ -18,7 +18,7 @@ const NAV_SECTIONS = [
       { label: 'Live Stock',         path: '/stock',             roles: ['admin','store','store_manager','viewer'] },
       { label: 'Inward Entry',       path: '/inward',            roles: ['admin','store','store_manager'] },
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
-      { label: 'Purchase Requests',  path: '/purchase-requests', roles: ['admin','store','store_manager'] },
+      { label: 'PR Request',  path: '/purchase-requests', roles: ['admin','store','store_manager'] },
       { label: 'PO Matching',        path: '/po-matching',       roles: ['admin','store_manager'] },
     ],
   },
@@ -34,7 +34,7 @@ const NAV_SECTIONS = [
     items: [
       { label: 'Dashboard',       path: '/dashboard',          roles: ['admin','purchase'] },
       { label: 'Live Stock',      path: '/stock',              roles: ['admin','purchase'] },
-      { label: 'Material List',   path: '/master',             roles: ['admin'] },
+      { label: 'Item Master',   path: '/master',             roles: ['admin'] },
       { label: 'Price Entry',     path: '/price',              roles: ['admin','purchase'] },
       { label: 'Purchase Orders', path: '/purchase-orders',    roles: ['admin','purchase'] },
       { label: 'PO Matching',     path: '/po-matching',        roles: ['admin','purchase','store_manager'] },
