@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPurchaseRequests, getPurchaseOrders, getMaster, getInward, getOutward } from '../api/api';
 import { useAuth } from '../context/AuthContext';
+import { formatNum } from '../utils/helpers';
 
 const STATUS_LABEL = {
   pending: 'Pending', approved: 'Approved', partial: 'Partially Ordered',
@@ -20,6 +22,10 @@ const CARD_FILTERS = {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const canCreatePO = user?.role === 'purchase' || user?.role === 'admin';
+  const canApprove  = user?.role === 'store_manager' || user?.role === 'admin';
 
   const [requests, setRequests] = useState([]);
   const [pos,      setPos]      = useState([]);
@@ -29,6 +35,7 @@ export default function Dashboard() {
   const [loading,  setLoading]  = useState(true);
   const [err,      setErr]      = useState('');
   const [activeFilter, setActiveFilter] = useState(null); // null = show all
+  const [expanded, setExpanded] = useState(null); // expanded PR _id
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +91,11 @@ export default function Dashboard() {
     outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
   });
 
+  const stockMap = {};
+  master.forEach(m => {
+    stockMap[m.name] = (inTotals[m.name] || 0) - (outTotals[m.name] || 0);
+  });
+
   const lowStockItems = master.map(m => {
     const inQty = inTotals[m.name] || 0;
     const outQty = outTotals[m.name] || 0;
@@ -103,6 +115,7 @@ export default function Dashboard() {
 
   function handleCardClick(filterKey) {
     setActiveFilter(prev => prev === filterKey ? null : filterKey);
+    setExpanded(null);
   }
 
   const filteredPRs = getFilteredPRs();
@@ -113,6 +126,8 @@ export default function Dashboard() {
     : activeFilter === 'low-stock' ? 'Low Stock Items'
     : STATUS_LABEL[activeFilter] || activeFilter
     : null;
+
+  const showActionsCol = canCreatePO || canApprove;
 
   return (
     <>
@@ -242,29 +257,132 @@ export default function Dashboard() {
                 <tr>
                   <th>PR No</th><th>Date</th><th>Project Name</th><th>Request From</th>
                   <th>Requested by</th><th>Total Items</th><th>Items to Order</th><th>Status</th>
+                  {showActionsCol && <th></th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredPRs.map(pr => {
                   const itemsToOrder = ['approved','partial'].includes(pr.status)
                     ? itemsToOrderCount(pr) : null;
+                  const isExpanded = expanded === pr._id;
                   return (
-                    <tr key={pr._id}>
-                      <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
-                      <td>{pr.date}</td>
-                      <td>{pr.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                      <td>{pr.requestFrom || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                      <td>{pr.requestedByName}</td>
-                      <td>{pr.items.length}</td>
-                      <td>
-                        {itemsToOrder !== null ? (
-                          <span style={{ fontWeight: 600, color: itemsToOrder > 0 ? 'var(--red)' : 'inherit' }}>
-                            {itemsToOrder}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td><span className={`tag ${pr.status}`}>{STATUS_LABEL[pr.status] || pr.status}</span></td>
-                    </tr>
+                    <React.Fragment key={pr._id}>
+                      <tr
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => setExpanded(x => x === pr._id ? null : pr._id)}
+                      >
+                        <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
+                        <td>{pr.date}</td>
+                        <td>{pr.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                        <td>{pr.requestFrom || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                        <td>{pr.requestedByName}</td>
+                        <td>{pr.items.length}</td>
+                        <td>
+                          {itemsToOrder !== null ? (
+                            <span style={{ fontWeight: 600, color: itemsToOrder > 0 ? 'var(--red)' : 'inherit' }}>
+                              {itemsToOrder}
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td><span className={`tag ${pr.status}`}>{STATUS_LABEL[pr.status] || pr.status}</span></td>
+                        {showActionsCol && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            {canCreatePO && (pr.status === 'approved' || pr.status === 'partial') && (
+                              <button
+                                className="btn btn-sm btn-in"
+                                onClick={() => navigate('/purchase-orders')}
+                              >
+                                Create PO
+                              </button>
+                            )}
+                            {canApprove && pr.status === 'pending' && (
+                              <button
+                                className="btn btn-sm btn-in"
+                                onClick={() => navigate('/purchase-requests')}
+                              >
+                                Approve
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={showActionsCol ? 9 : 8} style={{ background: 'var(--paper-dim)' }}>
+                            <div style={{ padding: '14px 6px' }}>
+                              <div className="tablewrap" style={{ marginBottom: 12 }}>
+                                <table>
+                                  <thead>
+                                    <tr>
+                                      <th>Material</th>
+                                      <th>Code</th>
+                                      <th>Category</th>
+                                      <th>UOM</th>
+                                      <th className="num">Requested Qty</th>
+                                      <th className="num">Current Stock</th>
+                                      <th>Project Name</th>
+                                      <th>Remarks</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {pr.items.map((it, i) => {
+                                      const stock = stockMap[it.name] ?? null;
+                                      const isLow = stock !== null && stock < it.qty;
+                                      return (
+                                        <tr key={i}>
+                                          <td>{it.name}</td>
+                                          <td className="mono">{it.code || '—'}</td>
+                                          <td>{it.category || '—'}</td>
+                                          <td>{it.uom || '—'}</td>
+                                          <td className="num">{formatNum(it.qty)}</td>
+                                          <td className="num">
+                                            {stock !== null ? (
+                                              <strong style={{ color: stock <= 0 ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--teal-dark)' }}>
+                                                {formatNum(stock)}
+                                              </strong>
+                                            ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
+                                          </td>
+                                          <td>{it.projectName || pr.projectName || '—'}</td>
+                                          <td>{it.remarks || '—'}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+
+                              {pr.requestFrom && (
+                                <p style={{ fontSize: 12.5, marginBottom: 8 }}>
+                                  <strong>Request From:</strong> {pr.requestFrom}
+                                </p>
+                              )}
+                              {pr.status === 'rejected' && pr.rejectReason && (
+                                <p style={{ fontSize: 12.5, marginBottom: 8, color: 'var(--red)' }}>
+                                  <strong>Rejection reason:</strong> {pr.rejectReason}
+                                </p>
+                              )}
+                              {(pr.poNumber || pr.vendor) && (
+                                <p style={{ fontSize: 12.5, marginBottom: 8 }}>
+                                  <strong>PO number:</strong> {pr.poNumber || '—'}&nbsp;&nbsp;
+                                  <strong>Vendor:</strong> {pr.vendor || '—'}
+                                </p>
+                              )}
+                              {Array.isArray(pr.history) && pr.history.length > 0 && (
+                                <div style={{ fontSize: 11.5, color: '#8a8270', lineHeight: 1.7 }}>
+                                  {pr.history.map((h, i) => (
+                                    <div key={i}>
+                                      • {STATUS_LABEL[h.status] || h.status} by {h.byName} — {new Date(h.at).toLocaleString('en-IN')}
+                                      {h.note ? ` — ${h.note}` : ''}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

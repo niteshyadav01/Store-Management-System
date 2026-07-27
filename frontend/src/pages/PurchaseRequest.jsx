@@ -618,6 +618,7 @@ export default function PurchaseRequest() {
             <tbody>
               {visible.map((pr) => {
                 const isOwner = pr.requestedByUsername === user?.username;
+                const canEditThis = isOwner || user?.role === "admin" || user?.role === "store_manager";
                 return (
                   <React.Fragment key={pr._id}>
                     <tr
@@ -635,7 +636,7 @@ export default function PurchaseRequest() {
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {pr.status === "pending" && (isOwner || user?.role === "admin") && (
+                          {pr.status === "pending" && canEditThis && (
                             <>
                               <button className="btn btn-sm btn-ghost" onClick={() => startEdit(pr)}>Edit</button>
                               <button className="btn-del btn-sm" onClick={() => handleCancel(pr)}>Cancel</button>

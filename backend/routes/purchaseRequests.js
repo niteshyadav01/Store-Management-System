@@ -91,8 +91,8 @@ router.put('/:id', authMiddleware, requireRole(...CREATOR_ROLES), async (req, re
     const pr = await PurchaseRequest.findById(req.params.id);
     if (!pr) return res.status(404).json({ error: 'Not found' });
     const isOwner = pr.requestedByUsername === req.user.username;
-    if (!isOwner && req.user.role !== 'admin')
-      return res.status(403).json({ error: 'You can only edit your own requests.' });
+   if (!isOwner && req.user.role !== 'admin' && req.user.role !== 'store_manager')
+  return res.status(403).json({ error: 'You can only edit your own requests.' });
     if (pr.status !== 'pending')
       return res.status(400).json({ error: `Cannot edit a request that is already ${pr.status}.` });
 

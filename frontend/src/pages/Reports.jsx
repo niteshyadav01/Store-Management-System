@@ -273,7 +273,7 @@ export default function Reports() {
       if (repType !== 'outward') headers.push('Vendor');
       if (repType !== 'outward' && canSeePrice) headers.push('Price', 'Value');
       if (repType !== 'inward') headers.push('Project');
-      if (repType === 'outward') headers.push('Remarks');
+      headers.push('Remarks');
       const dataRows = filteredRows.map(r => {
         const row = [r.date, r.name, r.category, r.type, r.code, r.uom, parseFloat(r.qty) || 0];
         if (repType !== 'outward') row.push(r.vendor || '');
@@ -282,7 +282,7 @@ export default function Reports() {
           row.push(parseFloat(r.price) || 0, v);
         }
         if (repType !== 'inward') row.push(r.project || '');
-        if (repType === 'outward') row.push(r.remarks || '');
+        row.push(r.remarks || '');
         return row;
       });
       const label = repType.charAt(0).toUpperCase() + repType.slice(1);
@@ -319,7 +319,7 @@ export default function Reports() {
         (!cfTxn.price.length    || cfTxn.price.includes(String(formatINR(r.price)))) &&
         (!cfTxn.value.length    || cfTxn.value.includes(String(formatINR(value)))) &&
         (!cfTxn.project.length  || cfTxn.project.includes(r.project || '—')) &&
-        (repType !== 'outward' || !cfTxn.remarks.length || cfTxn.remarks.includes(r.remarks || '—'))
+        (!cfTxn.remarks.length  || cfTxn.remarks.includes(r.remarks || '—'))
       );
     }
   });
@@ -590,9 +590,7 @@ export default function Reports() {
                       {repType !== 'inward' && (
                         <th>Project <ColFilter values={(rows||[]).map(r=>r.project||'—')} selected={cfTxn.project} onChange={v=>setCfTxn(f=>({...f,project:v}))} /></th>
                       )}
-                      {repType === 'outward' && (
-                        <th className="col-remarks">Remarks <ColFilter values={(rows||[]).map(r=>r.remarks||'—')} selected={cfTxn.remarks} onChange={v=>setCfTxn(f=>({...f,remarks:v}))} /></th>
-                      )}
+                      <th className="col-remarks">Remarks <ColFilter values={(rows||[]).map(r=>r.remarks||'—')} selected={cfTxn.remarks} onChange={v=>setCfTxn(f=>({...f,remarks:v}))} /></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -610,9 +608,7 @@ export default function Reports() {
                           <td className="num">{formatINR((parseFloat(r.qty)||0)*(parseFloat(r.price)||0))}</td></>
                         )}
                         {repType !== 'inward' && <td>{r.project || '—'}</td>}
-                        {repType === 'outward' && (
-                          <td className="col-remarks" title={r.remarks || ''}>{r.remarks || '—'}</td>
-                        )}
+                        <td className="col-remarks" title={r.remarks || ''}>{r.remarks || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

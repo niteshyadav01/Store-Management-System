@@ -4,10 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx } from '../utils/helpers';
 
 const EMPTY_HEADER = {
-  date: todayStr(), project: '', custpo: '', slip: '', dept: '', recby: '', by: '', remarks: ''
+  date: todayStr(), project: '', custpo: '', slip: '', dept: '', recby: '', by: ''
 };
 
-const EMPTY_ITEM = { name: '', type: '', code: '', category: '', uom: '', qty: '' };
+const EMPTY_ITEM = { name: '', type: '', code: '', category: '', uom: '', qty: '', remarks: '' };
 
 /* ── Edit Modal ──────────────────────────────────────────────────────────── */
 function EditModal({ entry, master, onSave, onClose }) {
@@ -25,8 +25,7 @@ function EditModal({ entry, master, onSave, onClose }) {
     category:entry.category|| '',
     uom:     entry.uom     || '',
     qty:     entry.qty     || '',
-      remarks: entry.remarks || '',
-
+    remarks: entry.remarks || '',
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -85,7 +84,6 @@ function EditModal({ entry, master, onSave, onClose }) {
               <div className="field"><label>Department</label><input value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))} placeholder="e.g. Production" /></div>
               <div className="field"><label>Received by</label><input value={form.recby} onChange={e=>setForm(f=>({...f,recby:e.target.value}))} placeholder="Receiver's name" /></div>
               <div className="field"><label>Issued by (store)</label><input value={form.by} onChange={e=>setForm(f=>({...f,by:e.target.value}))} placeholder="Store keeper's name" /></div>
-              <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e=>setForm(f=>({...f,remarks:e.target.value}))} placeholder="Optional remarks" /></div>
               <div className="field full">
                 <label>Material description <span style={{color:'var(--red)'}}>*</span></label>
                 <select value={form.name} onChange={e=>autofill(e.target.value)}>
@@ -101,6 +99,7 @@ function EditModal({ entry, master, onSave, onClose }) {
                 <label>Qty <span style={{color:'var(--red)'}}>*</span></label>
                 <input type="number" min="0" step="any" value={form.qty} onChange={e=>setForm(f=>({...f,qty:e.target.value}))} placeholder="0" />
               </div>
+              <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e=>setForm(f=>({...f,remarks:e.target.value}))} placeholder="Optional remarks" /></div>
             </div>
             {err && <div className="alert err" style={{marginTop:14}}>{err}</div>}
           </div>
@@ -155,6 +154,10 @@ export default function OutwardEntry() {
 
   function updateItemQty(idx, qty) {
     setItems(list => list.map((it, i) => i === idx ? { ...it, qty } : it));
+  }
+
+  function updateItemRemarks(idx, remarks) {
+    setItems(list => list.map((it, i) => i === idx ? { ...it, remarks } : it));
   }
 
   function addManualRow() {
@@ -290,7 +293,7 @@ export default function OutwardEntry() {
         .item-rows .btn-ghost.btn-sm { width: auto; align-self: flex-start; }
         .item-row {
           display: grid;
-          grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.7fr auto;
+          grid-template-columns: 2fr 1fr 1fr 1fr 0.8fr 0.7fr 1.2fr auto;
           gap: 10px;
           align-items: end;
           padding: 10px;
@@ -429,10 +432,6 @@ export default function OutwardEntry() {
               <label>Issued by (store) <span style={{ color: 'var(--red)' }}>*</span></label>
               <input required value={header.by} onChange={e => setHeader(h => ({ ...h, by: e.target.value }))} placeholder="Store keeper's name" />
             </div>
-            <div className="field">
-              <label>Remarks</label>
-              <input value={header.remarks} onChange={e => setHeader(h => ({ ...h, remarks: e.target.value }))} placeholder="Optional remarks" />
-            </div>
 
             {/* Item rows */}
             <div className="item-rows">
@@ -468,6 +467,14 @@ export default function OutwardEntry() {
                       value={it.qty}
                       onChange={e => updateItemQty(idx, e.target.value)}
                       placeholder="0"
+                    />
+                  </div>
+                  <div className="field">
+                    <label>Remarks</label>
+                    <input
+                      value={it.remarks}
+                      onChange={e => updateItemRemarks(idx, e.target.value)}
+                      placeholder="Optional"
                     />
                   </div>
                   <button
