@@ -29,15 +29,36 @@ function ColFilter({ values, selected, onChange }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // The panel is position:fixed relative to the viewport. If the page (or the
+  // table's own scroll container) scrolls while it's open, it would stay
+  // pinned to its old screen coordinates instead of following the button —
+  // so just close it on any scroll, same as most Excel-style dropdowns do.
+  useEffect(() => {
+    if (!open) return;
+    function onScroll() { setOpen(false); }
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [open]);
+
   function handleOpen() {
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
+      const panelW = 280;
       const panelH = 360;
       const spaceBelow = window.innerHeight - rect.bottom;
-      setPos({
-        top:  spaceBelow < panelH ? rect.top - panelH + window.scrollY : rect.bottom + window.scrollY + 2,
-        left: rect.left + window.scrollX,
-      });
+      let top  = spaceBelow < panelH ? rect.top - panelH - 4 : rect.bottom + 4;
+      let left = rect.left;
+      // Clamp fully within the viewport so opening it can never force the
+      // page itself to scroll (which used to happen with the last column).
+      left = Math.min(left, window.innerWidth - panelW - 12);
+      left = Math.max(left, 12);
+      top  = Math.min(top, window.innerHeight - panelH - 12);
+      top  = Math.max(top, 12);
+      setPos({ top, left });
     }
     setOpen(v => !v);
   }
@@ -65,18 +86,26 @@ function ColFilter({ values, selected, onChange }) {
 
   const panel = (
     <div ref={panelRef} style={{
-      position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
+      position: 'fixed', top: pos.top, left: pos.left, zIndex: 99999,
       background: '#fff', border: '1px solid var(--line)',
       borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
-      minWidth: 240, maxWidth: 320, overflow: 'hidden',
+      width: 280, maxWidth: 320, overflow: 'hidden',
     }}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
         <input autoFocus placeholder="Search…" value={search}
           onChange={e => setSearch(e.target.value)}
-          style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
+          style={{ flex: 1, padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
             borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
           onFocus={e => e.target.style.borderColor = 'var(--teal)'}
           onBlur={e  => e.target.style.borderColor = 'var(--line)'} />
+        <button onClick={() => setOpen(false)} title="Close" aria-label="Close filter" style={{
+          flexShrink: 0, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, lineHeight: 1,
+          color: '#8a8270', borderRadius: 5,
+        }}
+          onMouseEnter={e => e.currentTarget.style.background = 'var(--paper-dim)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+        >✕</button>
       </div>
       <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
         display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
@@ -152,7 +181,7 @@ export default function Reports() {
   const [repMsg,   setRepMsg]   = useState('');
 
   const [cfBoth, setCfBoth] = useState({ name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] });
-  const [cfTxn,  setCfTxn]  = useState({ date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] });
+  const [cfTxn,  setCfTxn]  = useState({ date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [], remarks: [] });
 
   const load = useCallback(async () => {
     const [m, i, o] = await Promise.all([getMaster(), getInward(), getOutward()]);
@@ -168,7 +197,7 @@ export default function Reports() {
   const projects   = [...new Set(outward.map(e => e.project).filter(Boolean))].sort();
 
   const emptyCfBoth = { name: [], type: [], category: [], code: [], uom: [], inQty: [], outQty: [], balance: [], minStock: [], avgPrice: [], stockVal: [] };
-  const emptyCfTxn  = { date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [] };
+  const emptyCfTxn  = { date: [], name: [], category: [], code: [], uom: [], qty: [], vendor: [], price: [], value: [], project: [], remarks: [] };
 
   function filterEntries(entries) {
     return entries.filter(e => {
@@ -244,6 +273,7 @@ export default function Reports() {
       if (repType !== 'outward') headers.push('Vendor');
       if (repType !== 'outward' && canSeePrice) headers.push('Price', 'Value');
       if (repType !== 'inward') headers.push('Project');
+      if (repType === 'outward') headers.push('Remarks');
       const dataRows = filteredRows.map(r => {
         const row = [r.date, r.name, r.category, r.type, r.code, r.uom, parseFloat(r.qty) || 0];
         if (repType !== 'outward') row.push(r.vendor || '');
@@ -252,6 +282,7 @@ export default function Reports() {
           row.push(parseFloat(r.price) || 0, v);
         }
         if (repType !== 'inward') row.push(r.project || '');
+        if (repType === 'outward') row.push(r.remarks || '');
         return row;
       });
       const label = repType.charAt(0).toUpperCase() + repType.slice(1);
@@ -287,7 +318,8 @@ export default function Reports() {
         (!cfTxn.vendor.length   || cfTxn.vendor.includes(r.vendor || '—')) &&
         (!cfTxn.price.length    || cfTxn.price.includes(String(formatINR(r.price)))) &&
         (!cfTxn.value.length    || cfTxn.value.includes(String(formatINR(value)))) &&
-        (!cfTxn.project.length  || cfTxn.project.includes(r.project || '—'))
+        (!cfTxn.project.length  || cfTxn.project.includes(r.project || '—')) &&
+        (repType !== 'outward' || !cfTxn.remarks.length || cfTxn.remarks.includes(r.remarks || '—'))
       );
     }
   });
@@ -315,6 +347,30 @@ export default function Reports() {
 
   return (
     <>
+      <style>{`
+        /* Prevent the wide report table from ever forcing the whole
+           document to scroll horizontally — scrolling stays inside .tablewrap */
+        .reports-page-guard { overflow-x: hidden; }
+
+        .reports-section table th,
+        .reports-section table td {
+          max-width: 260px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .reports-section table td.wrap-cell {
+          white-space: normal;
+        }
+        .reports-section table th.col-remarks,
+        .reports-section table td.col-remarks {
+          max-width: 180px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+      `}</style>
+      <div className="reports-page-guard">
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>Reports</h2>
@@ -457,7 +513,7 @@ export default function Reports() {
 
       {/* Results table */}
       {rows !== null && (
-        <div className="card">
+        <div className="card reports-section">
           <h3>
             {repType === 'both' ? 'Stock balance by material' : repType === 'inward' ? 'Inward entries' : 'Outward entries'}
             <span className="pill-count">{filteredRows.length || 0}</span>
@@ -488,7 +544,7 @@ export default function Reports() {
                   <tbody>
                     {filteredRows.map((r, i) => (
                       <tr key={i}>
-                        <td style={{ fontWeight: 500 }}>{r.name}</td>
+                        <td className="wrap-cell" style={{ fontWeight: 500 }}>{r.name}</td>
                         <td>{r.type}</td>
                         <td>{r.category}</td>
                         <td className="mono">{r.code}</td>
@@ -534,13 +590,16 @@ export default function Reports() {
                       {repType !== 'inward' && (
                         <th>Project <ColFilter values={(rows||[]).map(r=>r.project||'—')} selected={cfTxn.project} onChange={v=>setCfTxn(f=>({...f,project:v}))} /></th>
                       )}
+                      {repType === 'outward' && (
+                        <th className="col-remarks">Remarks <ColFilter values={(rows||[]).map(r=>r.remarks||'—')} selected={cfTxn.remarks} onChange={v=>setCfTxn(f=>({...f,remarks:v}))} /></th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRows.map((r, i) => (
                       <tr key={i}>
                         <td>{r.date}</td>
-                        <td style={{ fontWeight: 500 }}>{r.name}</td>
+                        <td className="wrap-cell" style={{ fontWeight: 500 }}>{r.name}</td>
                         <td>{r.category}</td>
                         <td className="mono">{r.code}</td>
                         <td>{r.uom}</td>
@@ -551,6 +610,9 @@ export default function Reports() {
                           <td className="num">{formatINR((parseFloat(r.qty)||0)*(parseFloat(r.price)||0))}</td></>
                         )}
                         {repType !== 'inward' && <td>{r.project || '—'}</td>}
+                        {repType === 'outward' && (
+                          <td className="col-remarks" title={r.remarks || ''}>{r.remarks || '—'}</td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -561,6 +623,7 @@ export default function Reports() {
           {!filteredRows.length && <div className="empty">No records match the selected filters.</div>}
         </div>
       )}
+      </div>
     </>
   );
 }

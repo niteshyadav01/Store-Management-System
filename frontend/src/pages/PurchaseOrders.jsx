@@ -29,6 +29,7 @@ export default function PurchaseOrders() {
   const [poList, setPoList] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [expandedPr, setExpandedPr] = useState(null);
+  const [expandedPo, setExpandedPo] = useState(null);
   const [prItemsMap, setPrItemsMap] = useState({});
   const [prItemsLoading, setPrItemsLoading] = useState({});
 
@@ -96,6 +97,10 @@ export default function PurchaseOrders() {
     } finally {
       setPrItemsLoading(prev => ({ ...prev, [pr._id]: false }));
     }
+  }
+
+  function togglePoRow(id) {
+    setExpandedPo(prev => prev === id ? null : id);
   }
 
   // ── Form PR change ────────────────────────────────────────────────────────
@@ -465,7 +470,7 @@ export default function PurchaseOrders() {
         )}
       </div>
 
-   
+
       {/* ── All POs list ──────────────────────────────────────────────────── */}
       <div className="card">
         <h3>All purchase orders <span className="pill-count">{poList.length}</span></h3>
@@ -488,20 +493,82 @@ export default function PurchaseOrders() {
               {poList.map(po => {
                 const totalValue = (po.items || []).reduce((s, i) => s + i.orderedQty * (i.price || 0), 0);
                 const pr = prMap[po.prNumber];
+                const isOpen = expandedPo === po._id;
                 return (
-                  <tr key={po._id}>
-                    <td className="mono" style={{ fontWeight: 700 }}>{po.poNumber}</td>
-                    <td>{po.poDate}</td>
-                    <td>{po.poExpectedDate || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                    <td className="mono">{po.prNumber}</td>
-                    <td>{po.vendorName}</td>
-                    <td>{pr?.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
-                    <td>{po.items?.length || 0}</td>
-                    <td className="num">
-                      {totalValue > 0 ? totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
-                    </td>
-                    <td>{po.createdByName}</td>
-                  </tr>
+                  <React.Fragment key={po._id}>
+                    <tr
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => togglePoRow(po._id)}
+                    >
+                      <td className="mono" style={{ fontWeight: 700 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{
+                            display: 'inline-block', transition: 'transform 150ms',
+                            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: 10, color: 'var(--text-3)',
+                          }}>▶</span>
+                          {po.poNumber}
+                        </span>
+                      </td>
+                      <td>{po.poDate}</td>
+                      <td>{po.poExpectedDate || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td className="mono">{po.prNumber}</td>
+                      <td>{po.vendorName}</td>
+                      <td>{pr?.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td>{po.items?.length || 0}</td>
+                      <td className="num">
+                        {totalValue > 0 ? totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                      </td>
+                      <td>{po.createdByName}</td>
+                    </tr>
+
+                    {/* Expanded line-items row */}
+                    {isOpen && (
+                      <tr>
+                        <td colSpan={9} style={{ background: 'var(--paper-dim)', padding: 0 }}>
+                          <div style={{ padding: '14px 20px' }}>
+                            {(!po.items || po.items.length === 0) ? (
+                              <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>No line items on this PO.</p>
+                            ) : (
+                              <div className="tablewrap">
+                                <table style={{ fontSize: 13 }}>
+                                  <thead>
+                                    <tr>
+                                      <th style={thStyle}>Material</th>
+                                      <th style={thStyle}>Code</th>
+                                      <th style={thStyle}>Category</th>
+                                      <th style={thStyle}>UOM</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Ordered Qty</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Unit Price</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Value</th>
+                                      <th style={thStyle}>Remarks</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {po.items.map((it, i) => (
+                                      <tr key={i} style={{ borderBottom: '1px solid var(--line)' }}>
+                                        <td style={tdStyle}><strong>{it.name}</strong></td>
+                                        <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{it.code || '—'}</td>
+                                        <td style={tdStyle}>{it.category || '—'}</td>
+                                        <td style={tdStyle}>{it.uom || '—'}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>{it.orderedQty}</td>
+                                        <td style={{ ...tdStyle, textAlign: 'right' }}>
+                                          {it.price ? Number(it.price).toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                                        </td>
+                                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 600 }}>
+                                          {(it.orderedQty * (it.price || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td style={tdStyle}>{it.remarks || '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 );
               })}
             </tbody>

@@ -13,7 +13,9 @@ const outwardSchema = new mongoose.Schema({
   code:     { type: String, default: '' },
   category: { type: String, default: '' },
   uom:      { type: String, default: '' },
-  qty:      { type: Number, required: true }
+  qty:      { type: Number, required: true },
+  remarks:  { type: String, default: '' }
+
 }, { timestamps: true });
 
 // Indexes for common query patterns

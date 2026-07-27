@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx } from '../utils/helpers';
 
 const EMPTY_HEADER = {
-  date: todayStr(), project: '', custpo: '', slip: '', dept: '', recby: '', by: ''
+  date: todayStr(), project: '', custpo: '', slip: '', dept: '', recby: '', by: '', remarks: ''
 };
 
 const EMPTY_ITEM = { name: '', type: '', code: '', category: '', uom: '', qty: '' };
@@ -25,6 +25,8 @@ function EditModal({ entry, master, onSave, onClose }) {
     category:entry.category|| '',
     uom:     entry.uom     || '',
     qty:     entry.qty     || '',
+      remarks: entry.remarks || '',
+
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
@@ -83,6 +85,7 @@ function EditModal({ entry, master, onSave, onClose }) {
               <div className="field"><label>Department</label><input value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))} placeholder="e.g. Production" /></div>
               <div className="field"><label>Received by</label><input value={form.recby} onChange={e=>setForm(f=>({...f,recby:e.target.value}))} placeholder="Receiver's name" /></div>
               <div className="field"><label>Issued by (store)</label><input value={form.by} onChange={e=>setForm(f=>({...f,by:e.target.value}))} placeholder="Store keeper's name" /></div>
+              <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e=>setForm(f=>({...f,remarks:e.target.value}))} placeholder="Optional remarks" /></div>
               <div className="field full">
                 <label>Material description <span style={{color:'var(--red)'}}>*</span></label>
                 <select value={form.name} onChange={e=>autofill(e.target.value)}>
@@ -218,9 +221,10 @@ export default function OutwardEntry() {
         const dept    = pickCol(row, ['department', 'dept']);
         const recby   = pickCol(row, ['materialreceivedby', 'receivedby', 'recby']);
         const by      = pickCol(row, ['materialissuedby', 'issuedby', 'by']);
+        const remarks = pickCol(row, ['remarks', 'remark', 'notes', 'note']);
         batch.push({
           date: parseExcelDate(pickCol(row, ['date', 'entrydate', 'issuedate'])) || today,
-          project, custpo, slip, dept, recby, by,
+          project, custpo, slip, dept, recby, by, remarks,
           name: m.name, type: m.type, code: m.code, category: m.category, uom: m.uom,
           qty,
         });
@@ -237,8 +241,8 @@ export default function OutwardEntry() {
 
   function downloadTemplate() {
     exportXlsx(
-      ['Date', 'Project Name', 'Customer PO Details', 'Issue Slip No', 'Department', 'Received By', 'Issued By', 'Material Name', 'Qty'],
-      [[todayStr(), 'Project Alpha', 'CPO-3001', 'ISS-0010', 'Production', 'Site Engineer', 'Store Keeper', '[Material Name from master]', '5']],
+      ['Date', 'Project Name', 'Customer PO Details', 'Issue Slip No', 'Department', 'Received By', 'Issued By', 'Material Name', 'Qty', 'Remarks'],
+      [[todayStr(), 'Project Alpha', 'CPO-3001', 'ISS-0010', 'Production', 'Site Engineer', 'Store Keeper', '[Material Name from master]', '5', '']],
       'Outward Template', 'Stockyard_Outward_Template.xlsx'
     );
   }
@@ -370,7 +374,7 @@ export default function OutwardEntry() {
           </label>
           <input type="file" id="outward-bulk" accept=".xlsx,.xls,.csv" onChange={handleBulk} />
           <div className="hint">
-            Required: <strong>Material Name, Qty</strong> — All other columns optional: Date, Project Name, Customer PO Details, Issue Slip No, Department, Received By, Issued By<br />
+            Required: <strong>Material Name, Qty</strong> — All other columns optional: Date, Project Name, Customer PO Details, Issue Slip No, Department, Received By, Issued By, Remarks<br />
             Material Name must exactly match an entry in the master list.{' '}
             <button onClick={downloadTemplate}>Download template</button>
           </div>
@@ -424,6 +428,10 @@ export default function OutwardEntry() {
             <div className="field">
               <label>Issued by (store) <span style={{ color: 'var(--red)' }}>*</span></label>
               <input required value={header.by} onChange={e => setHeader(h => ({ ...h, by: e.target.value }))} placeholder="Store keeper's name" />
+            </div>
+            <div className="field">
+              <label>Remarks</label>
+              <input value={header.remarks} onChange={e => setHeader(h => ({ ...h, remarks: e.target.value }))} placeholder="Optional remarks" />
             </div>
 
             {/* Item rows */}
@@ -498,7 +506,7 @@ export default function OutwardEntry() {
                 <th>Date</th><th>Project</th><th>Customer PO</th><th>Slip no</th>
                 <th>Department</th><th>Received by</th><th>Issued by</th>
                 <th>Material</th><th>Type</th><th>Code</th>
-                <th>Category</th><th>UOM</th><th className="num">Qty</th>
+                <th>Category</th><th>UOM</th><th className="num">Qty</th><th>Remarks</th>
                 {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
             </thead>
@@ -518,6 +526,7 @@ export default function OutwardEntry() {
                   <td>{e.category}</td>
                   <td>{e.uom}</td>
                   <td className="num">{formatNum(e.qty)}</td>
+                  <td>{e.remarks || '—'}</td>
                   {canEditDelete && (
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>

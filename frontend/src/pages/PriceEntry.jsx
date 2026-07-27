@@ -80,14 +80,22 @@ function ColFilter({ values, selected, onChange }) {
           borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
           minWidth: 240, maxWidth: 320, overflow: 'hidden',
         }}>
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)' }}>
-            <input autoFocus placeholder="Search…" value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
-                borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
-              onFocus={e => e.target.style.borderColor = 'var(--teal)'}
-              onBlur={e => e.target.style.borderColor = 'var(--line)'} />
-          </div>
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
+  <input autoFocus placeholder="Search…" value={search}
+    onChange={e => setSearch(e.target.value)}
+    style={{ flex: 1, padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
+      borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)' }}
+    onFocus={e => e.target.style.borderColor = 'var(--teal)'}
+    onBlur={e  => e.target.style.borderColor = 'var(--line)'} />
+  <button onClick={() => setOpen(false)} title="Close" aria-label="Close filter" style={{
+    flexShrink: 0, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, lineHeight: 1,
+    color: '#8a8270', borderRadius: 5,
+  }}
+    onMouseEnter={e => e.currentTarget.style.background = 'var(--paper-dim)'}
+    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+  >✕</button>
+</div>
           <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
             display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
             background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined }}>

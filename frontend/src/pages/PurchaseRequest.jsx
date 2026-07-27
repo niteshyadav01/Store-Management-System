@@ -135,6 +135,7 @@ export default function PurchaseRequest() {
 
   const [date, setDate] = useState(todayStr());
   const [requestFrom, setRequestFrom] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [items, setItems] = useState([emptyItem()]);
   const [editingId, setEditingId] = useState(null);
 
@@ -172,6 +173,7 @@ export default function PurchaseRequest() {
   function resetForm() {
     setDate(todayStr());
     setRequestFrom("");
+    setProjectName("");
     setItems([emptyItem()]);
     setEditingId(null);
   }
@@ -225,7 +227,7 @@ export default function PurchaseRequest() {
       const uniqueProjectNames = [...new Set(valid.map((it) => it.projectName).filter(Boolean))];
       const payload = {
         date, requestFrom,
-        projectName: uniqueProjectNames.join(", "),
+        projectName: projectName || uniqueProjectNames.join(", "),
         items: valid.map((it) => ({ ...it, qty: parseFloat(it.qty) })),
       };
       if (editingId) {
@@ -249,6 +251,7 @@ export default function PurchaseRequest() {
     setEditingId(pr._id);
     setDate(pr.date);
     setRequestFrom(pr.requestFrom || "");
+    setProjectName(pr.projectName || "");
     setItems(
       pr.items.map((it) => ({
         ...it,
@@ -303,7 +306,7 @@ export default function PurchaseRequest() {
       <style>{`
         .pr-formgrid {
           display: grid;
-          grid-template-columns: repeat(2, 1fr);
+          grid-template-columns: repeat(3, 1fr);
           gap: 10px 14px;
         }
         .pr-formgrid .field { min-width: 0; }
@@ -318,7 +321,7 @@ export default function PurchaseRequest() {
         .actionrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
         @media (max-width: 900px) {
-          .pr-formgrid { grid-template-columns: 1fr; }
+          .pr-formgrid { grid-template-columns: 1fr 1fr; }
         }
 
         @media (max-width: 600px) {
@@ -327,6 +330,7 @@ export default function PurchaseRequest() {
           .itemtable table { min-width: 1050px; }
           .actionrow { flex-direction: column; align-items: stretch; }
           .actionrow .btn { width: 100%; }
+          .pr-formgrid { grid-template-columns: 1fr; }
         }
 
         @media (max-width: 420px) {
@@ -361,6 +365,14 @@ export default function PurchaseRequest() {
                   type="text" value={requestFrom}
                   onChange={(e) => setRequestFrom(e.target.value)}
                   placeholder="e.g. Civil Dept, Mr. Sharma"
+                />
+              </div>
+              <div className="field">
+                <label>Project Name</label>
+                <input
+                  type="text" value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="e.g. Thailand - Damac & Stock"
                 />
               </div>
             </div>
@@ -681,7 +693,7 @@ export default function PurchaseRequest() {
                                             </strong>
                                           ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
                                         </td>
-                                        <td>{it.projectName || "—"}</td>
+                                        <td>{it.projectName || pr.projectName || "—"}</td>
                                         <td>{it.remarks || "—"}</td>
                                       </tr>
                                     );

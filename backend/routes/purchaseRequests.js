@@ -32,6 +32,7 @@ function sanitizeItems(items) {
       category: it.category || '',
       uom: it.uom || '',
       qty,
+      projectName: it.projectName || '',
       remarks: it.remarks || '',
     });
   }
