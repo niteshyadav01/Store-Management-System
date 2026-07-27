@@ -29,20 +29,20 @@ function ColFilter({ values, selected, onChange }) {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // The panel is position:fixed relative to the viewport. If the page (or the
-  // table's own scroll container) scrolls while it's open, it would stay
-  // pinned to its old screen coordinates instead of following the button —
-  // so just close it on any scroll, same as most Excel-style dropdowns do.
-  useEffect(() => {
-    if (!open) return;
-    function onScroll() { setOpen(false); }
-    window.addEventListener('scroll', onScroll, true);
-    window.addEventListener('resize', onScroll);
-    return () => {
-      window.removeEventListener('scroll', onScroll, true);
-      window.removeEventListener('resize', onScroll);
-    };
-  }, [open]);
+useEffect(() => {
+  if (!open) return;
+  function onScroll(e) {
+    
+    if (panelRef.current && panelRef.current.contains(e.target)) return;
+    setOpen(false);
+  }
+  window.addEventListener('scroll', onScroll, true);
+  window.addEventListener('resize', onScroll);
+  return () => {
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', onScroll);
+  };
+}, [open]);
 
   function handleOpen() {
     if (btnRef.current) {
