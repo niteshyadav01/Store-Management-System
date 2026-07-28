@@ -14,7 +14,7 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Dashboard',          path: '/dashboard',         roles: ['admin','store','store_manager'] },
+      { label: 'Store Dashboard', path: '/dashboard/store', roles: ['admin','store','store_manager'] },
       { label: 'Live Stock',         path: '/stock',             roles: ['admin','store','store_manager','viewer'] },
       { label: 'Inward Entry',       path: '/inward',            roles: ['admin','store','store_manager'] },
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
@@ -32,7 +32,8 @@ const NAV_SECTIONS = [
       </svg>
     ),
     items: [
-      { label: 'Dashboard',       path: '/dashboard',          roles: ['admin','purchase'] },
+     {
+  label: 'Purchase Dashboard', path: '/dashboard/purchase',  roles: ['admin','purchase'] },
       { label: 'Live Stock',      path: '/stock',              roles: ['admin','purchase'] },
       { label: 'Item Master',   path: '/master',             roles: ['admin'] },
       { label: 'Price Entry',     path: '/price',              roles: ['admin','purchase'] },
@@ -68,10 +69,17 @@ const NAV_SECTIONS = [
 
 // Top-level links (above all sections) — visible to admin only
 const TOP_LINKS = [
-  { label: 'Dashboard', path: '/dashboard', roles: ['admin'] },
-  { label: 'Live Stock', path: '/stock',    roles: ['admin'] },
+  {
+    label: "Admin Dashboard",
+    path: "/dashboard/admin",
+    roles: ["admin"],
+  },
+  {
+    label: "Live Stock",
+    path: "/stock",
+    roles: ["admin"],
+  },
 ];
-
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate  = useNavigate();
@@ -111,10 +119,25 @@ export default function Layout() {
     navigate('/login', { replace: true });
   };
 
-  function handleHomeClick() {
-    const role = user?.role;
-    navigate(['admin','store','store_manager','purchase'].includes(role) ? '/dashboard' : '/stock');
+ function handleHomeClick() {
+  switch (user?.role) {
+    case 'admin':
+      navigate('/dashboard/admin');
+      break;
+
+    case 'purchase':
+      navigate('/dashboard/purchase');
+      break;
+
+    case 'store':
+    case 'store_manager':
+      navigate('/dashboard/store');
+      break;
+
+    default:
+      navigate('/stock');
   }
+}
 
   useEffect(() => {
     const handler = (event) => {
@@ -132,7 +155,7 @@ export default function Layout() {
   const initials = (user?.name || user?.username || 'U').slice(0, 2).toUpperCase();
 
   // Current page label for topbar
-  let currentPage = 'Stock Management';
+  let currentPage = 'Dashboard';
   for (const s of NAV_SECTIONS) {
     const found = s.items.find(i => i.path === location.pathname);
     if (found) { currentPage = found.label; break; }
