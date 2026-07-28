@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import * as XLSX from "xlsx";
 import { getInward, updatePrice } from "../api/api";
 import { formatNum } from "../utils/helpers";
 
@@ -12,6 +13,36 @@ function toDDMMYYYY(dateStr) {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = d.getFullYear();
   return `${dd}-${mm}-${yyyy}`;
+}
+
+// Sortable "YYYY-MM" key used internally for the month filter.
+function toMonthKey(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Human label for a "YYYY-MM" key, e.g. "Jul 2026".
+function monthKeyToLabel(key) {
+  if (!key) return key;
+  const [yyyy, mm] = key.split("-");
+  const d = new Date(Number(yyyy), Number(mm) - 1, 1);
+  if (isNaN(d.getTime())) return key;
+  return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
+
+// Normalize a header/key for loose matching against Excel column names,
+// e.g. "Unit Price", "unit_price" and "UnitPrice" all become "unitprice".
+function normKey(k) {
+  return String(k ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function pickField(rowNormMap, candidates) {
+  for (const c of candidates) {
+    if (rowNormMap[c] !== undefined && rowNormMap[c] !== "") return rowNormMap[c];
+  }
+  return undefined;
 }
 
 function ColFilter({ values, selected, onChange, formatLabel }) {
@@ -375,8 +406,13 @@ export default function PriceEntry() {
   const [recentPrices, setRecentPrices] = useState([]);
   const [syncSameName, setSyncSameName] = useState(false);
 
+  const [excelPreview, setExcelPreview] = useState(null); // { matched, unmatched, fileName }
+  const [excelBusy, setExcelBusy] = useState(false);
+  const fileInputRef = useRef();
+
   const [cf, setCf] = useState({
     date: [],
+    month: [],
     vendor: [],
     name: [],
     code: [],
@@ -408,6 +444,7 @@ export default function PriceEntry() {
     .filter(
       (e) =>
         (!cf.date.length || cf.date.includes(e.date)) &&
+        (!cf.month.length || cf.month.includes(toMonthKey(e.date))) &&
         (!cf.vendor.length || cf.vendor.includes(e.vendor)) &&
         (!cf.name.length || cf.name.includes(e.name)) &&
         (!cf.code.length || cf.code.includes(e.code)) &&
@@ -484,6 +521,148 @@ export default function PriceEntry() {
     }
   }
 
+  // --- Excel upload: read a workbook, loosely match each row's Code/Material
+  // Name to inward entries, and build a preview before touching any prices. ---
+  function handleExcelFile(file) {
+    if (!file) return;
+    setExcelBusy(true);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb = XLSX.read(evt.target.result, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        const matched = [];
+        const unmatched = [];
+
+        rows.forEach((row, idx) => {
+          const normMap = {};
+          Object.entries(row).forEach(([k, v]) => {
+            normMap[normKey(k)] = v;
+          });
+
+          const codeVal = pickField(normMap, [
+            "code",
+            "itemcode",
+            "materialcode",
+            "productcode",
+            "sku",
+          ]);
+          const nameVal = pickField(normMap, [
+            "name",
+            "material",
+            "materialname",
+            "itemname",
+            "item",
+            "product",
+          ]);
+          const priceValRaw = pickField(normMap, [
+            "price",
+            "unitprice",
+            "rate",
+            "cost",
+            "unitrate",
+          ]);
+          const priceVal =
+            priceValRaw === undefined
+              ? NaN
+              : parseFloat(String(priceValRaw).replace(/[^0-9.\-]/g, ""));
+
+          if ((!codeVal && !nameVal) || isNaN(priceVal)) {
+            unmatched.push({
+              row: idx + 2, // +2 to account for header row + 1-index
+              reason: !codeVal && !nameVal
+                ? "No Code or Material Name column found"
+                : "No valid Price found",
+              raw: row,
+            });
+            return;
+          }
+
+          // Match every entry sharing this code (preferred) or, failing
+          // that, this material name — mirrors the "Bulk Update" behaviour
+          // already used when saving a single row.
+          let ids = [];
+          if (codeVal) {
+            const norm = String(codeVal).trim().toLowerCase();
+            ids = entries
+              .filter((e) => (e.code || "").trim().toLowerCase() === norm)
+              .map((e) => e._id);
+          }
+          if (!ids.length && nameVal) {
+            const norm = String(nameVal).trim().toLowerCase();
+            ids = entries
+              .filter((e) => (e.name || "").trim().toLowerCase() === norm)
+              .map((e) => e._id);
+          }
+
+          if (!ids.length) {
+            unmatched.push({
+              row: idx + 2,
+              reason: `No inward entry found for "${codeVal || nameVal}"`,
+              raw: row,
+            });
+            return;
+          }
+
+          matched.push({
+            row: idx + 2,
+            code: codeVal || "",
+            name: nameVal || "",
+            price: priceVal,
+            ids,
+          });
+        });
+
+        setExcelPreview({ matched, unmatched, fileName: file.name });
+      } catch (err) {
+        alert("Could not read that file: " + err.message);
+      } finally {
+        setExcelBusy(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.onerror = () => {
+      setExcelBusy(false);
+      alert("Could not read that file.");
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  async function applyExcelPreview() {
+    if (!excelPreview || !excelPreview.matched.length) return;
+    setExcelBusy(true);
+    try {
+      const updates = [];
+      excelPreview.matched.forEach((m) => {
+        m.ids.forEach((id) => updates.push({ id, price: m.price, name: m.name, code: m.code }));
+      });
+
+      await Promise.all(updates.map((u) => updatePrice(u.id, u.price)));
+
+      setRecentPrices((prev) =>
+        [
+          ...excelPreview.matched.map((m) => ({
+            _id: m.ids[0],
+            name: m.name || (entries.find((e) => e._id === m.ids[0])?.name ?? ""),
+            code: m.code || (entries.find((e) => e._id === m.ids[0])?.code ?? ""),
+            price: m.price,
+            updatedAt: new Date().toISOString(),
+          })),
+          ...prev,
+        ].slice(0, 6),
+      );
+
+      await load();
+      setExcelPreview(null);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setExcelBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="pagehead">
@@ -531,7 +710,144 @@ export default function PriceEntry() {
             />
             Bulk Update
           </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            style={{ display: "none" }}
+            onChange={(e) => handleExcelFile(e.target.files?.[0])}
+          />
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={excelBusy}
+            onClick={() => fileInputRef.current?.click()}
+            style={{ marginLeft: "auto" }}
+            title="Upload an Excel/CSV file with Code (or Material Name) and Price columns"
+          >
+            {excelBusy ? "Reading…" : "Upload Excel"}
+          </button>
         </div>
+
+        {excelPreview && (
+          <div
+            style={{
+              margin: "0 0 16px",
+              border: "1px solid var(--line)",
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "var(--paper-dim)",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px 14px",
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                borderBottom: "1px solid var(--line)",
+              }}
+            >
+              <strong style={{ fontSize: 13 }}>
+                Preview: {excelPreview.fileName}
+              </strong>
+              <span
+                style={{
+                  fontSize: 12,
+                  background: "var(--teal)",
+                  color: "#fff",
+                  borderRadius: 10,
+                  padding: "1px 8px",
+                  fontWeight: 600,
+                }}
+              >
+                {excelPreview.matched.reduce((n, m) => n + m.ids.length, 0)} row(s) will update
+              </span>
+              {excelPreview.unmatched.length > 0 && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    background: "var(--amber)",
+                    color: "#fff",
+                    borderRadius: 10,
+                    padding: "1px 8px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {excelPreview.unmatched.length} row(s) skipped
+                </span>
+              )}
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setExcelPreview(null)}
+                  disabled={excelBusy}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-in"
+                  onClick={applyExcelPreview}
+                  disabled={excelBusy || !excelPreview.matched.length}
+                >
+                  {excelBusy ? "Applying…" : "Apply prices"}
+                </button>
+              </div>
+            </div>
+
+            {excelPreview.matched.length > 0 && (
+              <div style={{ maxHeight: 180, overflowY: "auto" }}>
+                <table style={{ width: "100%", fontSize: 12.5 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Row</th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Code</th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Name</th>
+                      <th style={{ textAlign: "right", padding: "6px 14px" }}>New price</th>
+                      <th style={{ textAlign: "right", padding: "6px 14px" }}>Entries affected</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {excelPreview.matched.map((m) => (
+                      <tr key={m.row}>
+                        <td style={{ padding: "5px 14px" }}>{m.row}</td>
+                        <td className="mono" style={{ padding: "5px 14px" }}>
+                          {m.code || "—"}
+                        </td>
+                        <td style={{ padding: "5px 14px" }}>{m.name || "—"}</td>
+                        <td className="num" style={{ padding: "5px 14px" }}>
+                          {formatNum(m.price)}
+                        </td>
+                        <td className="num" style={{ padding: "5px 14px" }}>
+                          {m.ids.length}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {excelPreview.unmatched.length > 0 && (
+              <details style={{ padding: "8px 14px", fontSize: 12 }}>
+                <summary style={{ cursor: "pointer", color: "var(--text-3)" }}>
+                  Show skipped rows
+                </summary>
+                <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                  {excelPreview.unmatched.map((u) => (
+                    <li key={u.row} style={{ color: "var(--text-3)" }}>
+                      Row {u.row}: {u.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
         <div
           className="tablewrap"
           style={{
@@ -557,6 +873,23 @@ export default function PriceEntry() {
                       selected={cf.date}
                       onChange={(v) => setCf((f) => ({ ...f, date: v }))}
                       formatLabel={toDDMMYYYY}
+                    />
+                  </span>
+                </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Month{" "}
+                    <ColFilter
+                      values={entries.map((e) => toMonthKey(e.date))}
+                      selected={cf.month}
+                      onChange={(v) => setCf((f) => ({ ...f, month: v }))}
+                      formatLabel={monthKeyToLabel}
                     />
                   </span>
                 </th>
@@ -670,6 +1003,7 @@ export default function PriceEntry() {
                     }
                   >
                     <td>{toDDMMYYYY(e.date)}</td>
+                    <td>{monthKeyToLabel(toMonthKey(e.date))}</td>
                     <td>
                       {e.vendor || (
                         <span style={{ color: "var(--text-3)" }}>—</span>
