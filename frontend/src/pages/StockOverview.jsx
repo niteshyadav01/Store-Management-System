@@ -1,33 +1,47 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { getMaster, getInward, getOutward } from '../api/api';
-import { useAuth } from '../context/AuthContext';
-import { formatNum, formatINR, formatInt } from '../utils/helpers';
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
+import { getMaster, getInward, getOutward } from "../api/api";
+import { useAuth } from "../context/AuthContext";
+import { formatNum, formatINR, formatInt } from "../utils/helpers";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, CartesianGrid,
-} from 'recharts';
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
+  CartesianGrid,
+} from "recharts";
 
 // ── Excel-style dropdown filter ───────────────────────────────────────────────
 function ColFilter({ values, selected, onChange }) {
-  const [open, setOpen]       = useState(false);
-  const [search, setSearch]   = useState('');
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [pending, setPending] = useState([]);
-  const [pos, setPos]         = useState({ top: 0, left: 0 });
-  const btnRef   = useRef();
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef();
   const panelRef = useRef();
 
-  useEffect(() => { if (open) setPending(selected); }, [open]); // eslint-disable-line
+  useEffect(() => {
+    if (open) setPending(selected);
+  }, [open]); // eslint-disable-line
 
   useEffect(() => {
     function handler(e) {
       if (
-        panelRef.current && !panelRef.current.contains(e.target) &&
-        btnRef.current   && !btnRef.current.contains(e.target)
-      ) setOpen(false);
+        panelRef.current &&
+        !panelRef.current.contains(e.target) &&
+        btnRef.current &&
+        !btnRef.current.contains(e.target)
+      )
+        setOpen(false);
     }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
   function handleOpen() {
@@ -42,112 +56,365 @@ function ColFilter({ values, selected, onChange }) {
         left = Math.max(8, window.innerWidth - panelW - 8);
       }
       setPos({
-        top:  spaceBelow < panelH ? rect.top - panelH + window.scrollY : rect.bottom + window.scrollY + 2,
+        top:
+          spaceBelow < panelH
+            ? rect.top - panelH + window.scrollY
+            : rect.bottom + window.scrollY + 2,
         left,
       });
     }
-    setOpen(v => !v);
+    setOpen((v) => !v);
   }
 
   const unique = [...new Set(values.filter(Boolean))];
-  const toNum  = v => { const c = String(v).replace(/[^0-9.\-]/g, ''); return c === '' || c === '-' ? NaN : parseFloat(c); };
-  const isNum  = unique.every(v => !isNaN(toNum(v)));
-  unique.sort((a, b) => isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)));
+  const toNum = (v) => {
+    const c = String(v).replace(/[^0-9.\-]/g, "");
+    return c === "" || c === "-" ? NaN : parseFloat(c);
+  };
+  const isNum = unique.every((v) => !isNaN(toNum(v)));
+  unique.sort((a, b) =>
+    isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)),
+  );
 
-  const filtered    = unique.filter(v => String(v).toLowerCase().includes(search.toLowerCase()));
-  const allSelected  = pending.length === unique.length && unique.length > 0;
+  const filtered = unique.filter((v) =>
+    String(v).toLowerCase().includes(search.toLowerCase()),
+  );
+  const allSelected = pending.length === unique.length && unique.length > 0;
   const someSelected = pending.length > 0 && pending.length < unique.length;
 
-  function toggle(val) { setPending(prev => prev.includes(val) ? prev.filter(s => s !== val) : [...prev, val]); }
-  function toggleAll() { if (pending.length === unique.length) setPending([]); else setPending(unique); }
-  function handleApply() { onChange(pending); setOpen(false); }
-  function handleClear()  { setPending([]); onChange([]); setOpen(false); }
+  function toggle(val) {
+    setPending((prev) =>
+      prev.includes(val) ? prev.filter((s) => s !== val) : [...prev, val],
+    );
+  }
+  function toggleAll() {
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
+  }
+  function handleApply() {
+    onChange(pending);
+    setOpen(false);
+  }
+  function handleClear() {
+    setPending([]);
+    onChange([]);
+    setOpen(false);
+  }
 
-  const hasChanges = JSON.stringify(pending.slice().sort()) !== JSON.stringify(selected.slice().sort());
+  const hasChanges =
+    JSON.stringify(pending.slice().sort()) !==
+    JSON.stringify(selected.slice().sort());
 
   const panel = (
-    <div ref={panelRef} style={{
-      position: 'absolute', top: pos.top, left: pos.left, zIndex: 99999,
-      background: '#fff', border: '1px solid var(--line)',
-      borderRadius: 10, boxShadow: '0 8px 32px rgba(0,0,0,.18)',
-      width: 'min(320px, calc(100vw - 16px))', maxWidth: 320, overflow: 'hidden',
-      boxSizing: 'border-box',
-    }}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input autoFocus placeholder="Search…" value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, minWidth: 0, padding: '7px 10px', fontSize: 13, border: '1.5px solid var(--line)',
-            borderRadius: 6, fontFamily: 'Inter, Poppins, sans-serif', outline: 'none', background: '#fafaf8', color: 'var(--ink)',
-            boxSizing: 'border-box' }}
-          onFocus={e => e.target.style.borderColor = 'var(--teal)'}
-          onBlur={e  => e.target.style.borderColor = 'var(--line)'} />
-        <button onClick={() => setOpen(false)} style={{
-          flexShrink: 0, width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, color: '#8a8270', borderRadius: 5,
-        }}>✕</button>
+    <div
+      ref={panelRef}
+      style={{
+        position: "absolute",
+        top: pos.top,
+        left: pos.left,
+        zIndex: 99999,
+        background: "#fff",
+        border: "1px solid var(--line)",
+        borderRadius: 10,
+        boxShadow: "0 8px 32px rgba(0,0,0,.18)",
+        width: "min(320px, calc(100vw - 16px))",
+        maxWidth: 320,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <input
+          autoFocus
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: "7px 10px",
+            fontSize: 13,
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            fontFamily: "Inter, Poppins, sans-serif",
+            outline: "none",
+            background: "#fafaf8",
+            color: "var(--ink)",
+            boxSizing: "border-box",
+          }}
+          onFocus={(e) => (e.target.style.borderColor = "var(--teal)")}
+          onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
+        />
+        <button
+          onClick={() => setOpen(false)}
+          style={{
+            flexShrink: 0,
+            width: 26,
+            height: 26,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 15,
+            color: "#8a8270",
+            borderRadius: 5,
+          }}
+        >
+          ✕
+        </button>
       </div>
-      <div onClick={toggleAll} style={{ padding: '8px 14px', borderBottom: '1px solid var(--line)',
-        display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-        background: someSelected ? '#fffbf0' : allSelected ? 'var(--teal-light)' : undefined }}>
-        <input type="checkbox"
-          ref={el => { if (el) el.indeterminate = someSelected; }}
-          checked={allSelected} onChange={toggleAll}
-          style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14, flexShrink: 0 }}
-          onClick={e => e.stopPropagation()} />
-        <span style={{ fontSize: 12.5, fontStyle: 'italic', color: 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {someSelected ? `${pending.length} of ${unique.length} selected` : allSelected ? 'All selected' : '(Select all)'}
+      <div
+        onClick={toggleAll}
+        style={{
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+          background: someSelected
+            ? "#fffbf0"
+            : allSelected
+              ? "var(--teal-light)"
+              : undefined,
+        }}
+      >
+        <input
+          type="checkbox"
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected;
+          }}
+          checked={allSelected}
+          onChange={toggleAll}
+          style={{
+            cursor: "pointer",
+            accentColor: "var(--teal)",
+            width: 14,
+            height: 14,
+            flexShrink: 0,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <span
+          style={{
+            fontSize: 12.5,
+            fontStyle: "italic",
+            color: "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {someSelected
+            ? `${pending.length} of ${unique.length} selected`
+            : allSelected
+              ? "All selected"
+              : "(Select all)"}
         </span>
-        {pending.length > 0 && <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11, background: someSelected ? 'var(--amber)' : 'var(--teal)', color: '#fff', borderRadius: 10, padding: '1px 7px', fontWeight: 600 }}>{pending.length}</span>}
+        {pending.length > 0 && (
+          <span
+            style={{
+              marginLeft: "auto",
+              flexShrink: 0,
+              fontSize: 11,
+              background: someSelected ? "var(--amber)" : "var(--teal)",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "1px 7px",
+              fontWeight: 600,
+            }}
+          >
+            {pending.length}
+          </span>
+        )}
       </div>
-      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
-        {filtered.map(v => (
-          <div key={v} onClick={() => toggle(v)} style={{ display: 'flex', alignItems: 'center', gap: 8,
-            padding: '7px 14px', cursor: 'pointer', fontSize: 13, fontFamily: 'Inter, Poppins, sans-serif',
-            background: pending.includes(v) ? 'var(--teal-light)' : undefined, transition: 'background 100ms' }}>
-            <input type="checkbox" checked={pending.includes(v)} onChange={() => toggle(v)}
-              style={{ cursor: 'pointer', accentColor: 'var(--teal)', width: 14, height: 14, flexShrink: 0 }}
-              onClick={e => e.stopPropagation()} />
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</span>
+      <div style={{ maxHeight: 200, overflowY: "auto" }}>
+        {filtered.map((v) => (
+          <div
+            key={v}
+            onClick={() => toggle(v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 14px",
+              cursor: "pointer",
+              fontSize: 13,
+              fontFamily: "Inter, Poppins, sans-serif",
+              background: pending.includes(v) ? "var(--teal-light)" : undefined,
+              transition: "background 100ms",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={pending.includes(v)}
+              onChange={() => toggle(v)}
+              style={{
+                cursor: "pointer",
+                accentColor: "var(--teal)",
+                width: 14,
+                height: 14,
+                flexShrink: 0,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {v}
+            </span>
           </div>
         ))}
-        {!filtered.length && <div style={{ padding: '12px 14px', fontSize: 12.5, color: 'var(--text-3)', textAlign: 'center' }}>No results</div>}
+        {!filtered.length && (
+          <div
+            style={{
+              padding: "12px 14px",
+              fontSize: 12.5,
+              color: "var(--text-3)",
+              textAlign: "center",
+            }}
+          >
+            No results
+          </div>
+        )}
       </div>
-      <div style={{ display: 'flex', gap: 8, padding: '10px 12px', borderTop: '1px solid var(--line)', background: 'var(--paper-dim)' }}>
-        <button onClick={handleClear} style={{ flex: 1, fontSize: 12.5, padding: '7px 0', border: '1.5px solid var(--line)',
-          borderRadius: 6, cursor: 'pointer', background: '#fff', fontFamily: 'Inter, Poppins, sans-serif', color: 'var(--ink)' }}>Clear</button>
-        <button onClick={handleApply} style={{ flex: 2, fontSize: 12.5, padding: '7px 0', border: 'none', borderRadius: 6,
-          cursor: 'pointer', background: hasChanges ? 'var(--teal)' : 'var(--paper-dim)',
-          color: hasChanges ? '#fff' : 'var(--text-3)', fontFamily: 'Inter, Poppins, sans-serif', fontWeight: 600 }}>Apply</button>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 12px",
+          borderTop: "1px solid var(--line)",
+          background: "var(--paper-dim)",
+        }}
+      >
+        <button
+          onClick={handleClear}
+          style={{
+            flex: 1,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: "#fff",
+            fontFamily: "Inter, Poppins, sans-serif",
+            color: "var(--ink)",
+          }}
+        >
+          Clear
+        </button>
+        <button
+          onClick={handleApply}
+          style={{
+            flex: 2,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: hasChanges ? "var(--teal)" : "var(--paper-dim)",
+            color: hasChanges ? "#fff" : "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            fontWeight: 600,
+          }}
+        >
+          Apply
+        </button>
       </div>
     </div>
   );
 
   return (
     <>
-      <button ref={btnRef} onClick={handleOpen} style={{
-        background: selected.length > 0 ? 'var(--teal)' : 'none',
-        border: 'none', cursor: 'pointer', padding: '2px 6px',
-        borderRadius: 4, fontSize: 10, color: selected.length > 0 ? '#fff' : '#8a8270', lineHeight: 1,
-        flexShrink: 0,
-      }} title={selected.length > 0 ? `${selected.length} filter(s) active` : 'Filter'}>▼</button>
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        style={{
+          background: selected.length > 0 ? "var(--teal)" : "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "2px 6px",
+          borderRadius: 4,
+          fontSize: 10,
+          color: selected.length > 0 ? "#fff" : "#8a8270",
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+        title={
+          selected.length > 0 ? `${selected.length} filter(s) active` : "Filter"
+        }
+      >
+        ▼
+      </button>
       {open && createPortal(panel, document.body)}
     </>
   );
 }
 
 // ── Chart colors ──────────────────────────────────────────────────────────────
-const CHART_COLORS = ['#1f5c52','#b5481f','#c8861b','#2a9d8f','#264653','#e9c46a','#f4a261'];
+const CHART_COLORS = [
+  "#1f5c52",
+  "#b5481f",
+  "#c8861b",
+  "#2a9d8f",
+  "#264653",
+  "#e9c46a",
+  "#f4a261",
+];
 
-const shortName = name => name.length > 16 ? name.slice(0, 16) + '…' : name;
+const shortName = (name) => (name.length > 16 ? name.slice(0, 16) + "…" : name);
 
 // ── Custom tooltip ─────────────────────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 12px', fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,.1)', maxWidth: 220 }}>
-      <div style={{ fontWeight: 600, marginBottom: 4, color: 'var(--ink)', overflowWrap: 'break-word' }}>{label}</div>
+    <div
+      style={{
+        background: "#fff",
+        border: "1px solid var(--line)",
+        borderRadius: 8,
+        padding: "8px 12px",
+        fontSize: 12,
+        boxShadow: "0 4px 12px rgba(0,0,0,.1)",
+        maxWidth: 220,
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 600,
+          marginBottom: 4,
+          color: "var(--ink)",
+          overflowWrap: "break-word",
+        }}
+      >
+        {label}
+      </div>
       {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color }}>{p.name}: <strong>{typeof p.value === 'number' ? p.value.toLocaleString('en-IN') : p.value}</strong></div>
+        <div key={i} style={{ color: p.color }}>
+          {p.name}:{" "}
+          <strong>
+            {typeof p.value === "number"
+              ? p.value.toLocaleString("en-IN")
+              : p.value}
+          </strong>
+        </div>
       ))}
     </div>
   );
@@ -155,11 +422,15 @@ function CustomTooltip({ active, payload, label }) {
 
 // ── Responsive helper: track viewport width so we can adapt chart density ─────
 function useViewportWidth() {
-  const [width, setWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  const [width, setWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1024,
+  );
   useEffect(() => {
-    function onResize() { setWidth(window.innerWidth); }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
+    function onResize() {
+      setWidth(window.innerWidth);
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
   return width;
 }
@@ -167,10 +438,17 @@ function useViewportWidth() {
 // ── A chart wrapper that scrolls horizontally instead of squashing/overflowing ─
 function ChartScroller({ minWidth, height, children }) {
   return (
-    <div style={{ width: '100%', maxWidth: '100%', overflowX: 'auto', overflowY: 'hidden', boxSizing: 'border-box', WebkitOverflowScrolling: 'touch' }}>
-      <div style={{ minWidth, width: '100%', height }}>
-        {children}
-      </div>
+    <div
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        overflowX: "auto",
+        overflowY: "hidden",
+        boxSizing: "border-box",
+        WebkitOverflowScrolling: "touch",
+      }}
+    >
+      <div style={{ minWidth, width: "100%", height }}>{children}</div>
     </div>
   );
 }
@@ -178,19 +456,27 @@ function ChartScroller({ minWidth, height, children }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function StockOverview() {
   const { user } = useAuth();
-  const canSeePrice = user?.role === 'admin' || user?.role === 'purchase';
+  const canSeePrice = user?.role === "admin" || user?.role === "purchase";
 
-  const [master,     setMaster]     = useState([]);
-  const [inward,     setInward]     = useState([]);
-  const [outward,    setOutward]    = useState([]);
-  const [search,     setSearch]     = useState('');
+  const [master, setMaster] = useState([]);
+  const [inward, setInward] = useState([]);
+  const [outward, setOutward] = useState([]);
+  const [search, setSearch] = useState("");
   const [activeCard, setActiveCard] = useState(null);
-  const [activeChart, setActiveChart] = useState('top-balance'); // which chart to show
+  const [activeChart, setActiveChart] = useState("top-balance"); // which chart to show
 
   const [cf, setCf] = useState({
-    name: [], type: [], category: [], code: [],
-    inQty: [], outQty: [], stock: [], minStock: [], uom: [],
-    avgPrice: [], totalVal: [],
+    name: [],
+    type: [],
+    category: [],
+    code: [],
+    inQty: [],
+    outQty: [],
+    stock: [],
+    minStock: [],
+    uom: [],
+    avgPrice: [],
+    totalVal: [],
   });
 
   const viewportWidth = useViewportWidth();
@@ -198,119 +484,161 @@ export default function StockOverview() {
   const isNarrow = viewportWidth < 480;
 
   const load = useCallback(async () => {
-    const [m,i,o] = await Promise.all([getMaster(), getInward(), getOutward()]);
-    setMaster(m); setInward(i); setOutward(o);
+    const [m, i, o] = await Promise.all([
+      getMaster(),
+      getInward(),
+      getOutward(),
+    ]);
+    setMaster(m);
+    setInward(i);
+    setOutward(o);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const inTotals = {}, outTotals = {}, inValTotals = {};
-  inward.forEach(e => {
-    inTotals[e.name]    = (inTotals[e.name]    || 0) + (parseFloat(e.qty)  || 0);
-    inValTotals[e.name] = (inValTotals[e.name] || 0) + ((parseFloat(e.qty)||0)*(parseFloat(e.price)||0));
+  const inTotals = {},
+    outTotals = {},
+    inValTotals = {};
+  inward.forEach((e) => {
+    inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+    inValTotals[e.name] =
+      (inValTotals[e.name] || 0) +
+      (parseFloat(e.qty) || 0) * (parseFloat(e.price) || 0);
   });
-  outward.forEach(e => { outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty)||0); });
+  outward.forEach((e) => {
+    outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+  });
 
-  const allRows = master.map(m => {
-    const inQty    = inTotals[m.name]  || 0;
-    const outQty   = outTotals[m.name] || 0;
-    const stock    = inQty - outQty;
-    const avgPrice = inQty > 0 ? (inValTotals[m.name]||0) / inQty : 0;
+  const allRows = master.map((m) => {
+    const inQty = inTotals[m.name] || 0;
+    const outQty = outTotals[m.name] || 0;
+    const stock = inQty - outQty;
+    const avgPrice = inQty > 0 ? (inValTotals[m.name] || 0) / inQty : 0;
     const totalVal = avgPrice * Math.max(stock, 0);
     const minStock = parseFloat(m.minStock) || 0;
     return { ...m, inQty, outQty, stock, minStock, avgPrice, totalVal };
   });
 
-  const totalIn  = Object.values(inTotals).reduce((a,b)=>a+b,0);
-  const totalOut = Object.values(outTotals).reduce((a,b)=>a+b,0);
-  const totalVal = allRows.reduce((s,r)=>s+r.totalVal,0);
-  const lowStockItems = allRows.filter(r => r.minStock > 0 && r.stock < r.minStock);
-  const zeroStockItems = allRows.filter(r => r.stock <= 0);
-  const lowCount  = lowStockItems.length;
+  const totalIn = Object.values(inTotals).reduce((a, b) => a + b, 0);
+  const totalOut = Object.values(outTotals).reduce((a, b) => a + b, 0);
+  const totalVal = allRows.reduce((s, r) => s + r.totalVal, 0);
+  const lowStockItems = allRows.filter(
+    (r) => r.minStock > 0 && r.stock < r.minStock,
+  );
+  const zeroStockItems = allRows.filter((r) => r.stock <= 0);
+  const lowCount = lowStockItems.length;
   const zeroCount = zeroStockItems.length;
 
-  function toggleCard(key) { setActiveCard(prev => prev === key ? null : key); }
+  function toggleCard(key) {
+    setActiveCard((prev) => (prev === key ? null : key));
+  }
 
-  const searched = allRows.filter(r =>
-    !search ||
-    r.name.toLowerCase().includes(search.toLowerCase()) ||
-    (r.code||'').toLowerCase().includes(search.toLowerCase())
+  const searched = allRows.filter(
+    (r) =>
+      !search ||
+      r.name.toLowerCase().includes(search.toLowerCase()) ||
+      (r.code || "").toLowerCase().includes(search.toLowerCase()),
   );
 
-  const rows = searched.filter(r => {
-    if (activeCard === 'low')  return r.minStock > 0 && r.stock < r.minStock;
-    if (activeCard === 'zero') return r.stock <= 0;
-    return true;
-  }).filter(r =>
-    (!cf.name.length     || cf.name.includes(r.name)) &&
-    (!cf.type.length     || cf.type.includes(r.type)) &&
-    (!cf.category.length || cf.category.includes(r.category)) &&
-    (!cf.code.length     || cf.code.includes(r.code)) &&
-    (!cf.inQty.length    || cf.inQty.includes(String(formatNum(r.inQty)))) &&
-    (!cf.outQty.length   || cf.outQty.includes(String(formatNum(r.outQty)))) &&
-    (!cf.stock.length    || cf.stock.includes(String(formatNum(r.stock)))) &&
-    (!cf.minStock.length || cf.minStock.includes(String(formatNum(r.minStock)))) &&
-    (!cf.uom.length      || cf.uom.includes(r.uom)) &&
-    (!cf.avgPrice.length || cf.avgPrice.includes(String(formatINR(r.avgPrice)))) &&
-    (!cf.totalVal.length || cf.totalVal.includes(String(formatINR(r.totalVal))))
-  );
+  const rows = searched
+    .filter((r) => {
+      if (activeCard === "low") return r.minStock > 0 && r.stock < r.minStock;
+      if (activeCard === "zero") return r.stock <= 0;
+      return true;
+    })
+    .filter(
+      (r) =>
+        (!cf.name.length || cf.name.includes(r.name)) &&
+        (!cf.type.length || cf.type.includes(r.type)) &&
+        (!cf.category.length || cf.category.includes(r.category)) &&
+        (!cf.code.length || cf.code.includes(r.code)) &&
+        (!cf.inQty.length || cf.inQty.includes(String(formatNum(r.inQty)))) &&
+        (!cf.outQty.length ||
+          cf.outQty.includes(String(formatNum(r.outQty)))) &&
+        (!cf.stock.length || cf.stock.includes(String(formatNum(r.stock)))) &&
+        (!cf.minStock.length ||
+          cf.minStock.includes(String(formatNum(r.minStock)))) &&
+        (!cf.uom.length || cf.uom.includes(r.uom)) &&
+        (!cf.avgPrice.length ||
+          cf.avgPrice.includes(String(formatINR(r.avgPrice)))) &&
+        (!cf.totalVal.length ||
+          cf.totalVal.includes(String(formatINR(r.totalVal)))),
+    );
 
   // ── Chart data ────────────────────────────────────────────────────────────
   // Top 10 by balance
-  const topBalance = [...allRows].sort((a,b) => b.stock - a.stock).slice(0, 10)
-    .map(r => ({ name: shortName(r.name), stock: Math.round(r.stock), inQty: Math.round(r.inQty), outQty: Math.round(r.outQty) }));
+  const topBalance = [...allRows]
+    .sort((a, b) => b.stock - a.stock)
+    .slice(0, 10)
+    .map((r) => ({
+      name: shortName(r.name),
+      stock: Math.round(r.stock),
+      inQty: Math.round(r.inQty),
+      outQty: Math.round(r.outQty),
+    }));
 
   // Top 10 by inward qty
-  const topInward = [...allRows].sort((a,b) => b.inQty - a.inQty).slice(0, 10)
-    .map(r => ({ name: shortName(r.name), inQty: Math.round(r.inQty) }));
+  const topInward = [...allRows]
+    .sort((a, b) => b.inQty - a.inQty)
+    .slice(0, 10)
+    .map((r) => ({ name: shortName(r.name), inQty: Math.round(r.inQty) }));
 
   // Top 10 by outward qty
-  const topOutward = [...allRows].sort((a,b) => b.outQty - a.outQty).slice(0, 10)
-    .map(r => ({ name: shortName(r.name), outQty: Math.round(r.outQty) }));
+  const topOutward = [...allRows]
+    .sort((a, b) => b.outQty - a.outQty)
+    .slice(0, 10)
+    .map((r) => ({ name: shortName(r.name), outQty: Math.round(r.outQty) }));
 
   // Top 10 by value
-  const topValue = [...allRows].sort((a,b) => b.totalVal - a.totalVal).slice(0, 10)
-    .map(r => ({ name: shortName(r.name), value: Math.round(r.totalVal) }));
+  const topValue = [...allRows]
+    .sort((a, b) => b.totalVal - a.totalVal)
+    .slice(0, 10)
+    .map((r) => ({ name: shortName(r.name), value: Math.round(r.totalVal) }));
 
   // Category distribution by stock qty
   const catMap = {};
-  allRows.forEach(r => {
+  allRows.forEach((r) => {
     if (!r.category) return;
     catMap[r.category] = (catMap[r.category] || 0) + Math.max(r.stock, 0);
   });
   const categoryData = Object.entries(catMap)
-    .sort((a,b) => b[1]-a[1]).slice(0, 8)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
     .map(([name, value]) => ({ name, value: Math.round(value) }));
 
   // Low stock items bar
-  const lowStockChart = lowStockItems.slice(0, 10).map(r => ({
+  const lowStockChart = lowStockItems.slice(0, 10).map((r) => ({
     name: shortName(r.name),
     stock: Math.round(r.stock),
     minStock: Math.round(r.minStock),
   }));
 
   const chartTabs = [
-    { key: 'top-balance',  label: 'Top Balance' },
-    { key: 'top-inward',   label: 'Top Inward' },
-    { key: 'top-outward',  label: 'Top Outward' },
-    { key: 'category',     label: 'By Category' },
-    ...(canSeePrice ? [{ key: 'top-value', label: 'By Value' }] : []),
-    ...(lowCount > 0 ? [{ key: 'low-stock', label: 'Low Stock' }] : []),
+    { key: "top-balance", label: "Top Balance" },
+    { key: "top-inward", label: "Top Inward" },
+    { key: "top-outward", label: "Top Outward" },
+    { key: "category", label: "By Category" },
+    ...(canSeePrice ? [{ key: "top-value", label: "By Value" }] : []),
+    ...(lowCount > 0 ? [{ key: "low-stock", label: "Low Stock" }] : []),
   ];
 
   function statCardStyle(key, color) {
     const isActive = activeCard === key;
     return {
-      cursor: 'pointer',
-      outline: isActive ? `2px solid ${color || 'var(--teal)'}` : 'none',
+      cursor: "pointer",
+      outline: isActive ? `2px solid ${color || "var(--teal)"}` : "none",
       outlineOffset: 2,
-      userSelect: 'none',
+      userSelect: "none",
       minWidth: 0,
-      boxSizing: 'border-box',
-      overflow: 'hidden',
+      boxSizing: "border-box",
+      overflow: "hidden",
     };
   }
 
-  const activeLabel = { low: '⚠ Low stock only', zero: '⊘ Zero stock only' }[activeCard];
+  const activeLabel = { low: "⚠ Low stock only", zero: "⊘ Zero stock only" }[
+    activeCard
+  ];
 
   // Per-bar width (bar + gap) so dense charts scroll horizontally on small
   // screens instead of squeezing labels/bars until they overflow their card.
@@ -321,7 +649,7 @@ export default function StockOverview() {
   const bottomMargin = isMobile ? 60 : 70;
   const barSize = isMobile ? 30 : 40;
   const groupedBarSize = isMobile ? 16 : 22;
-  const barCategoryGap = '28%';
+  const barCategoryGap = "28%";
 
   // Shrinks a number's font size as it gets longer so it never has to wrap
   // mid-digit — a long total stays on one line and just gets smaller.
@@ -335,13 +663,22 @@ export default function StockOverview() {
   // clipped by a fixed-width axis column, on any screen size.
   function shortQty(v) {
     const abs = Math.abs(v);
-    if (abs >= 100000) return `${(v / 100000).toFixed(v % 100000 === 0 ? 0 : 1)}L`;
-    if (abs >= 1000)   return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
-    return v.toLocaleString('en-IN');
+    if (abs >= 100000)
+      return `${(v / 100000).toFixed(v % 100000 === 0 ? 0 : 1)}L`;
+    if (abs >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
+    return v.toLocaleString("en-IN");
   }
 
   return (
-    <div className="stock-overview" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
+    <div
+      className="stock-overview"
+      style={{
+        width: "100%",
+        maxWidth: "100%",
+        boxSizing: "border-box",
+        overflowX: "hidden",
+      }}
+    >
       <style>{`
         .stock-overview * { box-sizing: border-box; }
         .stock-overview .statrow {
@@ -387,59 +724,181 @@ export default function StockOverview() {
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>Live Stock</h2>
-<p>Monitor current stock availability with real-time balances calculated from inward and outward transactions.</p>        </div>
+          <p>
+            Monitor current stock availability with real-time balances
+            calculated from inward and outward transactions.
+          </p>{" "}
+        </div>
       </div>
-        
+
       {/* ── Stat cards ── */}
-      <div className="statrow" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', marginBottom: 20 }}>
-        <div className="stat" style={{ cursor: 'default', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div
+        className="statrow"
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+          marginBottom: 20,
+        }}
+      >
+        <div
+          className="stat"
+          style={{
+            cursor: "default",
+            minWidth: 0,
+            boxSizing: "border-box",
+            overflow: "hidden",
+          }}
+        >
           <div className="label">Materials tracked</div>
           <div className="value">{master.length}</div>
         </div>
-        <div className="stat teal" style={statCardStyle('inward', 'var(--teal)')} onClick={() => toggleCard('inward')} title="Click to filter">
+        <div
+          className="stat teal"
+          style={statCardStyle("inward", "var(--teal)")}
+          onClick={() => toggleCard("inward")}
+          title="Click to filter"
+        >
           <div className="label">Total inward qty</div>
-          <div className="value" style={{ fontSize: fitNumberFontSize(formatNum(totalIn), isMobile ? 20 : 26) }}>{formatNum(totalIn)}</div>
-          {activeCard === 'inward' && <div style={{ fontSize: 10, color: 'var(--teal-dark)', marginTop: 4 }}>● Active</div>}
+          <div
+            className="value"
+            style={{
+              fontSize: fitNumberFontSize(
+                formatNum(totalIn),
+                isMobile ? 20 : 26,
+              ),
+            }}
+          >
+            {formatNum(totalIn)}
+          </div>
+          {activeCard === "inward" && (
+            <div
+              style={{ fontSize: 10, color: "var(--teal-dark)", marginTop: 4 }}
+            >
+              ● Active
+            </div>
+          )}
         </div>
-        <div className="stat rust" style={statCardStyle('outward', 'var(--rust)')} onClick={() => toggleCard('outward')} title="Click to filter">
+        <div
+          className="stat rust"
+          style={statCardStyle("outward", "var(--rust)")}
+          onClick={() => toggleCard("outward")}
+          title="Click to filter"
+        >
           <div className="label">Total outward qty</div>
-          <div className="value" style={{ fontSize: fitNumberFontSize(formatInt(totalOut), isMobile ? 20 : 26) }}>{formatInt(totalOut)}</div>
-          {activeCard === 'outward' && <div style={{ fontSize: 10, color: 'var(--rust-dark)', marginTop: 4 }}>● Active</div>}
+          <div
+            className="value"
+            style={{
+              fontSize: fitNumberFontSize(
+                formatInt(totalOut),
+                isMobile ? 20 : 26,
+              ),
+            }}
+          >
+            {formatInt(totalOut)}
+          </div>
+          {activeCard === "outward" && (
+            <div
+              style={{ fontSize: 10, color: "var(--rust-dark)", marginTop: 4 }}
+            >
+              ● Active
+            </div>
+          )}
         </div>
-        <div className="stat" style={statCardStyle('low', 'var(--red)')} onClick={() => toggleCard('low')} title="Click to show low stock">
+        <div
+          className="stat"
+          style={statCardStyle("low", "var(--red)")}
+          onClick={() => toggleCard("low")}
+          title="Click to show low stock"
+        >
           <div className="label">Low stock</div>
-          <div className="value" style={{ color: lowCount > 0 ? 'var(--red)' : 'inherit' }}>{lowCount}</div>
-          {activeCard === 'low' && <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 4 }}>● Active</div>}
+          <div
+            className="value"
+            style={{ color: lowCount > 0 ? "var(--red)" : "inherit" }}
+          >
+            {lowCount}
+          </div>
+          {activeCard === "low" && (
+            <div style={{ fontSize: 10, color: "var(--red)", marginTop: 4 }}>
+              ● Active
+            </div>
+          )}
         </div>
-        <div className="stat" style={statCardStyle('zero', 'var(--red)')} onClick={() => toggleCard('zero')} title="Click to show zero stock">
+        <div
+          className="stat"
+          style={statCardStyle("zero", "var(--red)")}
+          onClick={() => toggleCard("zero")}
+          title="Click to show zero stock"
+        >
           <div className="label">Zero stock</div>
-          <div className="value" style={{ color: zeroCount > 0 ? 'var(--red)' : 'inherit' }}>{zeroCount}</div>
-          {activeCard === 'zero' && <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 4 }}>● Active</div>}
+          <div
+            className="value"
+            style={{ color: zeroCount > 0 ? "var(--red)" : "inherit" }}
+          >
+            {zeroCount}
+          </div>
+          {activeCard === "zero" && (
+            <div style={{ fontSize: 10, color: "var(--red)", marginTop: 4 }}>
+              ● Active
+            </div>
+          )}
         </div>
         {canSeePrice && (
-          <div className="stat teal" style={{ cursor: 'default', minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
+          <div
+            className="stat teal"
+            style={{
+              cursor: "default",
+              minWidth: 0,
+              boxSizing: "border-box",
+              overflow: "hidden",
+            }}
+          >
             <div className="label">Total stock value</div>
-            <div className="value" style={{ fontSize: fitNumberFontSize('₹' + Math.round(totalVal).toLocaleString('en-IN'), isMobile ? 16 : 22), lineHeight: 1.2 }}>
-              {'₹' + Math.round(totalVal).toLocaleString('en-IN')}
+            <div
+              className="value"
+              style={{
+                fontSize: fitNumberFontSize(
+                  "₹" + Math.round(totalVal).toLocaleString("en-IN"),
+                  isMobile ? 16 : 22,
+                ),
+                lineHeight: 1.2,
+              }}
+            >
+              {"₹" + Math.round(totalVal).toLocaleString("en-IN")}
             </div>
           </div>
         )}
       </div>
 
       {/* ── Charts section ── */}
-      <div className="card" style={{ minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div
+        className="card"
+        style={{ minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}
+      >
         {/* Chart tabs */}
-        <div className="chart-tabs" style={{ marginBottom: 16, borderBottom: '1px solid var(--line)', paddingBottom: 12 }}>
-          {chartTabs.map(tab => (
+        <div
+          className="chart-tabs"
+          style={{
+            marginBottom: 16,
+            borderBottom: "1px solid var(--line)",
+            paddingBottom: 12,
+          }}
+        >
+          {chartTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveChart(tab.key)}
               style={{
-                padding: '5px 14px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                border: 'none', borderRadius: 20, fontFamily: 'Poppins, sans-serif',
-                background: activeChart === tab.key ? 'var(--teal)' : 'var(--paper-dim)',
-                color: activeChart === tab.key ? '#fff' : 'var(--ink)',
-                transition: 'background 0.15s', whiteSpace: 'nowrap',
+                padding: "5px 14px",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                border: "none",
+                borderRadius: 20,
+                fontFamily: "Poppins, sans-serif",
+                background:
+                  activeChart === tab.key ? "var(--teal)" : "var(--paper-dim)",
+                color: activeChart === tab.key ? "#fff" : "var(--ink)",
+                transition: "background 0.15s",
+                whiteSpace: "nowrap",
               }}
             >
               {tab.label}
@@ -448,66 +907,164 @@ export default function StockOverview() {
         </div>
 
         {/* Chart content */}
-        {activeChart === 'top-balance' && (
+        {activeChart === "top-balance" && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Top 10 materials by current balance</div>
-            <ChartScroller minWidth={chartMinWidth(topBalance.length)} height={chartHeight}>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Top 10 materials by current balance
+            </div>
+            <ChartScroller
+              minWidth={chartMinWidth(topBalance.length)}
+              height={chartHeight}
+            >
               <ResponsiveContainer width="100%" height={chartHeight}>
-                <BarChart data={topBalance} margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }} barCategoryGap={barCategoryGap}>
+                <BarChart
+                  data={topBalance}
+                  margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }}
+                  barCategoryGap={barCategoryGap}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: xAxisFont }} angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fontSize: 11 }} width={isMobile ? 42 : 48} tickFormatter={shortQty} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(31,92,82,0.08)' }} />
-                  <Bar dataKey="stock" name="Balance" fill="var(--teal)" radius={[4,4,0,0]} barSize={barSize} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: xAxisFont }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    width={isMobile ? 42 : 48}
+                    tickFormatter={shortQty}
+                  />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: "rgba(31,92,82,0.08)" }}
+                  />
+                  <Bar
+                    dataKey="stock"
+                    name="Balance"
+                    fill="var(--teal)"
+                    radius={[4, 4, 0, 0]}
+                    barSize={barSize}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartScroller>
           </>
         )}
 
-        {activeChart === 'top-inward' && (
+        {activeChart === "top-inward" && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Top 10 most received materials (inward qty)</div>
-            <ChartScroller minWidth={chartMinWidth(topInward.length)} height={chartHeight}>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Top 10 most received materials (inward qty)
+            </div>
+            <ChartScroller
+              minWidth={chartMinWidth(topInward.length)}
+              height={chartHeight}
+            >
               <ResponsiveContainer width="100%" height={chartHeight}>
-                <BarChart data={topInward} margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }} barCategoryGap={barCategoryGap}>
+                <BarChart
+                  data={topInward}
+                  margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }}
+                  barCategoryGap={barCategoryGap}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: xAxisFont }} angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fontSize: 11 }} width={isMobile ? 42 : 48} tickFormatter={shortQty} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(42,157,143,0.08)' }} />
-                  <Bar dataKey="inQty" name="Inward Qty" fill="#2a9d8f" radius={[4,4,0,0]} barSize={barSize} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: xAxisFont }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    width={isMobile ? 42 : 48}
+                    tickFormatter={shortQty}
+                  />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: "rgba(42,157,143,0.08)" }}
+                  />
+                  <Bar
+                    dataKey="inQty"
+                    name="Inward Qty"
+                    fill="#2a9d8f"
+                    radius={[4, 4, 0, 0]}
+                    barSize={barSize}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartScroller>
           </>
         )}
 
-        {activeChart === 'top-outward' && (
+        {activeChart === "top-outward" && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Top 10 most issued materials (outward qty)</div>
-            <ChartScroller minWidth={chartMinWidth(topOutward.length)} height={chartHeight}>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Top 10 most issued materials (outward qty)
+            </div>
+            <ChartScroller
+              minWidth={chartMinWidth(topOutward.length)}
+              height={chartHeight}
+            >
               <ResponsiveContainer width="100%" height={chartHeight}>
-                <BarChart data={topOutward} margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }} barCategoryGap={barCategoryGap}>
+                <BarChart
+                  data={topOutward}
+                  margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }}
+                  barCategoryGap={barCategoryGap}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: xAxisFont }} angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fontSize: 11 }} width={isMobile ? 42 : 48} tickFormatter={shortQty} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(181,72,31,0.08)' }} />
-                  <Bar dataKey="outQty" name="Outward Qty" fill="var(--rust)" radius={[4,4,0,0]} barSize={barSize} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: xAxisFont }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    width={isMobile ? 42 : 48}
+                    tickFormatter={shortQty}
+                  />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    cursor={{ fill: "rgba(181,72,31,0.08)" }}
+                  />
+                  <Bar
+                    dataKey="outQty"
+                    name="Outward Qty"
+                    fill="var(--rust)"
+                    radius={[4, 4, 0, 0]}
+                    barSize={barSize}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartScroller>
           </>
         )}
 
-        {activeChart === 'category' && (
+        {activeChart === "category" && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Stock balance distribution by category</div>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Stock balance distribution by category
+            </div>
             <div className="category-split">
-              <div style={{ minWidth: 0, width: '100%' }}>
+              <div style={{ minWidth: 0, width: "100%" }}>
                 <ResponsiveContainer width="100%" height={isMobile ? 220 : 240}>
                   <PieChart>
-                    <Pie data={categoryData} cx="50%" cy="50%" outerRadius={isMobile ? 75 : 90} dataKey="value" nameKey="name">
-                      {categoryData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                    <Pie
+                      data={categoryData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={isMobile ? 75 : 90}
+                      dataKey="value"
+                      nameKey="name"
+                    >
+                      {categoryData.map((_, i) => (
+                        <Cell
+                          key={i}
+                          fill={CHART_COLORS[i % CHART_COLORS.length]}
+                        />
+                      ))}
                     </Pie>
                     <Tooltip content={<CustomTooltip />} />
                     {!isMobile && <Legend />}
@@ -516,10 +1073,41 @@ export default function StockOverview() {
               </div>
               <div style={{ minWidth: 0 }}>
                 {categoryData.map((c, i) => (
-                  <div key={c.name} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px solid var(--line)', fontSize: 12 }}>
-                    <div style={{ width: 10, height: 10, borderRadius: 2, background: CHART_COLORS[i % CHART_COLORS.length], flexShrink: 0 }} />
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                    <strong style={{ flexShrink: 0 }}>{c.value.toLocaleString('en-IN')}</strong>
+                  <div
+                    key={c.name}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "5px 0",
+                      borderBottom: "1px solid var(--line)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: CHART_COLORS[i % CHART_COLORS.length],
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        color: "var(--ink)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {c.name}
+                    </span>
+                    <strong style={{ flexShrink: 0 }}>
+                      {c.value.toLocaleString("en-IN")}
+                    </strong>
                   </div>
                 ))}
               </div>
@@ -527,38 +1115,112 @@ export default function StockOverview() {
           </>
         )}
 
-        {activeChart === 'top-value' && canSeePrice && (
+        {activeChart === "top-value" && canSeePrice && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Top 10 materials by stock value (₹)</div>
-            <ChartScroller minWidth={chartMinWidth(topValue.length)} height={chartHeight}>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Top 10 materials by stock value (₹)
+            </div>
+            <ChartScroller
+              minWidth={chartMinWidth(topValue.length)}
+              height={chartHeight}
+            >
               <ResponsiveContainer width="100%" height={chartHeight}>
-                <BarChart data={topValue} margin={{ top: 4, right: 10, left: 10, bottom: bottomMargin }} barCategoryGap={barCategoryGap}>
+                <BarChart
+                  data={topValue}
+                  margin={{ top: 4, right: 10, left: 10, bottom: bottomMargin }}
+                  barCategoryGap={barCategoryGap}
+                >
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" tick={{ fontSize: xAxisFont }} angle={-35} textAnchor="end" interval={0} />
-                  <YAxis tick={{ fontSize: 11 }} width={isMobile ? 44 : 50} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
-                  <Tooltip content={<CustomTooltip />} formatter={v => [`₹${v.toLocaleString('en-IN')}`, 'Stock Value']} cursor={{ fill: 'rgba(200,134,27,0.08)' }} />
-                  <Bar dataKey="value" name="Stock Value (₹)" fill="var(--amber)" radius={[4,4,0,0]} barSize={barSize} />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize: xAxisFont }}
+                    angle={-35}
+                    textAnchor="end"
+                    interval={0}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    width={isMobile ? 44 : 50}
+                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    content={<CustomTooltip />}
+                    formatter={(v) => [
+                      `₹${v.toLocaleString("en-IN")}`,
+                      "Stock Value",
+                    ]}
+                    cursor={{ fill: "rgba(200,134,27,0.08)" }}
+                  />
+                  <Bar
+                    dataKey="value"
+                    name="Stock Value (₹)"
+                    fill="var(--amber)"
+                    radius={[4, 4, 0, 0]}
+                    barSize={barSize}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </ChartScroller>
           </>
         )}
 
-        {activeChart === 'low-stock' && (
+        {activeChart === "low-stock" && (
           <>
-            <div style={{ fontSize: 12, color: '#8a8270', marginBottom: 8 }}>Low stock items — current vs minimum stock</div>
+            <div style={{ fontSize: 12, color: "#8a8270", marginBottom: 8 }}>
+              Low stock items — current vs minimum stock
+            </div>
             {lowStockChart.length === 0 ? (
-              <div className="empty">No low stock items. All materials are above minimum levels.</div>
+              <div className="empty">
+                No low stock items. All materials are above minimum levels.
+              </div>
             ) : (
-              <ChartScroller minWidth={chartMinWidth(lowStockChart.length)} height={chartHeight}>
+              <ChartScroller
+                minWidth={chartMinWidth(lowStockChart.length)}
+                height={chartHeight}
+              >
                 <ResponsiveContainer width="100%" height={chartHeight}>
-                  <BarChart data={lowStockChart} margin={{ top: 4, right: 10, left: 0, bottom: bottomMargin }} barCategoryGap={barCategoryGap} barGap={4}>
+                  <BarChart
+                    data={lowStockChart}
+                    margin={{
+                      top: 4,
+                      right: 10,
+                      left: 0,
+                      bottom: bottomMargin,
+                    }}
+                    barCategoryGap={barCategoryGap}
+                    barGap={4}
+                  >
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" tick={{ fontSize: xAxisFont }} angle={-35} textAnchor="end" interval={0} />
-                    <YAxis tick={{ fontSize: 11 }} width={isMobile ? 42 : 48} tickFormatter={shortQty} />
-                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.05)' }} />
-                    <Bar dataKey="minStock" name="Min Stock" fill="var(--amber)" radius={[4,4,0,0]} barSize={groupedBarSize} />
-                    <Bar dataKey="stock" name="Current Stock" fill="var(--red)" radius={[4,4,0,0]} barSize={groupedBarSize} />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: xAxisFont }}
+                      angle={-35}
+                      textAnchor="end"
+                      interval={0}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11 }}
+                      width={isMobile ? 42 : 48}
+                      tickFormatter={shortQty}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                    />
+                    <Bar
+                      dataKey="minStock"
+                      name="Min Stock"
+                      fill="var(--amber)"
+                      radius={[4, 4, 0, 0]}
+                      barSize={groupedBarSize}
+                    />
+                    <Bar
+                      dataKey="stock"
+                      name="Current Stock"
+                      fill="var(--red)"
+                      radius={[4, 4, 0, 0]}
+                      barSize={groupedBarSize}
+                    />
                     <Legend />
                   </BarChart>
                 </ResponsiveContainer>
@@ -569,76 +1231,333 @@ export default function StockOverview() {
       </div>
 
       {/* ── Table ── */}
-      <div className="card" style={{ minWidth: 0, boxSizing: 'border-box', overflow: 'hidden' }}>
-        <h3 style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            Current balance by material <span className="pill-count">{rows.length || 0}</span>
+      <div
+        className="card"
+        style={{ minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}
+      >
+        <h3
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            Current balance by material{" "}
+            <span className="pill-count">{rows.length || 0}</span>
           </span>
           {activeLabel && (
-            <span style={{
-              fontSize: 12, fontWeight: 500, color: 'var(--red)',
-              background: 'var(--red-light)', padding: '3px 9px', borderRadius: 12,
-              display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap',
-            }}>
+            <span
+              style={{
+                fontSize: 12,
+                fontWeight: 500,
+                color: "var(--red)",
+                background: "var(--red-light)",
+                padding: "3px 9px",
+                borderRadius: 12,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                whiteSpace: "nowrap",
+              }}
+            >
               {activeLabel}
-              <button onClick={() => setActiveCard(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', fontSize: 12, lineHeight: 1 }}>✕</button>
+              <button
+                onClick={() => setActiveCard(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--red)",
+                  fontSize: 12,
+                  lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
             </span>
           )}
         </h3>
         <div className="searchbar">
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or code…" style={{ width: '100%', maxWidth: '100%', boxSizing: 'border-box' }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or code…"
+            style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box" }}
+          />
         </div>
-        <div className="tablewrap" style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '70vh', width: '100%', maxWidth: '100%', boxSizing: 'border-box', WebkitOverflowScrolling: 'touch' }}>
+        <div
+          className="tablewrap"
+          style={{
+            overflowX: "auto",
+            overflowY: "auto",
+            maxHeight: "70vh",
+            width: "100%",
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <table style={{ minWidth: isNarrow ? 900 : 1100 }}>
-            <thead style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--paper-dim)' }}>
+            <thead
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: "var(--paper-dim)",
+              }}
+            >
               <tr>
-                <th><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Material name <ColFilter values={searched.map(r=>r.name)} selected={cf.name} onChange={v=>setCf(f=>({...f,name:v}))} /></span></th>
-                <th><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Type <ColFilter values={searched.map(r=>r.type)} selected={cf.type} onChange={v=>setCf(f=>({...f,type:v}))} /></span></th>
-                <th><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Category <ColFilter values={searched.map(r=>r.category)} selected={cf.category} onChange={v=>setCf(f=>({...f,category:v}))} /></span></th>
-                <th><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Code <ColFilter values={searched.map(r=>r.code)} selected={cf.code} onChange={v=>setCf(f=>({...f,code:v}))} /></span></th>
-                <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Inward <ColFilter values={searched.map(r=>formatNum(r.inQty))} selected={cf.inQty} onChange={v=>setCf(f=>({...f,inQty:v}))} /></span></th>
-                <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Outward <ColFilter values={searched.map(r=>formatNum(r.outQty))} selected={cf.outQty} onChange={v=>setCf(f=>({...f,outQty:v}))} /></span></th>
-                <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Balance <ColFilter values={searched.map(r=>formatNum(r.stock))} selected={cf.stock} onChange={v=>setCf(f=>({...f,stock:v}))} /></span></th>
-                <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Min stock <ColFilter values={searched.map(r=>formatNum(r.minStock))} selected={cf.minStock} onChange={v=>setCf(f=>({...f,minStock:v}))} /></span></th>
-                <th><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>UOM <ColFilter values={searched.map(r=>r.uom)} selected={cf.uom} onChange={v=>setCf(f=>({...f,uom:v}))} /></span></th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Material name{" "}
+                    <ColFilter
+                      values={searched.map((r) => r.name)}
+                      selected={cf.name}
+                      onChange={(v) => setCf((f) => ({ ...f, name: v }))}
+                    />
+                  </span>
+                </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Type{" "}
+                    <ColFilter
+                      values={searched.map((r) => r.type)}
+                      selected={cf.type}
+                      onChange={(v) => setCf((f) => ({ ...f, type: v }))}
+                    />
+                  </span>
+                </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Category{" "}
+                    <ColFilter
+                      values={searched.map((r) => r.category)}
+                      selected={cf.category}
+                      onChange={(v) => setCf((f) => ({ ...f, category: v }))}
+                    />
+                  </span>
+                </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Code{" "}
+                    <ColFilter
+                      values={searched.map((r) => r.code)}
+                      selected={cf.code}
+                      onChange={(v) => setCf((f) => ({ ...f, code: v }))}
+                    />
+                  </span>
+                </th>
+                <th className="num">
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Inward{" "}
+                    <ColFilter
+                      values={searched.map((r) => formatNum(r.inQty))}
+                      selected={cf.inQty}
+                      onChange={(v) => setCf((f) => ({ ...f, inQty: v }))}
+                    />
+                  </span>
+                </th>
+                <th className="num">
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Outward{" "}
+                    <ColFilter
+                      values={searched.map((r) => formatNum(r.outQty))}
+                      selected={cf.outQty}
+                      onChange={(v) => setCf((f) => ({ ...f, outQty: v }))}
+                    />
+                  </span>
+                </th>
+                <th className="num">
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Balance{" "}
+                    <ColFilter
+                      values={searched.map((r) => formatNum(r.stock))}
+                      selected={cf.stock}
+                      onChange={(v) => setCf((f) => ({ ...f, stock: v }))}
+                    />
+                  </span>
+                </th>
+                <th className="num">
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Min stock{" "}
+                    <ColFilter
+                      values={searched.map((r) => formatNum(r.minStock))}
+                      selected={cf.minStock}
+                      onChange={(v) => setCf((f) => ({ ...f, minStock: v }))}
+                    />
+                  </span>
+                </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    UOM{" "}
+                    <ColFilter
+                      values={searched.map((r) => r.uom)}
+                      selected={cf.uom}
+                      onChange={(v) => setCf((f) => ({ ...f, uom: v }))}
+                    />
+                  </span>
+                </th>
                 {canSeePrice && (
                   <>
-                    <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Avg price <ColFilter values={searched.map(r=>formatINR(r.avgPrice))} selected={cf.avgPrice} onChange={v=>setCf(f=>({...f,avgPrice:v}))} /></span></th>
-                    <th className="num"><span style={{ display:'inline-flex', alignItems:'center', gap:4 }}>Stock value <ColFilter values={searched.map(r=>formatINR(r.totalVal))} selected={cf.totalVal} onChange={v=>setCf(f=>({...f,totalVal:v}))} /></span></th>
+                    <th className="num">
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        Avg price{" "}
+                        <ColFilter
+                          values={searched.map((r) => formatINR(r.avgPrice))}
+                          selected={cf.avgPrice}
+                          onChange={(v) =>
+                            setCf((f) => ({ ...f, avgPrice: v }))
+                          }
+                        />
+                      </span>
+                    </th>
+                    <th className="num">
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                      >
+                        Stock value{" "}
+                        <ColFilter
+                          values={searched.map((r) => formatINR(r.totalVal))}
+                          selected={cf.totalVal}
+                          onChange={(v) =>
+                            setCf((f) => ({ ...f, totalVal: v }))
+                          }
+                        />
+                      </span>
+                    </th>
                   </>
                 )}
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => (
+              {rows.map((r) => (
                 <tr key={r._id}>
-                  <td style={{fontWeight:500}}>{r.name}</td>
+                  <td style={{ fontWeight: 500 }}>{r.name}</td>
                   <td>{r.type}</td>
                   <td>{r.category}</td>
                   <td className="mono">{r.code}</td>
                   <td className="num">{formatNum(r.inQty)}</td>
                   <td className="num">{formatNum(r.outQty)}</td>
                   <td className="num">
-                    <strong style={{color: r.stock <= 0 ? 'var(--red)' : r.stock < r.minStock ? 'var(--amber)' : 'var(--teal-dark)'}}>
+                    <strong
+                      style={{
+                        color:
+                          r.stock <= 0
+                            ? "var(--red)"
+                            : r.stock < r.minStock
+                              ? "var(--amber)"
+                              : "var(--teal-dark)",
+                      }}
+                    >
                       {formatNum(r.stock)}
                     </strong>
                   </td>
                   <td className="num">
-                    <span style={{color: r.minStock > 0 && r.stock < r.minStock ? 'var(--red)' : 'inherit'}}>
+                    <span
+                      style={{
+                        color:
+                          r.minStock > 0 && r.stock < r.minStock
+                            ? "var(--red)"
+                            : "inherit",
+                      }}
+                    >
                       {formatNum(r.minStock)}
                     </span>
                   </td>
                   <td>{r.uom}</td>
                   {canSeePrice && (
-                    <><td className="num">{formatINR(r.avgPrice)}</td><td className="num">{formatINR(r.totalVal)}</td></>
+                    <>
+                      <td className="num">{formatINR(r.avgPrice)}</td>
+                      <td className="num">{formatINR(r.totalVal)}</td>
+                    </>
                   )}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        {!master.length && <div className="empty">No materials yet.<p>Add materials to the master list to see stock balances.</p></div>}
-        {master.length > 0 && !rows.length && <div className="empty">No materials match your filters.</div>}
+        {!master.length && (
+          <div className="empty">
+            No materials yet.
+            <p>Add materials to the master list to see stock balances.</p>
+          </div>
+        )}
+        {master.length > 0 && !rows.length && (
+          <div className="empty">No materials match your filters.</div>
+        )}
       </div>
     </div>
   );

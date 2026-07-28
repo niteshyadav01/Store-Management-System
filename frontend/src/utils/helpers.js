@@ -22,6 +22,17 @@ export function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Display a stored date (YYYY-MM-DD or any parseable format) as dd-mm-yyyy
+export function toDDMMYYYY(dateStr) {
+  if (!dateStr) return dateStr;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 // Loose header normaliser
 export function normHeader(h) {
   return String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');

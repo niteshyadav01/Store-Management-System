@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,7 +9,7 @@ import {
   getOutward,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
-import { formatNum, formatINR } from "../utils/helpers";
+import { formatNum, formatINR, toDDMMYYYY } from "../utils/helpers";
 import {
   BarChart,
   Bar,
@@ -45,6 +45,80 @@ const COLORS = [
 ];
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
+function hexToRgba(hex, alpha) {
+  const h = (hex || "#1f5c52").replace("#", "");
+  const bigint = parseInt(h.length === 6 ? h : "1f5c52", 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function shortQty(v) {
+  const abs = Math.abs(v);
+  if (abs >= 100000)
+    return `${(v / 100000).toFixed(v % 100000 === 0 ? 0 : 1)}L`;
+  if (abs >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
+  return v.toLocaleString("en-IN");
+}
+
+// ── Auto-fit stat number: measures the card's real width via ResizeObserver
+// and shrinks the number to fit exactly, instead of guessing from character
+// count. Never truncates — it keeps shrinking until the full value fits. ────
+function StatValue({ value, color, maxFontSize = 26, minFontSize = 9 }) {
+  const wrapRef = useRef(null);
+  const textRef = useRef(null);
+  const [fontSize, setFontSize] = useState(maxFontSize);
+  const RIGHT_PADDING = 10;
+
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    const text = textRef.current;
+    if (!wrap || !text) return;
+
+    function fit() {
+      const available = wrap.clientWidth - RIGHT_PADDING;
+      if (available <= 0) return;
+
+      let size = maxFontSize;
+      text.style.fontSize = `${size}px`;
+
+      while (text.scrollWidth > available && size > minFontSize) {
+        size -= 1;
+        text.style.fontSize = `${size}px`;
+      }
+      setFontSize(size);
+    }
+
+    const ro = new ResizeObserver(fit);
+    ro.observe(wrap);
+    fit();
+
+    return () => ro.disconnect();
+  }, [value, maxFontSize, minFontSize]);
+
+  return (
+    <div
+      ref={wrapRef}
+      style={{ width: "100%", minWidth: 0, paddingRight: RIGHT_PADDING }}
+    >
+      <div
+        ref={textRef}
+        className="value"
+        style={{
+          color: color || "inherit",
+          fontSize,
+          whiteSpace: "nowrap",
+          lineHeight: 1.2,
+          display: "inline-block",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
 function StatCard({ label, value, color, cls, active, onClick, sub }) {
   return (
     <div
@@ -66,15 +140,7 @@ function StatCard({ label, value, color, cls, active, onClick, sub }) {
       }
     >
       <div className="label">{label}</div>
-      <div
-        className="value"
-        style={{
-          color: color || "inherit",
-          fontSize: "clamp(18px, 2vw, 30px)",
-        }}
-      >
-        {value}
-      </div>
+      <StatValue value={value} color={color} />
       {sub && (
         <div style={{ fontSize: 11, color: "#8a8270", marginTop: 4 }}>
           {sub}
@@ -135,72 +201,181 @@ function SectionHeader({ title, count, onClear, activeFilter }) {
 
 // ── Chart components ───────────────────────────────────────────────────────────
 function PRStatusPie({ data }) {
+  const RADIAN = Math.PI / 180;
+  const renderLabel = ({
+    cx,
+    cy,
+    midAngle,
+    innerRadius,
+    outerRadius,
+    value,
+  }) => {
+    // Places the label inside the slice (55% of the radius) instead of
+    // projecting it outward — the default "outside" label math breaks when
+    // there's a single 100%-full slice and pushes the text off the card.
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.55;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (
+      <text
+        x={x}
+        y={y}
+        fill="#fff"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={13}
+        fontWeight={700}
+      >
+        {value}
+      </text>
+    );
+  };
+
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <PieChart>
-        <Pie
-          data={data}
-          cx="50%"
-          cy="50%"
-          outerRadius={80}
-          dataKey="value"
-          label={({ name, value }) => `${name}: ${value}`}
-          labelLine={false}
-        >
-          {data.map((_, i) => (
-            <Cell key={i} fill={COLORS[i % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip />
-        <Legend />
-      </PieChart>
-    </ResponsiveContainer>
+    <div
+      style={{
+        width: "100%",
+        minWidth: 0,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <ResponsiveContainer width="100%" height={220}>
+        <PieChart tabIndex={-1}>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            outerRadius={80}
+            dataKey="value"
+            label={renderLabel}
+            labelLine={false}
+          >
+            {data.map((_, i) => (
+              <Cell key={i} fill={COLORS[i % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip />
+          <Legend />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
 function TopItemsBar({ data, xKey, yKey, color, label }) {
+  const barColor = color || "var(--teal)";
+
+  function FullNameTooltip({ active, payload }) {
+    if (!active || !payload?.length) return null;
+    const row = payload[0].payload;
+    return (
+      <div
+        style={{
+          background: "#fff",
+          border: "1px solid var(--line)",
+          borderRadius: 8,
+          padding: "8px 12px",
+          fontSize: 12,
+          boxShadow: "0 4px 12px rgba(0,0,0,.1)",
+          maxWidth: 240,
+        }}
+      >
+        <div
+          style={{
+            fontWeight: 600,
+            marginBottom: 4,
+            color: "var(--ink)",
+            overflowWrap: "break-word",
+          }}
+        >
+          {row.fullName || row[xKey]}
+        </div>
+        <div style={{ color: barColor }}>
+          {label}:{" "}
+          <strong>
+            {typeof payload[0].value === "number"
+              ? payload[0].value.toLocaleString("en-IN")
+              : payload[0].value}
+          </strong>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={data} margin={{ top: 4, right: 10, left: 0, bottom: 60 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis
-          dataKey={xKey}
-          tick={{ fontSize: 10 }}
-          angle={-35}
-          textAnchor="end"
-          interval={0}
-        />
-        <YAxis tick={{ fontSize: 11 }} />
-        <Tooltip />
-        <Bar
-          dataKey={yKey}
-          name={label}
-          fill={color || "var(--teal)"}
-          radius={[4, 4, 0, 0]}
-        />
-      </BarChart>
-    </ResponsiveContainer>
+    <div
+      style={{
+        width: "100%",
+        minWidth: 0,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart
+          data={data}
+          margin={{ top: 4, right: 10, left: 0, bottom: 60 }}
+          barCategoryGap="38%"
+          tabIndex={-1}
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey={xKey}
+            tick={{ fontSize: 10 }}
+            angle={-40}
+            textAnchor="end"
+            interval={0}
+          />
+          <YAxis tick={{ fontSize: 11 }} width={46} tickFormatter={shortQty} />
+          <Tooltip
+            content={<FullNameTooltip />}
+            cursor={{ fill: hexToRgba(color, 0.08) }}
+          />
+          <Bar
+            dataKey={yKey}
+            name={label}
+            fill={barColor}
+            radius={[4, 4, 0, 0]}
+            maxBarSize={38}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
 function InwardTrendLine({ data }) {
   return (
-    <ResponsiveContainer width="100%" height={180}>
-      <LineChart data={data} margin={{ top: 4, right: 10, left: 0, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-        <YAxis tick={{ fontSize: 11 }} />
-        <Tooltip />
-        <Line
-          type="monotone"
-          dataKey="qty"
-          stroke="var(--teal)"
-          strokeWidth={2}
-          dot={false}
-          name="Qty"
-        />
-      </LineChart>
-    </ResponsiveContainer>
+    <div
+      style={{
+        width: "100%",
+        minWidth: 0,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <ResponsiveContainer width="100%" height={180}>
+        <LineChart
+          data={data}
+          margin={{ top: 4, right: 10, left: 0, bottom: 0 }}
+          tabIndex={-1}
+        >
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+          <YAxis tick={{ fontSize: 11 }} width={46} tickFormatter={shortQty} />
+          <Tooltip formatter={(v) => [v.toLocaleString("en-IN"), "Qty"]} />
+          <Line
+            type="monotone"
+            dataKey="qty"
+            stroke="var(--teal)"
+            strokeWidth={2}
+            dot={false}
+            name="Qty"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -246,7 +421,8 @@ function AdminDashboard({
   });
   const topInward = Object.entries(inTotals)
     .map(([name, qty]) => ({
-      name: name.length > 18 ? name.slice(0, 18) + "…" : name,
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      fullName: name,
       qty,
     }))
     .sort((a, b) => b.qty - a.qty)
@@ -259,7 +435,8 @@ function AdminDashboard({
   });
   const topOutward = Object.entries(outTotals)
     .map(([name, qty]) => ({
-      name: name.length > 18 ? name.slice(0, 18) + "…" : name,
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      fullName: name,
       qty,
     }))
     .sort((a, b) => b.qty - a.qty)
@@ -347,7 +524,10 @@ function AdminDashboard({
       {/* Stat cards */}
       <div
         className="statrow"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}
+        style={{
+          gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+          gap: 12,
+        }}
       >
         {cards.map((c, i) => (
           <StatCard
@@ -370,9 +550,10 @@ function AdminDashboard({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: 16,
           marginBottom: 20,
+          minWidth: 0,
         }}
       >
         <div className="card" style={{ marginBottom: 0 }}>
@@ -527,7 +708,8 @@ function PurchaseDashboard({
   });
   const topByValue = Object.entries(inValMap)
     .map(([name, val]) => ({
-      name: name.length > 18 ? name.slice(0, 18) + "…" : name,
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      fullName: name,
       val: Math.round(val),
     }))
     .sort((a, b) => b.val - a.val)
@@ -540,7 +722,8 @@ function PurchaseDashboard({
   });
   const topOutward = Object.entries(outTotals)
     .map(([name, qty]) => ({
-      name: name.length > 18 ? name.slice(0, 18) + "…" : name,
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      fullName: name,
       qty,
     }))
     .sort((a, b) => b.qty - a.qty)
@@ -644,9 +827,10 @@ function PurchaseDashboard({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: 16,
           marginBottom: 20,
+          minWidth: 0,
         }}
       >
         <div className="card" style={{ marginBottom: 0 }}>
@@ -801,7 +985,8 @@ function StoreDashboard({
   });
   const topOutward = Object.entries(outTotals)
     .map(([name, qty]) => ({
-      name: name.length > 18 ? name.slice(0, 18) + "…" : name,
+      name: name.length > 12 ? name.slice(0, 12) + "…" : name,
+      fullName: name,
       qty,
     }))
     .sort((a, b) => b.qty - a.qty)
@@ -824,6 +1009,7 @@ function StoreDashboard({
   }
 
   const filteredPRs = getFilteredPRs();
+  const unmatchedPOs = pos.filter((p) => p.status !== "matched");
 
   const cards = [
     {
@@ -874,17 +1060,16 @@ function StoreDashboard({
       cls: "rust",
     },
     {
-      key: null,
+      key: "po-matching",
       label: "PO Matching",
-      value: pos.filter((p) => p.status !== "matched").length,
+      value: pos.length,
       cls: "",
-      onClick: () => navigate("/po-matching"),
     },
   ];
 
   return (
     <>
-     <div
+      <div
         className="statrow"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))" }}
       >
@@ -908,9 +1093,10 @@ function StoreDashboard({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
           gap: 16,
           marginBottom: 20,
+          minWidth: 0,
         }}
       >
         <div className="card" style={{ marginBottom: 0 }}>
@@ -976,8 +1162,20 @@ function StoreDashboard({
         </div>
       )}
 
+      {activeFilter === "po-matching" && (
+        <div className="card">
+          <SectionHeader
+            title="Purchase Orders Pending Match"
+            count={unmatchedPOs.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <POTable pos={unmatchedPOs} />
+        </div>
+      )}
+
       {/* PR table */}
-      {activeFilter !== "low-stock" && (
+      {activeFilter !== "low-stock" && activeFilter !== "po-matching" && (
         <div className="card">
           <SectionHeader
             title={
@@ -1041,7 +1239,7 @@ function PRTable({
                 <td className="mono" style={{ fontWeight: 600 }}>
                   {pr.prNumber}
                 </td>
-                <td>{pr.date}</td>
+                <td>{toDDMMYYYY(pr.date)}</td>
                 <td>{pr.projectName || "—"}</td>
                 <td>{pr.requestFrom || "—"}</td>
                 <td>{pr.requestedByName}</td>
@@ -1196,8 +1394,10 @@ function POTable({ pos }) {
                 <td className="mono" style={{ fontWeight: 600 }}>
                   {po.poNumber}
                 </td>
-                <td>{po.poDate}</td>
-                <td>{po.poExpectedDate || "—"}</td>
+                <td>{toDDMMYYYY(po.poDate)}</td>
+                <td>
+                  {po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : "—"}
+                </td>
                 <td className="mono">{po.prNumber}</td>
                 <td>{po.vendorName}</td>
                 <td>{po.items?.length || 0}</td>
@@ -1318,15 +1518,39 @@ export default function Dashboard() {
 
   return (
     <>
+      <style>{`
+  .stat .label {
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+    word-break: break-word !important;
+    white-space: normal !important;
+  }
+  .stat {
+    min-width: 0 !important;
+    padding: 14px 12px !important;
+  }
+  @media (max-width: 600px) {
+    .statrow {
+      grid-template-columns: repeat(2, 1fr) !important;
+    }
+  }
+  @media (max-width: 400px) {
+    .statrow {
+      grid-template-columns: 1fr 1fr !important;
+      gap: 8px !important;
+    }
+  }
+`}</style>
+
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>{roleLabel} Dashboard</h2>
           <p>
-            {user?.role === "admin" &&
+            {dashboardType === "admin" &&
               "Full overview of purchase requests, orders, stock and alerts."}
-            {user?.role === "purchase" &&
+            {dashboardType === "purchase" &&
               "Purchase team view of orders, pricing, vendor and stock value."}
-            {user?.role === "store_manager" &&
+            {dashboardType === "store" &&
               "Store team view of inward, outward, PR and live stock."}
           </p>
         </div>

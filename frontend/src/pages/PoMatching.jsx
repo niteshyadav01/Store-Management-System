@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getPoMatching } from '../api/api';
+import {toDDMMYYYY} from '../utils/helpers';
 
 const STATUS_LABEL = { received: 'Fully Received', partial: 'Partially Received', pending: 'Pending' };
 const STATUS_COLOR = { received: '#2a9d8f', partial: '#e9a44e', pending: '#c0392b' };
@@ -108,8 +109,8 @@ export default function PoMatching() {
                       onClick={() => setExpanded(isOpen ? null : po._id)}
                     >
                       <td className="mono" style={{ fontWeight: 700 }}>{po.poNumber}</td>
-                      <td>{po.poDate}</td>
-                      <td>{po.poExpectedDate || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td>{toDDMMYYYY(po.poDate)}</td>
+                      <td>{toDDMMYYYY(po.poExpectedDate) || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td className="mono">{po.prNumber}</td>
                       <td>{po.vendorName}</td>
                       <td className="num">{po.items.length}</td>

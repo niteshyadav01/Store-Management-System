@@ -10,7 +10,7 @@ import {
   getOutward,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
-import { todayStr } from "../utils/helpers";
+import { todayStr, toDDMMYYYY } from "../utils/helpers";
 
 const STATUS_LABEL = {
   pending: "Pending",
@@ -230,7 +230,7 @@ export default function PurchaseOrders() {
                   <option value="">— Select PR —</option>
                   {eligiblePRs.map(pr => (
                     <option key={pr._id} value={pr._id}>
-                      {pr.prNumber} — {pr.date}
+                      {pr.prNumber} — {toDDMMYYYY(pr.date)}
                       {pr.projectName ? ` · ${pr.projectName}` : ''}
                       {pr.requestFrom ? ` · From: ${pr.requestFrom}` : ''} ({pr.items.length} item{pr.items.length !== 1 ? 's' : ''}) [{STATUS_LABEL[pr.status]}]
                     </option>
@@ -384,7 +384,7 @@ export default function PurchaseOrders() {
                       onClick={() => loadPrItems(pr)}
                     >
                       <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
-                      <td>{pr.date}</td>
+                      <td>{toDDMMYYYY(pr.date)}</td>
                       <td>{pr.projectName || '—'}</td>
                       <td>{pr.requestFrom || '—'}</td>
                       <td>{pr.requestedByName}</td>
@@ -509,8 +509,8 @@ export default function PurchaseOrders() {
                           {po.poNumber}
                         </span>
                       </td>
-                      <td>{po.poDate}</td>
-                      <td>{po.poExpectedDate || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td>{toDDMMYYYY(po.poDate)}</td>
+                      <td>{po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td className="mono">{po.prNumber}</td>
                       <td>{po.vendorName}</td>
                       <td>{pr?.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
