@@ -1323,11 +1323,11 @@ export default function Dashboard() {
           <h2>{roleLabel} Dashboard</h2>
           <p>
             {user?.role === "admin" &&
-              "Full overview — purchase requests, orders, stock and alerts."}
+              "Full overview of purchase requests, orders, stock and alerts."}
             {user?.role === "purchase" &&
-              "Purchase team view — orders, pricing, vendor and stock value."}
+              "Purchase team view of orders, pricing, vendor and stock value."}
             {user?.role === "store_manager" &&
-              "Store team view — inward, outward, PR and live stock."}
+              "Store team view of inward, outward, PR and live stock."}
           </p>
         </div>
       </div>
