@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { getInward, updatePrice } from "../api/api";
-import { formatNum } from "../utils/helpers";
+import { formatNum, exportXlsx } from "../utils/helpers";
 
 // Display dates as dd-mm-yyyy regardless of the underlying stored format.
 function toDDMMYYYY(dateStr) {
@@ -557,6 +557,12 @@ export default function PriceEntry() {
             "item",
             "product",
           ]);
+          const vendorVal = pickField(normMap, [
+            "vendor",
+            "vendorname",
+            "supplier",
+            "suppliername",
+          ]);
           const priceValRaw = pickField(normMap, [
             "price",
             "unitprice",
@@ -597,6 +603,23 @@ export default function PriceEntry() {
               .map((e) => e._id);
           }
 
+          // If a Vendor column was provided, use it to narrow the match —
+          // useful when the same code/name was received from more than one
+          // vendor and each vendor's price needs to be set separately.
+          // Falls back to the unfiltered set if the vendor doesn't narrow
+          // anything down, so sheets without a Vendor column keep working.
+          if (ids.length && vendorVal) {
+            const vnorm = String(vendorVal).trim().toLowerCase();
+            const byVendor = entries
+              .filter(
+                (e) =>
+                  ids.includes(e._id) &&
+                  (e.vendor || "").trim().toLowerCase() === vnorm,
+              )
+              .map((e) => e._id);
+            if (byVendor.length) ids = byVendor;
+          }
+
           if (!ids.length) {
             unmatched.push({
               row: idx + 2,
@@ -610,6 +633,7 @@ export default function PriceEntry() {
             row: idx + 2,
             code: codeVal || "",
             name: nameVal || "",
+            vendor: vendorVal || "",
             price: priceVal,
             ids,
           });
@@ -663,6 +687,40 @@ export default function PriceEntry() {
     }
   }
 
+  // Downloadable template — built from this module's own data (current
+  // inward entries + their existing prices) rather than generic placeholder
+  // text, so the sheet the user gets back is immediately usable: they can
+  // just edit the Price column and re-upload.
+  function downloadTemplate() {
+    const headers = ["Code", "Material Name", "Vendor", "Price"];
+
+    // De-duplicate by code/name + vendor, so a material received from more
+    // than one vendor still gets a row per vendor (since Vendor narrows the
+    // match on upload), while true duplicates collapse to one row.
+    const seen = new Set();
+    const rows = [];
+    entries.forEach((e) => {
+      const base = (e.code || e.name || "").trim().toLowerCase();
+      const vendorKey = (e.vendor || "").trim().toLowerCase();
+      const key = `${base}|${vendorKey}`;
+      if (!base || seen.has(key)) return;
+      seen.add(key);
+      rows.push([e.code || "", e.name || "", e.vendor || "", e.price ?? 0]);
+    });
+
+    // If there's no data yet (e.g. fresh install), fall back to one sample row.
+    if (!rows.length) {
+      rows.push([
+        "[Item code]",
+        "[Material Name — used if Code is blank]",
+        "[Vendor — optional, narrows the match]",
+        0,
+      ]);
+    }
+
+    exportXlsx(headers, rows, "Price Template", "Stockyard_Price_Template.xlsx");
+  }
+
   return (
     <>
       <div className="pagehead">
@@ -680,9 +738,36 @@ export default function PriceEntry() {
           Inward entries{" "}
           <span className="pill-count">{filtered.length || 0}</span>
         </h3>
+        {/* Bulk price upload via Excel — same visual treatment as Inward Entry's bulk upload.
+            Placed first so it's visible immediately, above the search/filter row. */}
+        <div className="uploadbox">
+          <label htmlFor="price-bulk">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            {excelBusy ? "Reading…" : "Choose sheet (.xlsx, .xls, .csv)"}
+          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            id="price-bulk"
+            accept=".xlsx,.xls,.csv"
+            disabled={excelBusy}
+            onChange={(e) => handleExcelFile(e.target.files?.[0])}
+          />
+          <div className="hint">
+            Match by <strong>Code</strong> (preferred) or <strong>Material Name</strong>, plus a{" "}
+            <strong>Price</strong> column — column names are matched loosely (e.g. "Unit Price",
+            "Rate", "Cost" all work). Add a <strong>Vendor</strong> column to narrow the match
+            when the same material was received from more than one vendor.<br />
+            <button onClick={downloadTemplate}>Download template</button>
+          </div>
+        </div>
+
         <div
           className="searchbar"
-          style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}
+          style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 16 }}
         >
           <input
             value={search}
@@ -710,29 +795,12 @@ export default function PriceEntry() {
             />
             Bulk Update
           </label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            style={{ display: "none" }}
-            onChange={(e) => handleExcelFile(e.target.files?.[0])}
-          />
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={excelBusy}
-            onClick={() => fileInputRef.current?.click()}
-            style={{ marginLeft: "auto" }}
-            title="Upload an Excel/CSV file with Code (or Material Name) and Price columns"
-          >
-            {excelBusy ? "Reading…" : "Upload Excel"}
-          </button>
         </div>
 
         {excelPreview && (
           <div
             style={{
-              margin: "0 0 16px",
+              margin: "16px 0",
               border: "1px solid var(--line)",
               borderRadius: 10,
               overflow: "hidden",
@@ -806,6 +874,7 @@ export default function PriceEntry() {
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Row</th>
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Code</th>
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Name</th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Vendor</th>
                       <th style={{ textAlign: "right", padding: "6px 14px" }}>New price</th>
                       <th style={{ textAlign: "right", padding: "6px 14px" }}>Entries affected</th>
                     </tr>
@@ -818,6 +887,7 @@ export default function PriceEntry() {
                           {m.code || "—"}
                         </td>
                         <td style={{ padding: "5px 14px" }}>{m.name || "—"}</td>
+                        <td style={{ padding: "5px 14px" }}>{m.vendor || "—"}</td>
                         <td className="num" style={{ padding: "5px 14px" }}>
                           {formatNum(m.price)}
                         </td>

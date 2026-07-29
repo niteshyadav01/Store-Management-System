@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getMaster, getInward, getOutward } from "../api/api";
 import { useAuth } from "../context/AuthContext";
-import { formatNum, formatINR, exportXlsx, todayStr } from "../utils/helpers";
+import { formatNum, formatINR, exportXlsx, todayStr, toDDMMYYYY } from "../utils/helpers";
 
 // ── Excel-style dropdown filter — portal-based, with Apply button ────────────
-function ColFilter({ values, selected, onChange }) {
+function ColFilter({ values, selected, onChange, formatLabel }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [pending, setPending] = useState([]);
@@ -274,7 +274,7 @@ function ColFilter({ values, selected, onChange }) {
                 whiteSpace: "nowrap",
               }}
             >
-              {v}
+              {formatLabel ? formatLabel(v) : v}
             </span>
           </div>
         ))}
@@ -600,7 +600,7 @@ export default function Reports() {
       headers.push("Remarks");
       const dataRows = filteredRows.map((r) => {
         const row = [
-          r.date,
+          toDDMMYYYY(r.date),
           r.name,
           r.category,
           r.type,
@@ -777,6 +777,8 @@ export default function Reports() {
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
+                onClick={(e) => e.target.showPicker && e.target.showPicker()}
+                style={{ cursor: "pointer" }}
               />
             </div>
             <div className="field">
@@ -785,6 +787,8 @@ export default function Reports() {
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
+                onClick={(e) => e.target.showPicker && e.target.showPicker()}
+                style={{ cursor: "pointer" }}
               />
             </div>
             {repType !== "outward" && (
@@ -1161,6 +1165,7 @@ export default function Reports() {
                             onChange={(v) =>
                               setCfTxn((f) => ({ ...f, date: v }))
                             }
+                            formatLabel={toDDMMYYYY}
                           />
                         </th>
                         <th>
@@ -1283,7 +1288,7 @@ export default function Reports() {
                     <tbody>
                       {filteredRows.map((r, i) => (
                         <tr key={i}>
-                          <td>{r.date}</td>
+                          <td>{toDDMMYYYY(r.date)}</td>
                           <td className="wrap-cell" style={{ fontWeight: 500 }}>
                             {r.name}
                           </td>

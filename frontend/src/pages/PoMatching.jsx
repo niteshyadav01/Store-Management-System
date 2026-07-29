@@ -61,7 +61,7 @@ export default function PoMatching() {
 
       <div className="card">
         {/* Search + filter bar */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center',  }}>
           <input
             value={search} onChange={e => setSearch(e.target.value)}
             placeholder="Search by PO number, PR number or vendor name…"
