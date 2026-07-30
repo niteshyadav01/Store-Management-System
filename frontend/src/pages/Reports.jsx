@@ -403,6 +403,8 @@ export default function Reports() {
     code: [],
     uom: [],
     qty: [],
+    reqty: [],
+    remaining: [],
     vendor: [],
     price: [],
     value: [],
@@ -423,6 +425,14 @@ export default function Reports() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // ── Helpers for Required Qty / Remaining Qty (outward entries only) ───────
+  function hasReqty(r) {
+    return r.reqty !== undefined && r.reqty !== null && r.reqty !== "";
+  }
+  function remainingQty(r) {
+    return hasReqty(r) ? Number(r.reqty) - Number(r.qty) : null;
+  }
 
   const categories = [
     ...new Set(master.map((m) => m.category).filter(Boolean)),
@@ -457,6 +467,8 @@ export default function Reports() {
     code: [],
     uom: [],
     qty: [],
+    reqty: [],
+    remaining: [],
     vendor: [],
     price: [],
     value: [],
@@ -594,6 +606,7 @@ export default function Reports() {
         "UOM",
         "Qty",
       ];
+      if (repType === "outward") headers.push("Required Qty", "Remaining Qty");
       if (repType !== "outward") headers.push("Vendor");
       if (repType !== "outward" && canSeePrice) headers.push("Price", "Value");
       if (repType !== "inward") headers.push("Project");
@@ -608,6 +621,12 @@ export default function Reports() {
           r.uom,
           parseFloat(r.qty) || 0,
         ];
+        if (repType === "outward") {
+          row.push(
+            hasReqty(r) ? parseFloat(r.reqty) : "",
+            hasReqty(r) ? remainingQty(r) : "",
+          );
+        }
         if (repType !== "outward") row.push(r.vendor || "");
         if (repType !== "outward" && canSeePrice) {
           const v = (parseFloat(r.qty) || 0) * (parseFloat(r.price) || 0);
@@ -658,6 +677,14 @@ export default function Reports() {
         (!cfTxn.code.length || cfTxn.code.includes(r.code)) &&
         (!cfTxn.uom.length || cfTxn.uom.includes(r.uom)) &&
         (!cfTxn.qty.length || cfTxn.qty.includes(String(formatNum(r.qty)))) &&
+        (!cfTxn.reqty.length ||
+          cfTxn.reqty.includes(
+            hasReqty(r) ? String(formatNum(r.reqty)) : "—",
+          )) &&
+        (!cfTxn.remaining.length ||
+          cfTxn.remaining.includes(
+            hasReqty(r) ? String(formatNum(remainingQty(r))) : "—",
+          )) &&
         (!cfTxn.vendor.length || cfTxn.vendor.includes(r.vendor || "—")) &&
         (!cfTxn.price.length ||
           cfTxn.price.includes(String(formatINR(r.price)))) &&
@@ -1218,6 +1245,36 @@ export default function Reports() {
                             }
                           />
                         </th>
+                        {repType === "outward" && (
+                          <>
+                            <th className="num">
+                              Required Qty{" "}
+                              <ColFilter
+                                values={(rows || []).map((r) =>
+                                  hasReqty(r) ? formatNum(r.reqty) : "—",
+                                )}
+                                selected={cfTxn.reqty}
+                                onChange={(v) =>
+                                  setCfTxn((f) => ({ ...f, reqty: v }))
+                                }
+                              />
+                            </th>
+                            <th className="num">
+                              Remaining Qty{" "}
+                              <ColFilter
+                                values={(rows || []).map((r) =>
+                                  hasReqty(r)
+                                    ? formatNum(remainingQty(r))
+                                    : "—",
+                                )}
+                                selected={cfTxn.remaining}
+                                onChange={(v) =>
+                                  setCfTxn((f) => ({ ...f, remaining: v }))
+                                }
+                              />
+                            </th>
+                          </>
+                        )}
                         {repType !== "outward" && (
                           <th>
                             Vendor{" "}
@@ -1296,6 +1353,29 @@ export default function Reports() {
                           <td className="mono">{r.code}</td>
                           <td>{r.uom}</td>
                           <td className="num">{formatNum(r.qty)}</td>
+                          {repType === "outward" && (
+                            <>
+                              <td className="num">
+                                {hasReqty(r) ? formatNum(r.reqty) : "—"}
+                              </td>
+                              <td className="num">
+                                {hasReqty(r) ? (
+                                  <strong
+                                    style={{
+                                      color:
+                                        remainingQty(r) <= 0
+                                          ? "var(--red)"
+                                          : "inherit",
+                                    }}
+                                  >
+                                    {formatNum(remainingQty(r))}
+                                  </strong>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            </>
+                          )}
                           {repType !== "outward" && <td>{r.vendor || "—"}</td>}
                           {repType !== "outward" && canSeePrice && (
                             <>
