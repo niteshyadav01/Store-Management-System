@@ -41,7 +41,7 @@ function sanitizeItems(items) {
 }
 
 // Roles that can see ALL requests (not just their own)
-const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store'];
+const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store', 'viewer'];
 
 // GET /api/purchase-requests
 // Admin / purchase / store_manager / store see all requests. viewer sees only their own.

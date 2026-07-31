@@ -24,7 +24,7 @@ const ROLE_ACCESS = {
   stock: ["admin", "purchase", "store", "store_manager", "viewer"],
   users: ["admin"],
   reports: ["admin", "purchase", "store_manager", "viewer"],
-  purchaseRequests: ["admin", "store", "store_manager","viewer"],
+  purchaseRequests: ["admin", "store", "store_manager", "viewer"],
   purchaseOrders: ["admin", "purchase"],
   poMatching: ["admin", "purchase", "store_manager"],
 };
