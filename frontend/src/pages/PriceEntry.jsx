@@ -416,6 +416,7 @@ export default function PriceEntry() {
     vendor: [],
     name: [],
     code: [],
+    category: [],
     qty: [],
     uom: [],
     price: [],
@@ -448,6 +449,7 @@ export default function PriceEntry() {
         (!cf.vendor.length || cf.vendor.includes(e.vendor)) &&
         (!cf.name.length || cf.name.includes(e.name)) &&
         (!cf.code.length || cf.code.includes(e.code)) &&
+        (!cf.category.length || cf.category.includes(e.category)) &&
         (!cf.qty.length || cf.qty.includes(String(e.qty))) &&
         (!cf.uom.length || cf.uom.includes(e.uom)) &&
         (!cf.price.length || cf.price.includes(String(e.price ?? 0))),
@@ -563,6 +565,12 @@ export default function PriceEntry() {
             "supplier",
             "suppliername",
           ]);
+          const categoryVal = pickField(normMap, [
+            "category",
+            "categoryname",
+            "itemcategory",
+            "type",
+          ]);
           const priceValRaw = pickField(normMap, [
             "price",
             "unitprice",
@@ -620,6 +628,23 @@ export default function PriceEntry() {
             if (byVendor.length) ids = byVendor;
           }
 
+          // If a Category column was provided, further narrow the match —
+          // useful when the same code/name exists under more than one
+          // category. Falls back to the unfiltered set if it doesn't
+          // narrow anything down, so sheets without a Category column
+          // keep working.
+          if (ids.length && categoryVal) {
+            const cnorm = String(categoryVal).trim().toLowerCase();
+            const byCategory = entries
+              .filter(
+                (e) =>
+                  ids.includes(e._id) &&
+                  (e.category || "").trim().toLowerCase() === cnorm,
+              )
+              .map((e) => e._id);
+            if (byCategory.length) ids = byCategory;
+          }
+
           if (!ids.length) {
             unmatched.push({
               row: idx + 2,
@@ -634,6 +659,7 @@ export default function PriceEntry() {
             code: codeVal || "",
             name: nameVal || "",
             vendor: vendorVal || "",
+            category: categoryVal || "",
             price: priceVal,
             ids,
           });
@@ -692,7 +718,7 @@ export default function PriceEntry() {
   // text, so the sheet the user gets back is immediately usable: they can
   // just edit the Price column and re-upload.
   function downloadTemplate() {
-    const headers = ["Code", "Material Name", "Vendor", "Price"];
+    const headers = ["Code", "Material Name", "Vendor", "Category", "Price"];
 
     // De-duplicate by code/name + vendor, so a material received from more
     // than one vendor still gets a row per vendor (since Vendor narrows the
@@ -705,7 +731,7 @@ export default function PriceEntry() {
       const key = `${base}|${vendorKey}`;
       if (!base || seen.has(key)) return;
       seen.add(key);
-      rows.push([e.code || "", e.name || "", e.vendor || "", e.price ?? 0]);
+      rows.push([e.code || "", e.name || "", e.vendor || "", e.category || "", e.price ?? 0]);
     });
 
     // If there's no data yet (e.g. fresh install), fall back to one sample row.
@@ -714,6 +740,7 @@ export default function PriceEntry() {
         "[Item code]",
         "[Material Name — used if Code is blank]",
         "[Vendor — optional, narrows the match]",
+        "[Category — optional, narrows the match]",
         0,
       ]);
     }
@@ -759,8 +786,9 @@ export default function PriceEntry() {
           <div className="hint">
             Match by <strong>Code</strong> (preferred) or <strong>Material Name</strong>, plus a{" "}
             <strong>Price</strong> column — column names are matched loosely (e.g. "Unit Price",
-            "Rate", "Cost" all work). Add a <strong>Vendor</strong> column to narrow the match
-            when the same material was received from more than one vendor.<br />
+            "Rate", "Cost" all work). Add a <strong>Vendor</strong> and/or <strong>Category</strong> column
+            to narrow the match when the same material was received from more than one vendor or
+            exists under more than one category.<br />
             <button onClick={downloadTemplate}>Download template</button>
           </div>
         </div>
@@ -875,6 +903,7 @@ export default function PriceEntry() {
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Code</th>
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Name</th>
                       <th style={{ textAlign: "left", padding: "6px 14px" }}>Vendor</th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Category</th>
                       <th style={{ textAlign: "right", padding: "6px 14px" }}>New price</th>
                       <th style={{ textAlign: "right", padding: "6px 14px" }}>Entries affected</th>
                     </tr>
@@ -888,6 +917,7 @@ export default function PriceEntry() {
                         </td>
                         <td style={{ padding: "5px 14px" }}>{m.name || "—"}</td>
                         <td style={{ padding: "5px 14px" }}>{m.vendor || "—"}</td>
+                        <td style={{ padding: "5px 14px" }}>{m.category || "—"}</td>
                         <td className="num" style={{ padding: "5px 14px" }}>
                           {formatNum(m.price)}
                         </td>
@@ -926,7 +956,7 @@ export default function PriceEntry() {
             maxHeight: "70vh",
           }}
         >
-          <table style={{ minWidth: "1200px" }}>
+          <table style={{ minWidth: "1300px" }}>
             <thead style={{ position: "sticky", top: 0, zIndex: 2 }}>
               <tr style={{ background: "var(--paper-dim)" }}>
                 <th>
@@ -1011,6 +1041,22 @@ export default function PriceEntry() {
                     />
                   </span>
                 </th>
+                <th>
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    Category{" "}
+                    <ColFilter
+                      values={entries.map((e) => e.category)}
+                      selected={cf.category}
+                      onChange={(v) => setCf((f) => ({ ...f, category: v }))}
+                    />
+                  </span>
+                </th>
                 <th className="num">
                   <span
                     style={{
@@ -1081,6 +1127,11 @@ export default function PriceEntry() {
                     </td>
                     <td style={{ fontWeight: 500 }}>{e.name}</td>
                     <td className="mono">{e.code}</td>
+                    <td>
+                      {e.category || (
+                        <span style={{ color: "var(--text-3)" }}>—</span>
+                      )}
+                    </td>
                     <td className="num">{formatNum(e.qty)}</td>
                     <td>{e.uom}</td>
                     <td className="num pricecell">

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   getMaster,
   getPurchaseRequests,
@@ -8,6 +8,7 @@ import {
   updatePurchaseRequest,
   deletePurchaseRequest,
   setPurchaseRequestStatus,
+  getPurchaseOrdersByPR,
   getInward,
   getOutward,
 } from "../api/api";
@@ -31,8 +32,33 @@ const STATUS_TABS = [
 
 const emptyItem = () => ({
   _key: Math.random().toString(36).slice(2),
-  name: "", type: "", code: "", category: "", uom: "", qty: "", projectName: "", remarks: "",
+  name: "", type: "", code: "", category: "", uom: "", qty: "",
+  expectedDeliveryDate: "", projectName: "", remarks: "",
 });
+
+// ── Date helper: "YYYY-MM-DD" -> "DD/MM/YYYY" ──────────────────────────────
+function formatDDMMYYYY(dateStr) {
+  if (!dateStr) return "";
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  if (!y || !m || !d) return dateStr;
+  return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+}
+
+// ── Full timestamp helper: JS Date -> "DD/MM/YYYY, hh:mm AM/PM" ────────────
+function formatDateTimeDMY(input) {
+  const dt = input instanceof Date ? input : new Date(input);
+  if (isNaN(dt.getTime())) return "";
+  const d = String(dt.getDate()).padStart(2, "0");
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const y = dt.getFullYear();
+  let hours = dt.getHours();
+  const minutes = String(dt.getMinutes()).padStart(2, "0");
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  return `${d}/${m}/${y}, ${hours}:${minutes} ${ampm}`;
+}
 
 // ── Searchable select component (portal-based, never clipped) ─────────────────
 function SearchSelect({ options, value, onChange, placeholder }) {
@@ -127,6 +153,7 @@ function SearchSelect({ options, value, onChange, placeholder }) {
 export default function PurchaseRequest() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const canCreate = CREATOR_ROLES.includes(user?.role);
   const canReview = APPROVER_ROLES.includes(user?.role);
 
@@ -145,6 +172,16 @@ export default function PurchaseRequest() {
   const [statusFilter, setStatusFilter] = useState("all");
 
   const [stockMap, setStockMap] = useState({});
+
+  // Banner shown when this page was opened with items handed off from
+  // Live Stock's "Create PR" flow (single item or several selected together).
+  const [prefillBanner, setPrefillBanner] = useState(false);
+  const prefillAppliedRef = useRef(false);
+
+  // PO data (ordered qty + PO expected delivery date) per PR, keyed by pr._id
+  // shape: { [prId]: { byName: { [materialName]: { orderedQty, expectedDates: string[], poNumbers: string[] } } } }
+  const [poDataByPr, setPoDataByPr] = useState({});
+  const [poDataLoading, setPoDataLoading] = useState({});
 
   const load = useCallback(async () => {
     const [m, r, inw, out] = await Promise.all([
@@ -166,6 +203,44 @@ export default function PurchaseRequest() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // ── Prefill from Live Stock's "Create PR" hand-off ─────────────────────────
+  // Live Stock navigates here with `state: { prefillItems: [...] }` — one
+  // item (single row button) or several (bulk selection). We wait until
+  // master has loaded so each item's Type can be looked up, apply it once,
+  // then clear the navigation state so a later refresh/back doesn't redo it.
+  useEffect(() => {
+    const prefillItems = location.state?.prefillItems;
+    if (!prefillItems || !prefillItems.length || prefillAppliedRef.current) return;
+    if (!master.length) return;
+
+    const mapped = prefillItems.map((pi) => {
+      const m =
+        (pi.code && master.find((x) => x.code === pi.code)) ||
+        master.find((x) => x.name === pi.name);
+      return {
+        _key: Math.random().toString(36).slice(2),
+        name: pi.name || m?.name || "",
+        type: m?.type || "",
+        code: pi.code || m?.code || "",
+        category: pi.category || m?.category || "",
+        uom: pi.uom || m?.uom || "",
+        qty: pi.qty != null && pi.qty !== "" ? String(pi.qty) : "",
+        expectedDeliveryDate: "",
+        projectName: "",
+        remarks: "",
+      };
+    });
+
+    setItems(mapped);
+    setPrefillBanner(true);
+    prefillAppliedRef.current = true;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    // Clear the router state so it isn't reapplied on refresh/back-nav,
+    // without otherwise touching the URL.
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.state, location.pathname, master, navigate]);
+
   const uniqueTypes = [...new Set(master.map(m => m.type).filter(Boolean))].sort();
   const uniqueCodes = [...new Set(master.map(m => m.code).filter(Boolean))].sort();
   const uniqueCategories = [...new Set(master.map(m => m.category).filter(Boolean))].sort();
@@ -176,6 +251,7 @@ export default function PurchaseRequest() {
     setProjectName("");
     setItems([emptyItem()]);
     setEditingId(null);
+    setPrefillBanner(false);
   }
 
   function updateItem(key, patch) {
@@ -257,9 +333,11 @@ export default function PurchaseRequest() {
         ...it,
         _key: Math.random().toString(36).slice(2),
         qty: String(it.qty),
+        expectedDeliveryDate: it.expectedDeliveryDate || "",
         projectName: it.projectName || pr.projectName || "",
       }))
     );
+    setPrefillBanner(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -295,6 +373,40 @@ export default function PurchaseRequest() {
     } catch (err) { alert(err.message); }
   }
 
+  async function loadPoDataForPr(pr) {
+    setPoDataLoading((prev) => ({ ...prev, [pr._id]: true }));
+    try {
+      const pos = await getPurchaseOrdersByPR(pr._id);
+      const byName = {};
+      for (const po of pos || []) {
+        for (const it of po.items || []) {
+          if (!byName[it.name]) byName[it.name] = { orderedQty: 0, expectedDates: [], poNumbers: [] };
+          byName[it.name].orderedQty += parseFloat(it.orderedQty) || 0;
+          if (po.poExpectedDate && !byName[it.name].expectedDates.includes(po.poExpectedDate)) {
+            byName[it.name].expectedDates.push(po.poExpectedDate);
+          }
+          if (po.poNumber && !byName[it.name].poNumbers.includes(po.poNumber)) {
+            byName[it.name].poNumbers.push(po.poNumber);
+          }
+        }
+      }
+      setPoDataByPr((prev) => ({ ...prev, [pr._id]: { byName } }));
+    } catch (err) {
+      console.error("Failed to load PO data for PR:", err.message);
+    } finally {
+      setPoDataLoading((prev) => ({ ...prev, [pr._id]: false }));
+    }
+  }
+
+  function toggleExpanded(pr) {
+    const next = expanded === pr._id ? null : pr._id;
+    setExpanded(next);
+    const needsPoData = ["partial", "ordered", "received"].includes(pr.status);
+    if (next && needsPoData && !poDataByPr[pr._id] && !poDataLoading[pr._id]) {
+      loadPoDataForPr(pr);
+    }
+  }
+
   const visible =
     statusFilter === "all"
       ? requests
@@ -320,6 +432,40 @@ export default function PurchaseRequest() {
 
         .actionrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 
+        .partial-badge {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 600;
+          padding: 2px 7px;
+          border-radius: 999px;
+          background: var(--amber, #fef3c7);
+          color: #92400e;
+          margin-left: 6px;
+          white-space: nowrap;
+        }
+
+        .prefill-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          background: var(--teal-light);
+          color: var(--teal-dark);
+          border-radius: 8px;
+          padding: 9px 14px;
+          font-size: 12.5px;
+          margin-bottom: 14px;
+        }
+        .prefill-banner button {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: var(--teal-dark);
+          font-size: 13px;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+
         @media (max-width: 900px) {
           .pr-formgrid { grid-template-columns: 1fr 1fr; }
         }
@@ -327,7 +473,7 @@ export default function PurchaseRequest() {
         @media (max-width: 600px) {
           .pagehead { flex-direction: column; align-items: flex-start; gap: 8px; }
           .card { padding: 12px; }
-          .itemtable table { min-width: 1050px; }
+          .itemtable table { min-width: 1150px; }
           .actionrow { flex-direction: column; align-items: stretch; }
           .actionrow .btn { width: 100%; }
           .pr-formgrid { grid-template-columns: 1fr; }
@@ -353,6 +499,23 @@ export default function PurchaseRequest() {
       {canCreate && (
         <div className="card">
           <h3>{editingId ? "Edit request" : "New purchase request"}</h3>
+
+          {prefillBanner && (
+            <div className="prefill-banner">
+              <span>
+                {items.length} item{items.length > 1 ? "s" : ""} added from Live Stock —
+                review the quantities below and submit.
+              </span>
+              <button
+                type="button"
+                onClick={() => setPrefillBanner(false)}
+                title="Dismiss"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           <form onSubmit={handleSubmit}>
             <div className="pr-formgrid">
               <div className="field">
@@ -385,8 +548,9 @@ export default function PurchaseRequest() {
                     <th style={{ minWidth: 160 }}>Type</th>
                     <th style={{ minWidth: 180 }}>Code</th>
                     <th style={{ minWidth: 180 }}>Category</th>
-                    <th>UOM</th>
                     <th style={{ width: 100 }}>Qty</th>
+                    <th>UOM</th>
+                    <th style={{ minWidth: 160 }}>Expected Delivery Date</th>
                     <th style={{ minWidth: 160 }}>Project Name</th>
                     <th style={{ minWidth: 160 }}>Item remarks</th>
                     <th style={{ minWidth: 100 }}></th>
@@ -507,13 +671,21 @@ export default function PurchaseRequest() {
                             placeholder="— Search category —"
                           />
                         </td>
-                        <td>{it.uom || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                         <td>
                           <input
                             type="number" min="0" step="any"
                             value={it.qty}
                             onChange={(e) => updateItem(it._key, { qty: e.target.value })}
                             placeholder="0"
+                          />
+                        </td>
+                        <td>{it.uom || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                        <td>
+                          <input
+                            type="date"
+                            value={it.expectedDeliveryDate}
+                            min={date || todayStr()}
+                            onChange={(e) => updateItem(it._key, { expectedDeliveryDate: e.target.value })}
                           />
                         </td>
                         <td>
@@ -619,20 +791,22 @@ export default function PurchaseRequest() {
               {visible.map((pr) => {
                 const isOwner = pr.requestedByUsername === user?.username;
                 const canEditThis = isOwner || user?.role === "admin" || user?.role === "store_manager";
+                const isPartial = pr.status === "partial";
                 return (
                   <React.Fragment key={pr._id}>
                     <tr
                       style={{ cursor: "pointer" }}
-                      onClick={() => setExpanded((x) => (x === pr._id ? null : pr._id))}
+                      onClick={() => toggleExpanded(pr)}
                     >
                       <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
-                      <td>{pr.date}</td>
+                      <td>{formatDDMMYYYY(pr.date)}</td>
                       <td>{pr.projectName || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                       <td>{pr.requestFrom || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                       <td>{pr.requestedByName}</td>
                       <td>{pr.items.length}</td>
                       <td>
                         <span className={`tag ${pr.status}`}>{STATUS_LABEL[pr.status]}</span>
+                        {isPartial && <span className="partial-badge">Partially Ordered</span>}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -662,31 +836,57 @@ export default function PurchaseRequest() {
                       <tr>
                         <td colSpan={8} style={{ background: "var(--paper-dim)" }}>
                           <div style={{ padding: "14px 6px" }}>
+                            {(pr.status === "partial" || pr.status === "ordered" || pr.status === "received") && poDataLoading[pr._id] && (
+                              <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "0 0 8px" }}>Loading PO data…</p>
+                            )}
                             <div className="tablewrap" style={{ marginBottom: 12 }}>
                               <table>
                                 <thead>
                                   <tr>
                                     <th>Material</th>
+                                    <th>Type</th>
                                     <th>Code</th>
                                     <th>Category</th>
+                                    <th className="num">Qty</th>
                                     <th>UOM</th>
-                                    <th className="num">Requested Qty</th>
-                                    <th className="num">Current Stock</th>
+                                    <th>Expected Delivery (PR)</th>
                                     <th>Project Name</th>
                                     <th>Remarks</th>
+                                    <th className="num">Current Stock</th>
+                                    {(pr.status === "partial" || pr.status === "ordered" || pr.status === "received") && (
+                                      <>
+                                        <th className="num">Ordered Qty</th>
+                                        <th className="num">Balance</th>
+                                        <th>Expected Delivery (PO)</th>
+                                      </>
+                                    )}
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {pr.items.map((it, i) => {
                                     const stock = stockMap[it.name] ?? null;
                                     const isLow = stock !== null && stock < it.qty;
+                                    const showOrderTracking = pr.status === "partial" || pr.status === "ordered" || pr.status === "received";
+                                    const poInfo = poDataByPr[pr._id]?.byName?.[it.name];
+                                    const orderedQty = poInfo?.orderedQty || 0;
+                                    const balance = Math.max(0, (parseFloat(it.qty) || 0) - orderedQty);
+                                    const itemPartial = showOrderTracking && orderedQty > 0 && balance > 0;
+                                    const poExpectedDates = poInfo?.expectedDates || [];
+                                    const poLoading = !!poDataLoading[pr._id];
                                     return (
-                                      <tr key={i}>
-                                        <td>{it.name}</td>
+                                      <tr key={i} style={itemPartial ? { background: 'rgba(217,119,6,0.08)' } : undefined}>
+                                        <td>
+                                          {it.name}
+                                          {itemPartial && <span className="partial-badge">Partial</span>}
+                                        </td>
+                                        <td>{it.type || "—"}</td>
                                         <td className="mono">{it.code || "—"}</td>
                                         <td>{it.category || "—"}</td>
-                                        <td>{it.uom || "—"}</td>
                                         <td className="num">{formatNum(it.qty)}</td>
+                                        <td>{it.uom || "—"}</td>
+                                        <td>{it.expectedDeliveryDate ? formatDDMMYYYY(it.expectedDeliveryDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                                        <td>{it.projectName || pr.projectName || "—"}</td>
+                                        <td>{it.remarks || "—"}</td>
                                         <td className="num">
                                           {stock !== null ? (
                                             <strong style={{ color: stock <= 0 ? 'var(--red)' : isLow ? 'var(--amber)' : 'var(--teal-dark)' }}>
@@ -694,8 +894,33 @@ export default function PurchaseRequest() {
                                             </strong>
                                           ) : <span style={{ color: 'var(--text-3)' }}>—</span>}
                                         </td>
-                                        <td>{it.projectName || pr.projectName || "—"}</td>
-                                        <td>{it.remarks || "—"}</td>
+                                        {showOrderTracking && (
+                                          <>
+                                            <td className="num">
+                                              {poLoading ? <span style={{ color: 'var(--text-3)' }}>…</span> : formatNum(orderedQty)}
+                                            </td>
+                                            <td className="num">
+                                              {poLoading ? (
+                                                <span style={{ color: 'var(--text-3)' }}>…</span>
+                                              ) : balance > 0 ? (
+                                                <strong style={{ color: 'var(--amber, #b45309)' }}>{formatNum(balance)}</strong>
+                                              ) : (
+                                                <span style={{ color: 'var(--teal-dark)' }}>0</span>
+                                              )}
+                                            </td>
+                                            <td>
+                                              {poLoading ? (
+                                                <span style={{ color: 'var(--text-3)' }}>…</span>
+                                              ) : poExpectedDates.length === 0 ? (
+                                                <span style={{ color: 'var(--text-3)' }}>—</span>
+                                              ) : poExpectedDates.length === 1 ? (
+                                                formatDDMMYYYY(poExpectedDates[0])
+                                              ) : (
+                                                poExpectedDates.map(formatDDMMYYYY).join(', ')
+                                              )}
+                                            </td>
+                                          </>
+                                        )}
                                       </tr>
                                     );
                                   })}
@@ -722,7 +947,7 @@ export default function PurchaseRequest() {
                             <div style={{ fontSize: 11.5, color: "#8a8270", lineHeight: 1.7 }}>
                               {pr.history.map((h, i) => (
                                 <div key={i}>
-                                  • {STATUS_LABEL[h.status]} by {h.byName} — {new Date(h.at).toLocaleString("en-IN")}
+                                  • {STATUS_LABEL[h.status]} by {h.byName} — {formatDateTimeDMY(h.at)}
                                   {h.note ? ` — ${h.note}` : ""}
                                 </div>
                               ))}

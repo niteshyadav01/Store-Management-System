@@ -263,7 +263,7 @@ function PRStatusPie({ data }) {
   );
 }
 
-function TopItemsBar({ data, xKey, yKey, color, label }) {
+function TopItemsBar({ data, xKey, yKey, color, label, valuePrefix }) {
   const barColor = color || "var(--teal)";
 
   function FullNameTooltip({ active, payload }) {
@@ -294,6 +294,7 @@ function TopItemsBar({ data, xKey, yKey, color, label }) {
         <div style={{ color: barColor }}>
           {label}:{" "}
           <strong>
+            {valuePrefix || ""}
             {typeof payload[0].value === "number"
               ? payload[0].value.toLocaleString("en-IN")
               : payload[0].value}
@@ -327,7 +328,11 @@ function TopItemsBar({ data, xKey, yKey, color, label }) {
             textAnchor="end"
             interval={0}
           />
-          <YAxis tick={{ fontSize: 11 }} width={46} tickFormatter={shortQty} />
+          <YAxis
+            tick={{ fontSize: 11 }}
+            width={46}
+            tickFormatter={(v) => `${valuePrefix || ""}${shortQty(v)}`}
+          />
           <Tooltip
             content={<FullNameTooltip />}
             cursor={{ fill: hexToRgba(color, 0.08) }}
@@ -450,6 +455,52 @@ function AdminDashboard({
     0,
   );
 
+  // ── Pricing insight: weighted avg unit price + current stock valuation
+  // per material, computed the same way Live Stock does (avg cost from
+  // inward entries × current balance). Drives both the "Pending Item
+  // Price" stat card and the two charts below — admin-only. ────────────────
+  const inValTotals = {};
+  inward.forEach((e) => {
+    inValTotals[e.name] =
+      (inValTotals[e.name] || 0) +
+      (parseFloat(e.qty) || 0) * (parseFloat(e.price) || 0);
+  });
+  const itemValuation = master.map((m) => {
+    const inQty = inTotals[m.name] || 0;
+    const outQty = outTotals[m.name] || 0;
+    const avgPrice = inQty > 0 ? (inValTotals[m.name] || 0) / inQty : 0;
+    const stock = inQty - outQty;
+    const totalVal = avgPrice * Math.max(stock, 0);
+    return { name: m.name, avgPrice, totalVal };
+  });
+
+  const topUnitPrice = [...itemValuation]
+    .filter((it) => it.avgPrice > 0)
+    .sort((a, b) => b.avgPrice - a.avgPrice)
+    .slice(0, 10)
+    .map((it) => ({
+      name: it.name.length > 12 ? it.name.slice(0, 12) + "…" : it.name,
+      fullName: it.name,
+      price: Math.round(it.avgPrice),
+    }));
+
+  const topValuation = [...itemValuation]
+    .filter((it) => it.totalVal > 0)
+    .sort((a, b) => b.totalVal - a.totalVal)
+    .slice(0, 10)
+    .map((it) => ({
+      name: it.name.length > 12 ? it.name.slice(0, 12) + "…" : it.name,
+      fullName: it.name,
+      value: Math.round(it.totalVal),
+    }));
+
+  // Inward entries where a price was never entered (0 or blank) — same
+  // check used on the Purchase dashboard, surfaced here for admin too.
+  const pendingPriceItems = inward.filter(
+    (e) => !e.price || parseFloat(e.price) === 0,
+  );
+  const pendingPriceCount = pendingPriceItems.length;
+
   function getFilteredPRs() {
     if (!activeFilter || activeFilter === "low-stock") return requests;
     if (activeFilter === "items-to-order")
@@ -511,11 +562,17 @@ function AdminDashboard({
       cls: "teal",
     },
     {
-      key: null,
+      key: "pending-price",
+      label: "Pending Item Price",
+      value: pendingPriceCount,
+      color: pendingPriceCount > 0 ? "var(--amber)" : undefined,
+      cls: "",
+    },
+    {
+      key: "total-pos",
       label: "Total POs",
       value: pos.length,
       cls: "",
-      onClick: () => navigate("/purchase-orders"),
     },
   ];
 
@@ -582,6 +639,48 @@ function AdminDashboard({
         </div>
       </div>
 
+      {/* Pricing charts row — admin only */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gap: 16,
+          marginBottom: 20,
+          minWidth: 0,
+        }}
+      >
+        <div className="card" style={{ marginBottom: 0 }}>
+          <SectionHeader title="Top 10 Items by Unit Price (₹)" />
+          {topUnitPrice.length ? (
+            <TopItemsBar
+              data={topUnitPrice}
+              xKey="name"
+              yKey="price"
+              color="#c8861b"
+              label="Unit Price"
+              valuePrefix="₹"
+            />
+          ) : (
+            <div className="empty">No priced inward entries yet.</div>
+          )}
+        </div>
+        <div className="card" style={{ marginBottom: 0 }}>
+          <SectionHeader title="Top 10 Items by Stock Valuation (₹)" />
+          {topValuation.length ? (
+            <TopItemsBar
+              data={topValuation}
+              xKey="name"
+              yKey="value"
+              color="#1f5c52"
+              label="Stock Valuation"
+              valuePrefix="₹"
+            />
+          ) : (
+            <div className="empty">No stock valuation to show yet.</div>
+          )}
+        </div>
+      </div>
+
       {/* PR table — filterable */}
       {activeFilter === "low-stock" ? (
         <div className="card">
@@ -623,6 +722,54 @@ function AdminDashboard({
             </table>
           </div>
         </div>
+      ) : activeFilter === "pending-price" ? (
+        <div className="card">
+          <SectionHeader
+            title="Inward Entries Missing a Price"
+            count={pendingPriceItems.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Material</th>
+                  <th>Code</th>
+                  <th>Vendor</th>
+                  <th className="num">Qty</th>
+                  <th>UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingPriceItems.map((e) => (
+                  <tr key={e._id}>
+                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td className="mono">{e.code || "—"}</td>
+                    <td>{e.vendor || "—"}</td>
+                    <td className="num">{formatNum(e.qty)}</td>
+                    <td>{e.uom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!pendingPriceItems.length && (
+            <div className="empty">Every inward entry has a price set.</div>
+          )}
+        </div>
+      ) : activeFilter === "total-pos" ? (
+        <div className="card">
+          <SectionHeader
+            title="All Purchase Orders"
+            count={pos.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <POTable pos={pos} />
+        </div>
       ) : (
         <div className="card">
           <SectionHeader
@@ -648,11 +795,13 @@ function AdminDashboard({
         </div>
       )}
 
-      {/* Recent POs */}
-      <div className="card">
-        <SectionHeader title="Recent Purchase Orders" count={pos.length} />
-        <POTable pos={pos.slice(0, 8)} />
-      </div>
+      {/* Recent POs — hidden while "Total POs" is already showing the full list above */}
+      {activeFilter !== "total-pos" && (
+        <div className="card">
+          <SectionHeader title="Recent Purchase Orders" count={pos.length} />
+          <POTable pos={pos.slice(0, 8)} />
+        </div>
+      )}
     </>
   );
 }
@@ -695,9 +844,10 @@ function PurchaseDashboard({
   );
 
   // Pending item prices — inward with price = 0
-  const pendingPriceCount = inward.filter(
+  const pendingPriceItems = inward.filter(
     (e) => !e.price || parseFloat(e.price) === 0,
-  ).length;
+  );
+  const pendingPriceCount = pendingPriceItems.length;
 
   // Top items by value
   const inValMap = {};
@@ -781,7 +931,6 @@ function PurchaseDashboard({
       value: pendingPriceCount,
       color: pendingPriceCount > 0 ? "var(--amber)" : undefined,
       cls: "",
-      onClick: () => navigate("/price"),
     },
     {
       key: "ordered",
@@ -791,7 +940,7 @@ function PurchaseDashboard({
       onClick: () => navigate("/purchase-orders"),
     },
     {
-      key: null,
+      key: "total-pos",
       label: "Total PO Value",
       value: `₹${Math.round(totalPOValue).toLocaleString("en-IN")}`,
       cls: "teal",
@@ -902,36 +1051,94 @@ function PurchaseDashboard({
         </div>
       )}
 
-      {/* PR table */}
-      {activeFilter !== "low-stock" && (
+      {/* Pending item price */}
+      {activeFilter === "pending-price" && (
         <div className="card">
           <SectionHeader
-            title={
-              activeFilter
-                ? `${STATUS_LABEL[activeFilter] || activeFilter} — PRs`
-                : "Purchase Requests"
-            }
-            count={filteredPRs.length}
+            title="Inward Entries Missing a Price"
+            count={pendingPriceItems.length}
             activeFilter={activeFilter}
             onClear={() => setActiveFilter(null)}
           />
-          <PRTable
-            prs={filteredPRs}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            stockMap={stockMap}
-            showActions
-            navigate={navigate}
-            canCreatePO
-          />
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Material</th>
+                  <th>Code</th>
+                  <th>Vendor</th>
+                  <th className="num">Qty</th>
+                  <th>UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingPriceItems.map((e) => (
+                  <tr key={e._id}>
+                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td className="mono">{e.code || "—"}</td>
+                    <td>{e.vendor || "—"}</td>
+                    <td className="num">{formatNum(e.qty)}</td>
+                    <td>{e.uom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {!pendingPriceItems.length && (
+            <div className="empty">Every inward entry has a price set.</div>
+          )}
         </div>
       )}
 
-      {/* Recent POs */}
-      <div className="card">
-        <SectionHeader title="Recent Purchase Orders" count={pos.length} />
-        <POTable pos={pos.slice(0, 8)} />
-      </div>
+      {/* Total PO value — full PO list */}
+      {activeFilter === "total-pos" && (
+        <div className="card">
+          <SectionHeader
+            title="All Purchase Orders"
+            count={pos.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <POTable pos={pos} />
+        </div>
+      )}
+
+      {/* PR table */}
+      {activeFilter !== "low-stock" &&
+        activeFilter !== "pending-price" &&
+        activeFilter !== "total-pos" && (
+          <div className="card">
+            <SectionHeader
+              title={
+                activeFilter
+                  ? `${STATUS_LABEL[activeFilter] || activeFilter} — PRs`
+                  : "Purchase Requests"
+              }
+              count={filteredPRs.length}
+              activeFilter={activeFilter}
+              onClear={() => setActiveFilter(null)}
+            />
+            <PRTable
+              prs={filteredPRs}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              stockMap={stockMap}
+              showActions
+              navigate={navigate}
+              canCreatePO
+            />
+          </div>
+        )}
+
+      {/* Recent POs — hidden while "Total PO Value" is already showing the full list above */}
+      {activeFilter !== "total-pos" && (
+        <div className="card">
+          <SectionHeader title="Recent Purchase Orders" count={pos.length} />
+          <POTable pos={pos.slice(0, 8)} />
+        </div>
+      )}
     </>
   );
 }
@@ -1011,31 +1218,36 @@ function StoreDashboard({
   const filteredPRs = getFilteredPRs();
   const unmatchedPOs = pos.filter((p) => p.status !== "matched");
 
+  // Full item list (with current balance) for the "Live Stock Items" card —
+  // store role doesn't see pricing, so no value column here.
+  const allStockRows = master.map((m) => ({
+    ...m,
+    stock: stockMap[m.name] ?? 0,
+    minStock: parseFloat(m.minStock) || 0,
+  }));
+
   const cards = [
     {
-      key: null,
+      key: "live-stock",
       label: "Live Stock Items",
       value: master.length,
       cls: "teal",
-      onClick: () => navigate("/stock"),
     },
     {
-      key: null,
+      key: "total-inward",
       label: "Total Inward",
       value: formatNum(
         inward.reduce((s, e) => s + (parseFloat(e.qty) || 0), 0),
       ),
       cls: "teal",
-      onClick: () => navigate("/inward"),
     },
     {
-      key: null,
+      key: "total-outward",
       label: "Total Outward",
       value: formatNum(
         outward.reduce((s, e) => s + (parseFloat(e.qty) || 0), 0),
       ),
       cls: "rust",
-      onClick: () => navigate("/outward"),
     },
     {
       key: "pending",
@@ -1043,7 +1255,6 @@ function StoreDashboard({
       value: counts.pending || 0,
       color: (counts.pending || 0) > 0 ? "var(--red)" : undefined,
       cls: "",
-      onClick: () => navigate("/purchase-requests"),
     },
     {
       key: "items-to-order",
@@ -1174,29 +1385,153 @@ function StoreDashboard({
         </div>
       )}
 
-      {/* PR table */}
-      {activeFilter !== "low-stock" && activeFilter !== "po-matching" && (
+      {activeFilter === "live-stock" && (
         <div className="card">
           <SectionHeader
-            title={
-              activeFilter
-                ? `${STATUS_LABEL[activeFilter] || activeFilter} — PRs`
-                : "Purchase Requests"
-            }
-            count={filteredPRs.length}
+            title="Live Stock Items"
+            count={allStockRows.length}
             activeFilter={activeFilter}
             onClear={() => setActiveFilter(null)}
           />
-          <PRTable
-            prs={filteredPRs}
-            expanded={expanded}
-            setExpanded={setExpanded}
-            stockMap={stockMap}
-            showActions={false}
-            navigate={navigate}
-          />
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Code</th>
+                  <th className="num">Stock</th>
+                  <th className="num">Min Stock</th>
+                  <th>UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allStockRows.map((item) => (
+                  <tr key={item._id}>
+                    <td style={{ fontWeight: 600 }}>{item.name}</td>
+                    <td className="mono">{item.code || "—"}</td>
+                    <td
+                      className="num"
+                      style={{
+                        color:
+                          item.stock <= 0
+                            ? "var(--red)"
+                            : item.minStock > 0 && item.stock < item.minStock
+                              ? "var(--amber)"
+                              : "inherit",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {formatNum(item.stock)}
+                    </td>
+                    <td className="num">{formatNum(item.minStock)}</td>
+                    <td>{item.uom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
+
+      {activeFilter === "total-inward" && (
+        <div className="card">
+          <SectionHeader
+            title="All Inward Entries"
+            count={inward.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Material</th>
+                  <th>Code</th>
+                  <th>Vendor</th>
+                  <th className="num">Qty</th>
+                  <th>UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inward.map((e) => (
+                  <tr key={e._id}>
+                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td className="mono">{e.code || "—"}</td>
+                    <td>{e.vendor || "—"}</td>
+                    <td className="num">{formatNum(e.qty)}</td>
+                    <td>{e.uom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {activeFilter === "total-outward" && (
+        <div className="card">
+          <SectionHeader
+            title="All Outward Entries"
+            count={outward.length}
+            activeFilter={activeFilter}
+            onClear={() => setActiveFilter(null)}
+          />
+          <div className="tablewrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Material</th>
+                  <th>Code</th>
+                  <th className="num">Qty</th>
+                  <th>UOM</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outward.map((e) => (
+                  <tr key={e._id}>
+                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td style={{ fontWeight: 600 }}>{e.name}</td>
+                    <td className="mono">{e.code || "—"}</td>
+                    <td className="num">{formatNum(e.qty)}</td>
+                    <td>{e.uom || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* PR table */}
+      {activeFilter !== "low-stock" &&
+        activeFilter !== "po-matching" &&
+        activeFilter !== "live-stock" &&
+        activeFilter !== "total-inward" &&
+        activeFilter !== "total-outward" && (
+          <div className="card">
+            <SectionHeader
+              title={
+                activeFilter
+                  ? `${STATUS_LABEL[activeFilter] || activeFilter} — PRs`
+                  : "Purchase Requests"
+              }
+              count={filteredPRs.length}
+              activeFilter={activeFilter}
+              onClear={() => setActiveFilter(null)}
+            />
+            <PRTable
+              prs={filteredPRs}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              stockMap={stockMap}
+              showActions={false}
+              navigate={navigate}
+            />
+          </div>
+        )}
     </>
   );
 }

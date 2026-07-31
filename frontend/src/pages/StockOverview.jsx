@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import { getMaster, getInward, getOutward } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, formatINR, formatInt } from "../utils/helpers";
@@ -16,6 +17,10 @@ import {
   Legend,
   CartesianGrid,
 } from "recharts";
+
+// Route of the Purchase Request page. Adjust this to match whatever path
+// your router uses for that page (e.g. the route in App.jsx / routes.js).
+const PR_PAGE_ROUTE = "/purchase-requests";
 
 // ── Excel-style dropdown filter ───────────────────────────────────────────────
 function ColFilter({ values, selected, onChange }) {
@@ -456,6 +461,7 @@ function ChartScroller({ minWidth, height, children }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function StockOverview() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canSeePrice = user?.role === "admin" || user?.role === "purchase";
 
   const [master, setMaster] = useState([]);
@@ -478,6 +484,11 @@ export default function StockOverview() {
     avgPrice: [],
     totalVal: [],
   });
+
+  // ── Purchase Request selection state ──────────────────────────────────────
+  // Selecting rows here doesn't create anything on this page anymore — it
+  // just builds the list of items handed off to the Purchase Request page.
+  const [prSelected, setPrSelected] = useState({}); // { [materialId]: true }
 
   const viewportWidth = useViewportWidth();
   const isMobile = viewportWidth < 640;
@@ -529,6 +540,65 @@ export default function StockOverview() {
   const zeroStockItems = allRows.filter((r) => r.stock <= 0);
   const lowCount = lowStockItems.length;
   const zeroCount = zeroStockItems.length;
+
+  // A row qualifies for a Purchase Request when it's out of stock, or below
+  // its configured minimum stock.
+  function isPRCandidate(r) {
+    return r.stock <= 0 || (r.minStock > 0 && r.stock < r.minStock);
+  }
+
+  // Suggested order qty: fill the gap to minStock when one is set, otherwise
+  // default to 1 for zero-stock items with no minStock configured.
+  function defaultPRQty(r) {
+    if (r.minStock > 0 && r.stock < r.minStock) {
+      return Math.max(1, Math.ceil(r.minStock - r.stock));
+    }
+    return r.stock <= 0 ? 1 : 0;
+  }
+
+  function togglePRSelect(id) {
+    setPrSelected((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = true;
+      return next;
+    });
+  }
+
+  function selectAllFlagged(list) {
+    setPrSelected((prev) => {
+      const next = { ...prev };
+      list.forEach((r) => {
+        if (isPRCandidate(r)) next[r._id] = true;
+      });
+      return next;
+    });
+  }
+
+  // Builds the item payload for the given ids and redirects to the Purchase
+  // Request page with them attached as router state — works the same whether
+  // it's a single item (row's own "Create PR" button) or several at once
+  // (the floating bulk-selection bar).
+  function goToPRPage(ids) {
+    const items = ids
+      .map((id) => allRows.find((x) => x._id === id))
+      .filter(Boolean)
+      .map((r) => ({
+        materialId: r._id,
+        name: r.name || "",
+        code: r.code || "",
+        category: r.category || "",
+        uom: r.uom || "",
+        currentStock: r.stock ?? 0,
+        minStock: r.minStock ?? 0,
+        qty: defaultPRQty(r),
+      }));
+    if (!items.length) return;
+    navigate(PR_PAGE_ROUTE, { state: { prefillItems: items } });
+  }
+
+  const selectedIds = Object.keys(prSelected).filter((id) => prSelected[id]);
+  const selectedCount = selectedIds.length;
 
   function toggleCard(key) {
     setActiveCard((prev) => (prev === key ? null : key));
@@ -668,6 +738,10 @@ export default function StockOverview() {
     if (abs >= 1000) return `${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`;
     return v.toLocaleString("en-IN");
   }
+
+  const flaggedInView = rows.filter(isPRCandidate);
+  const allFlaggedInViewSelected =
+    flaggedInView.length > 0 && flaggedInView.every((r) => prSelected[r._id]);
 
   return (
     <div
@@ -1285,6 +1359,23 @@ export default function StockOverview() {
               </button>
             </span>
           )}
+          {flaggedInView.length > 0 && (
+            <button
+              onClick={() => selectAllFlagged(rows)}
+              style={{
+                fontSize: 12,
+                padding: "4px 10px",
+                borderRadius: 14,
+                border: "1px solid var(--line)",
+                background: "#fff",
+                cursor: "pointer",
+                color: "var(--ink)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Select all flagged ({flaggedInView.length})
+            </button>
+          )}
         </h3>
         <div className="searchbar">
           <input
@@ -1306,7 +1397,7 @@ export default function StockOverview() {
             WebkitOverflowScrolling: "touch",
           }}
         >
-          <table style={{ minWidth: isNarrow ? 900 : 1100 }}>
+          <table style={{ minWidth: isNarrow ? 980 : 1180 }}>
             <thead
               style={{
                 position: "sticky",
@@ -1316,6 +1407,30 @@ export default function StockOverview() {
               }}
             >
               <tr>
+                <th style={{ width: 34 }}>
+                  <input
+                    type="checkbox"
+                    title="Select all flagged items in view"
+                    checked={allFlaggedInViewSelected}
+                    disabled={!flaggedInView.length}
+                    onChange={() => {
+                      setPrSelected((prev) => {
+                        const next = { ...prev };
+                        flaggedInView.forEach((r) => {
+                          if (allFlaggedInViewSelected) delete next[r._id];
+                          else next[r._id] = true;
+                        });
+                        return next;
+                      });
+                    }}
+                    style={{
+                      cursor: flaggedInView.length ? "pointer" : "default",
+                      accentColor: "var(--teal)",
+                      width: 14,
+                      height: 14,
+                    }}
+                  />
+                </th>
                 <th>
                   <span
                     style={{
@@ -1500,54 +1615,87 @@ export default function StockOverview() {
                     </th>
                   </>
                 )}
+                <th>PR</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r._id}>
-                  <td style={{ fontWeight: 500 }}>{r.name}</td>
-                  <td>{r.type}</td>
-                  <td>{r.category}</td>
-                  <td className="mono">{r.code}</td>
-                  <td className="num">{formatNum(r.inQty)}</td>
-                  <td className="num">{formatNum(r.outQty)}</td>
-                  <td className="num">
-                    <strong
-                      style={{
-                        color:
-                          r.stock <= 0
-                            ? "var(--red)"
-                            : r.stock < r.minStock
-                              ? "var(--amber)"
-                              : "var(--teal-dark)",
-                      }}
-                    >
-                      {formatNum(r.stock)}
-                    </strong>
-                  </td>
-                  <td className="num">
-                    <span
-                      style={{
-                        color:
-                          r.minStock > 0 && r.stock < r.minStock
-                            ? "var(--red)"
-                            : "inherit",
-                      }}
-                    >
-                      {formatNum(r.minStock)}
-                    </span>
-                  </td>
-                  <td>{r.uom}</td>
-                  {canSeePrice && (
-                    <>
-                      <td className="num">{formatINR(r.avgPrice)}</td>
-                      <td className="num">{formatINR(r.totalVal)}</td>
-                    </>
-                  )}
-                </tr>
-              ))}
+              {rows.map((r) => {
+                const candidate = isPRCandidate(r);
+                return (
+                  <tr key={r._id}>
+                    <td>
+                      {candidate && (
+                        <input
+                          type="checkbox"
+                          checked={!!prSelected[r._id]}
+                          onChange={() => togglePRSelect(r._id)}
+                          style={{
+                            cursor: "pointer",
+                            accentColor: "var(--teal)",
+                            width: 14,
+                            height: 14,
+                          }}
+                        />
+                      )}
+                    </td>
+                    <td style={{ fontWeight: 500 }}>{r.name}</td>
+                    <td>{r.type}</td>
+                    <td>{r.category}</td>
+                    <td className="mono">{r.code}</td>
+                    <td className="num">{formatNum(r.inQty)}</td>
+                    <td className="num">{formatNum(r.outQty)}</td>
+                    <td className="num">
+                      <strong
+                        style={{
+                          color:
+                            r.stock <= 0
+                              ? "var(--red)"
+                              : r.stock < r.minStock
+                                ? "var(--amber)"
+                                : "var(--teal-dark)",
+                        }}
+                      >
+                        {formatNum(r.stock)}
+                      </strong>
+                    </td>
+                    <td className="num">
+                      <span
+                        style={{
+                          color:
+                            r.minStock > 0 && r.stock < r.minStock
+                              ? "var(--red)"
+                              : "inherit",
+                        }}
+                      >
+                        {formatNum(r.minStock)}
+                      </span>
+                    </td>
+                    <td>{r.uom}</td>
+                    {canSeePrice && (
+                      <>
+                        <td className="num">{formatINR(r.avgPrice)}</td>
+                        <td className="num">{formatINR(r.totalVal)}</td>
+                      </>
+                    )}
+                    <td>
+                      {candidate && (
+                        <button
+                          className="btn btn-sm btn-in"
+                          onClick={() => goToPRPage([r._id])}
+                          style={{ whiteSpace: "nowrap" }}
+                        >
+                          Create PR
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          {/* Reserves real scroll space so the last rows never end up
+              hidden behind the fixed bulk-selection bar below. */}
+          {selectedCount > 0 && <div style={{ height: 76 }} />}
         </div>
         {!master.length && (
           <div className="empty">
@@ -1559,6 +1707,82 @@ export default function StockOverview() {
           <div className="empty">No materials match your filters.</div>
         )}
       </div>
+
+      {/* ── Floating bulk-selection bar ── */}
+      {selectedCount > 0 &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              bottom: 22,
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 9999,
+              background: "var(--ink)",
+              color: "#fff",
+              padding: "10px 16px",
+              borderRadius: 24,
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "center",
+              rowGap: 8,
+              columnGap: 12,
+              boxShadow: "0 10px 30px rgba(0,0,0,.4)",
+              border: "1px solid rgba(255,255,255,.08)",
+              maxWidth: "calc(100vw - 24px)",
+              boxSizing: "border-box",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 13,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {selectedCount} item{selectedCount > 1 ? "s" : ""} selected
+            </span>
+            <div style={{ display: "flex", gap: 10, flexShrink: 0 }}>
+              <button
+                onClick={() => goToPRPage(selectedIds)}
+                style={{
+                  background: "var(--teal)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 20,
+                  padding: "6px 14px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  boxSizing: "border-box",
+                }}
+              >
+                Create PR
+              </button>
+              <button
+                onClick={() => setPrSelected({})}
+                style={{
+                  background: "none",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,.3)",
+                  borderRadius: 20,
+                  padding: "6px 12px",
+                  fontSize: 12.5,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  boxSizing: "border-box",
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

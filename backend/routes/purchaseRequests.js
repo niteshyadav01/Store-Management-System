@@ -32,6 +32,7 @@ function sanitizeItems(items) {
       category: it.category || '',
       uom: it.uom || '',
       qty,
+      expectedDeliveryDate: it.expectedDeliveryDate || '',
       projectName: it.projectName || '',
       remarks: it.remarks || '',
     });
