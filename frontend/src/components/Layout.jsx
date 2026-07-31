@@ -18,7 +18,7 @@ const NAV_SECTIONS = [
       { label: 'Live Stock',         path: '/stock',             roles: ['admin','store','store_manager','viewer'] },
       { label: 'Inward Entry',       path: '/inward',            roles: ['admin','store','store_manager'] },
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
-      { label: 'PR Request',  path: '/purchase-requests', roles: ['admin','store','store_manager'] },
+      { label: 'PR Request',  path: '/purchase-requests', roles: ['admin','store','store_manager', 'viewer'] },
       { label: 'PO Matching',        path: '/po-matching',       roles: ['admin','store_manager'] },
     ],
   },
