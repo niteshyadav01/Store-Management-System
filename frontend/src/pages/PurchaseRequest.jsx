@@ -15,7 +15,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { formatNum, todayStr } from "../utils/helpers";
 
-const CREATOR_ROLES  = ["admin", "store", "store_manager"];
+const CREATOR_ROLES  = ["admin", "store", "store_manager",  "viewer"];
 const APPROVER_ROLES = ["admin", "store_manager"];
 
 const STATUS_LABEL = {
