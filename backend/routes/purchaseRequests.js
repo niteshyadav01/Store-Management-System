@@ -4,7 +4,7 @@ const { nextSeq } = require('../models/Counter');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Roles that can raise a Purchase Request
-const CREATOR_ROLES = ['admin', 'store', 'store_manager'];
+const CREATOR_ROLES = ['admin', 'store', 'store_manager', 'viewer'];
 // Roles that can approve / reject / progress a Purchase Request
 const APPROVER_ROLES = ['admin', 'store_manager'];
 
