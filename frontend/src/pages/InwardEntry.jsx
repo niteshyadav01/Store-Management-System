@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getMaster, getInward, addInward, bulkInward, updateInward, deleteInward, getPendingInwardPOs, getPurchaseOrderByNumber } from '../api/api';
 import { useAuth } from '../context/AuthContext';
-import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx } from '../utils/helpers';
+import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx, toDDMMYYYY } from '../utils/helpers';
 
 const EMPTY = {
   date: todayStr(), invdate: '', challan: '', po: '', vendor: '',
@@ -700,8 +700,8 @@ export default function InwardEntry() {
             <tbody>
               {entries.slice(0, 100).map(e => (
                 <tr key={e._id}>
-                  <td>{e.date}</td>
-                  <td>{e.invdate || '—'}</td>
+                  <td>{toDDMMYYYY(e.date)}</td>
+                  <td>{e.invdate ? toDDMMYYYY(e.invdate) : '—'}</td>
                   <td>{e.challan || '—'}</td>
                   <td>{e.po || '—'}</td>
                   <td>{e.vendor || '—'}</td>
