@@ -13,6 +13,7 @@ const outwardSchema = new mongoose.Schema({
   code:     { type: String, default: '' },
   category: { type: String, default: '' },
   uom:      { type: String, default: '' },
+  reqty:    { type: Number, default: null },   // Required Qty — was missing, so Mongoose stripped it
   qty:      { type: Number, required: true },
   remarks:  { type: String, default: '' }
 

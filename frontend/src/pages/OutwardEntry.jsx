@@ -15,6 +15,7 @@ import {
   pickCol,
   parseExcelDate,
   exportXlsx,
+  formatDateDMY,
 } from "../utils/helpers";
 
 const EMPTY_HEADER = {
@@ -203,6 +204,18 @@ function EditModal({ entry, master, onSave, onClose }) {
                     setForm((f) => ({ ...f, date: e.target.value }))
                   }
                 />
+                {form.date && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: "var(--text-3, #8a8270)",
+                      marginTop: 2,
+                      display: "block",
+                    }}
+                  >
+                    {formatDateDMY(form.date)}
+                  </span>
+                )}
               </div>
               <div className="field">
                 <label>Project name</label>
@@ -649,7 +662,7 @@ export default function OutwardEntry() {
       ],
       [
         [
-          todayStr(),
+          formatDateDMY(todayStr()),
           "Project Alpha",
           "CPO-3001",
           "ISS-0010",
@@ -811,9 +824,8 @@ export default function OutwardEntry() {
           />
           <div className="hint">
             Required: <strong>Material Name, Required Qty, Qty</strong> — All
-            other columns optional: Date, Project Name, Customer PO Details,
-            Issue Slip No, Department, Received By, Issued By, Required Qty,
-            Remarks
+            other columns optional: Date (dd/mm/yyyy), Project Name, Customer PO
+            Details, Issue Slip No, Department, Received By, Issued By, Remarks
             <br />
             Material Name must exactly match an entry in the master list.{" "}
             <button onClick={downloadTemplate}>Download template</button>
@@ -854,6 +866,18 @@ export default function OutwardEntry() {
                   setHeader((h) => ({ ...h, date: e.target.value }))
                 }
               />
+              {header.date && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-3, #8a8270)",
+                    marginTop: 2,
+                    display: "block",
+                  }}
+                >
+                  {formatDateDMY(header.date)}
+                </span>
+              )}
             </div>
             <div className="field">
               <label>
@@ -1100,7 +1124,7 @@ export default function OutwardEntry() {
                   : null;
                 return (
                   <tr key={e._id}>
-                    <td>{e.date}</td>
+                    <td>{formatDateDMY(e.date)}</td>
                     <td>
                       {e.project || (
                         <span style={{ color: "var(--text-3)" }}>—</span>

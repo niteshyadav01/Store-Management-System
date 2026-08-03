@@ -14,7 +14,7 @@ function authMiddleware(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    console.log(`[ROLE CHECK] path=${req.originalUrl} role=${JSON.stringify(req.user.role)} len=${req.user.role?.length} expected=${JSON.stringify(roles)}`);
+    // Logging intentionally removed to avoid noisy server logs
     if (!roles.includes(req.user.role))
       return res.status(403).json({ error: 'Forbidden: insufficient role' });
     next();

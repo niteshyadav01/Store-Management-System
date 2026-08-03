@@ -22,16 +22,27 @@ export function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Display a stored date (YYYY-MM-DD or any parseable format) as dd-mm-yyyy
-export function toDDMMYYYY(dateStr) {
-  if (!dateStr) return dateStr;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
+// Display a stored date as dd/mm/yyyy.
+// Regex-based (no `new Date()`) so "2026-08-03" can never be misread as
+// month/day by locale quirks. Handles ISO datetimes ("2026-08-03T...") too.
+export function formatDateDMY(dateStr) {
+  if (!dateStr) return '—';
+  const s = String(dateStr).split('T')[0].trim();
+
+  // Stored ISO format: yyyy-mm-dd
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (m) return `${m[3].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[1]}`;
+
+  // Already dd/mm/yyyy or dd-mm-yyyy (legacy rows saved as raw strings)
+  m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s);
+  if (m) return `${m[1].padStart(2, '0')}/${m[2].padStart(2, '0')}/${m[3]}`;
+
+  return s; // unknown format — show as-is rather than break
 }
+
+// Backward-compatible alias: any page still calling toDDMMYYYY now gets
+// dd/mm/yyyy automatically (previously dd-mm-yyyy).
+export const toDDMMYYYY = formatDateDMY;
 
 // Loose header normaliser
 export function normHeader(h) {
@@ -50,14 +61,38 @@ export function pickCol(row, candidates) {
   return '';
 }
 
-// Parse Excel date serial or string → YYYY-MM-DD
+// Parse Excel date serial or string → YYYY-MM-DD (what the app STORES).
+// Now also converts dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy strings to ISO,
+// instead of storing the raw string (which broke sorting and dd/mm display).
 export function parseExcelDate(raw) {
   if (!raw) return '';
-  if (!isNaN(Number(raw))) {
+
+  // Excel serial number (e.g. 45870)
+  if (!isNaN(Number(raw)) && String(raw).trim() !== '') {
     const d = XLSX.SSF.parse_date_code(Number(raw));
-    if (d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    if (d) return `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}`;
   }
-  return String(raw).trim();
+
+  const s = String(raw).trim();
+
+  // Already ISO: yyyy-mm-dd
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+
+  // dd/mm/yyyy, dd-mm-yyyy, dd.mm.yyyy → ISO
+  m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+
+  // Fallback: text dates like "Aug 3, 2026"
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${day}`;
+  }
+
+  return s; // last resort — keep old behaviour
 }
 
 // Read a File object → array of row objects
