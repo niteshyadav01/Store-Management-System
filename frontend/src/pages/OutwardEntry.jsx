@@ -18,6 +18,17 @@ import {
   formatDateDMY,
 } from "../utils/helpers";
 
+function normalizeOutwardEntry(entry) {
+  const reqty =
+    entry.reqty ??
+    entry.reqQty ??
+    entry.requiredQty ??
+    entry.requiredqty ??
+    entry.reqqty ??
+    null;
+  return { ...entry, reqty };
+}
+
 const EMPTY_HEADER = {
   date: todayStr(),
   project: "",
@@ -392,7 +403,7 @@ export default function OutwardEntry() {
   const load = useCallback(async () => {
     const [m, e] = await Promise.all([getMaster(), getOutward()]);
     setMaster(m);
-    setEntries(e);
+    setEntries(Array.isArray(e) ? e.map(normalizeOutwardEntry) : []);
   }, []);
   useEffect(() => {
     load();

@@ -2,19 +2,37 @@ const router  = require('express').Router();
 const Outward = require('../models/Outward');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
+function normalizeOutwardPayload(entry) {
+  if (!entry || typeof entry !== 'object') return { reqty: null };
+  const reqtyRaw =
+    entry.reqty ??
+    entry.reqQty ??
+    entry.requiredQty ??
+    entry.requiredqty ??
+    entry.reqqty ??
+    null;
+  const reqty = reqtyRaw === '' ? null : Number(reqtyRaw);
+  return { ...entry, reqty: Number.isFinite(reqty) ? reqty : null };
+}
+
+function normalizeOutwardResponse(entry) {
+  const normalized = normalizeOutwardPayload(entry);
+  return { ...entry, reqty: normalized.reqty };
+}
+
 // GET /api/outward
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const entries = await Outward.find().sort({ createdAt: -1 }).lean();
-    res.json(entries);
+    res.json(entries.map(normalizeOutwardResponse));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // POST /api/outward — single
 router.post('/', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
   try {
-    const entry = await Outward.create(req.body);
-    res.status(201).json(entry);
+    const entry = await Outward.create(normalizeOutwardPayload(req.body));
+    res.status(201).json(normalizeOutwardResponse(entry.toObject()));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -24,7 +42,7 @@ router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'
     const { entries } = req.body;
     if (!Array.isArray(entries) || !entries.length)
       return res.status(400).json({ error: 'No entries provided' });
-    const docs = await Outward.insertMany(entries, { ordered: false });
+    const docs = await Outward.insertMany(entries.map(normalizeOutwardPayload), { ordered: false });
     res.status(201).json({ inserted: docs.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -32,9 +50,13 @@ router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'
 // PUT /api/outward/:id — full edit (admin + store team)
 router.put('/:id', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
   try {
-    const doc = await Outward.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true });
+    const doc = await Outward.findByIdAndUpdate(
+      req.params.id,
+      { $set: normalizeOutwardPayload(req.body) },
+      { new: true },
+    );
     if (!doc) return res.status(404).json({ error: 'Not found.' });
-    res.json(doc);
+    res.json(normalizeOutwardResponse(doc.toObject()));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
