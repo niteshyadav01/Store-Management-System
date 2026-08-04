@@ -17,7 +17,7 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 
 const ROLE_ACCESS = {
   dashboard: ["admin", "store", "store_manager", "purchase"],
-  master: ["admin"],
+  master: ["admin", "purchase"],
   inward: ["admin", "store", "store_manager"],
   outward: ["admin", "store", "store_manager"],
   price: ["admin", "purchase"],

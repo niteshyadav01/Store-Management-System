@@ -11,7 +11,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/master  — single
-router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
+router.post('/', authMiddleware, requireRole('admin','purchase'), async (req, res) => {
   try {
     const { name, type, code, category, uom, minStock } = req.body;
     if (!name) return res.status(400).json({ error: 'Material name is required' });
@@ -27,7 +27,7 @@ router.post('/', authMiddleware, requireRole('admin'), async (req, res) => {
 });
 
 // PUT /api/master/:id  — edit existing material
-router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+router.put('/:id', authMiddleware, requireRole('admin','purchase'), async (req, res) => {
   try {
     const { name, type, code, category, uom, minStock } = req.body;
     if (!name) return res.status(400).json({ error: 'Material name is required' });
@@ -50,7 +50,7 @@ router.put('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
 });
 
 // POST /api/master/bulk
-router.post('/bulk', authMiddleware, requireRole('admin'), async (req, res) => {
+router.post('/bulk', authMiddleware, requireRole('admin','purchase'), async (req, res) => {
   try {
     const { materials } = req.body;
     if (!Array.isArray(materials) || !materials.length)
@@ -73,7 +73,7 @@ router.post('/bulk', authMiddleware, requireRole('admin'), async (req, res) => {
 });
 
 // DELETE /api/master/:id
-router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+router.delete('/:id', authMiddleware, requireRole('admin','purchase'), async (req, res) => {
   try {
     await Material.findByIdAndDelete(req.params.id);
     res.json({ ok: true });
