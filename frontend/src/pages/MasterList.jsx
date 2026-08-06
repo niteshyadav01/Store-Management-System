@@ -6,6 +6,7 @@ import {
   bulkMaster,
   deleteMaterial,
 } from "../api/api";
+import { useAuth } from "../context/AuthContext";
 import { readSheetFile, pickCol, exportXlsx } from "../utils/helpers";
 
 const EMPTY = {
@@ -18,12 +19,14 @@ const EMPTY = {
 };
 
 export default function MasterList() {
+  const { user } = useAuth();
   const [list, setList] = useState([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState(EMPTY);
   const [editingId, setEditingId] = useState(null);
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [uploadMsg, setUploadMsg] = useState({ text: "", ok: true });
+  const isViewerOnly = user?.role === "viewer";
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +47,10 @@ export default function MasterList() {
   async function handleAdd(e) {
     e.preventDefault();
     setMsg({ text: "", ok: true });
+    if (isViewerOnly) {
+      setMsg({ text: "Viewer accounts can only view master data.", ok: false });
+      return;
+    }
     if (!form.name.trim()) {
       setMsg({ text: "Material name is required.", ok: false });
       return;
@@ -70,6 +77,10 @@ export default function MasterList() {
   }
 
   function handleEdit(m) {
+    if (isViewerOnly) {
+      setMsg({ text: "Viewer accounts can only view master data.", ok: false });
+      return;
+    }
     setEditingId(m._id);
     setForm({
       name: m.name || "",
@@ -89,6 +100,10 @@ export default function MasterList() {
   }
 
   async function handleDelete(m) {
+    if (isViewerOnly) {
+      setMsg({ text: "Viewer accounts can only view master data.", ok: false });
+      return;
+    }
     if (!window.confirm(`Remove "${m.name}" from the master list?`)) return;
     try {
       await deleteMaterial(m._id);
@@ -99,6 +114,11 @@ export default function MasterList() {
   }
 
   async function handleFileUpload(e) {
+    if (isViewerOnly) {
+      setUploadMsg({ text: "Viewer accounts can only view master data.", ok: false });
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files[0];
     if (!file) return;
     setUploadMsg({ text: "Reading file…", ok: true });
@@ -164,137 +184,141 @@ export default function MasterList() {
         </div>
       </div>
 
-      {/* Upload */}
-      <div className="card">
-        <h3>Upload sheet</h3>
-        <div className="uploadbox">
-          <label htmlFor="masterfile">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            Choose file (.xlsx, .xls, .csv)
-          </label>
-          <input
-            type="file"
-            id="masterfile"
-            accept=".xlsx,.xls,.csv"
-            onChange={handleFileUpload}
-          />
-          <div className="hint">
-            Expected columns: <strong>Material Name</strong> (required),{" "}
-            <strong>Qty</strong> — Optional: Material Type, Materials Code,
-            Category, UOM, Minimum Stock — column order doesn't matter
-          </div>
-          {uploadMsg.text && (
-            <div
-              className={`alert ${uploadMsg.ok ? "ok" : "err"}`}
-              style={{ marginTop: 14, textAlign: "left" }}
-            >
-              {uploadMsg.text}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Manual add */}
-      <div className="card">
-        <h3>{editingId ? "Edit material" : "Add material manually"}</h3>
-        <form onSubmit={handleAdd}>
-          <div className="formgrid">
-            <div className="field full">
-              <label>
-                Material name <span style={{ color: "var(--red)" }}>*</span>
+      {!isViewerOnly && (
+        <>
+          {/* Upload */}
+          <div className="card">
+            <h3>Upload sheet</h3>
+            <div className="uploadbox">
+              <label htmlFor="masterfile">
+                <svg
+                  width="15"
+                  height="15"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Choose file (.xlsx, .xls, .csv)
               </label>
               <input
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
-                placeholder="e.g. MS Pipe 50mm"
+                type="file"
+                id="masterfile"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleFileUpload}
               />
-            </div>
-            <div className="field">
-              <label>Material type</label>
-              <input
-                value={form.type}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, type: e.target.value }))
-                }
-                placeholder="e.g. Raw Material"
-              />
-            </div>
-            <div className="field code">
-              <label>Material code</label>
-              <input
-                value={form.code}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, code: e.target.value }))
-                }
-                placeholder="e.g. MS-PIPE-050"
-              />
-            </div>
-            <div className="field">
-              <label>Category</label>
-              <input
-                value={form.category}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, category: e.target.value }))
-                }
-                placeholder="e.g. Pipes"
-              />
-            </div>
-            <div className="field">
-              <label>UOM</label>
-              <input
-                value={form.uom}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, uom: e.target.value }))
-                }
-                placeholder="e.g. Nos / Kg / Mtr"
-              />
-            </div>
-            <div className="field">
-              <label>Minimum stock</label>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={form.minStock}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, minStock: e.target.value }))
-                }
-                placeholder="e.g. 10"
-              />
+              <div className="hint">
+                Expected columns: <strong>Material Name</strong> (required),{" "}
+                <strong>Qty</strong> — Optional: Material Type, Materials Code,
+                Category, UOM, Minimum Stock — column order doesn't matter
+              </div>
+              {uploadMsg.text && (
+                <div
+                  className={`alert ${uploadMsg.ok ? "ok" : "err"}`}
+                  style={{ marginTop: 14, textAlign: "left" }}
+                >
+                  {uploadMsg.text}
+                </div>
+              )}
             </div>
           </div>
-          <div className="actionrow">
-            <button className="btn btn-in" type="submit">
-              {editingId ? "Update material" : "Add to master list"}
-            </button>
-            {editingId && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={handleCancelEdit}
-              >
-                Cancel
-              </button>
-            )}
-            {msg.text && (
-              <span className={`msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>
-            )}
+
+          {/* Manual add */}
+          <div className="card">
+            <h3>{editingId ? "Edit material" : "Add material manually"}</h3>
+            <form onSubmit={handleAdd}>
+              <div className="formgrid">
+                <div className="field full">
+                  <label>
+                    Material name <span style={{ color: "var(--red)" }}>*</span>
+                  </label>
+                  <input
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, name: e.target.value }))
+                    }
+                    placeholder="e.g. MS Pipe 50mm"
+                  />
+                </div>
+                <div className="field">
+                  <label>Material type</label>
+                  <input
+                    value={form.type}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, type: e.target.value }))
+                    }
+                    placeholder="e.g. Raw Material"
+                  />
+                </div>
+                <div className="field code">
+                  <label>Material code</label>
+                  <input
+                    value={form.code}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, code: e.target.value }))
+                    }
+                    placeholder="e.g. MS-PIPE-050"
+                  />
+                </div>
+                <div className="field">
+                  <label>Category</label>
+                  <input
+                    value={form.category}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, category: e.target.value }))
+                    }
+                    placeholder="e.g. Pipes"
+                  />
+                </div>
+                <div className="field">
+                  <label>UOM</label>
+                  <input
+                    value={form.uom}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, uom: e.target.value }))
+                    }
+                    placeholder="e.g. Nos / Kg / Mtr"
+                  />
+                </div>
+                <div className="field">
+                  <label>Minimum stock</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={form.minStock}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, minStock: e.target.value }))
+                    }
+                    placeholder="e.g. 10"
+                  />
+                </div>
+              </div>
+              <div className="actionrow">
+                <button className="btn btn-in" type="submit">
+                  {editingId ? "Update material" : "Add to master list"}
+                </button>
+                {editingId && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={handleCancelEdit}
+                  >
+                    Cancel
+                  </button>
+                )}
+                {msg.text && (
+                  <span className={`msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>
+                )}
+              </div>
+            </form>
           </div>
-        </form>
-      </div>
+        </>
+      )}
 
       {/* Table */}
       <div className="card">
@@ -332,7 +356,7 @@ export default function MasterList() {
                 <th>Category</th>
                 <th>UOM</th>
                 <th className="num">Minimum stock</th>
-                <th></th>
+                {!isViewerOnly && <th></th>}
               </tr>
             </thead>
             <tbody>
@@ -351,21 +375,23 @@ export default function MasterList() {
                   <td>{m.category}</td>
                   <td>{m.uom}</td>
                   <td className="num">{m.minStock ?? 0}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      onClick={() => handleEdit(m)}
-                      style={{ marginRight: 6 }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn-del btn-sm"
-                      onClick={() => handleDelete(m)}
-                    >
-                      Remove
-                    </button>
-                  </td>
+                  {!isViewerOnly && (
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => handleEdit(m)}
+                        style={{ marginRight: 6 }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn-del btn-sm"
+                        onClick={() => handleDelete(m)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

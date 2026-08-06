@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   getMaster,
   getOutward,
+  getInward,
   addOutward,
   bulkOutward,
   updateOutward,
@@ -29,6 +30,25 @@ function normalizeOutwardEntry(entry) {
   return { ...entry, reqty };
 }
 
+function getMaterialBalance(materialName, inwardEntries, outwardEntries, extraQty = 0, excludeId = null) {
+  const normalizedName = (materialName || "").trim().toLowerCase();
+  if (!normalizedName) return 0;
+
+  const totalInward = (inwardEntries || []).reduce((sum, item) => {
+    const name = (item?.name || "").trim().toLowerCase();
+    return name === normalizedName ? sum + (Number(item.qty) || 0) : sum;
+  }, 0);
+
+  const totalOutward = (outwardEntries || []).reduce((sum, item) => {
+    const name = (item?.name || "").trim().toLowerCase();
+    if (name !== normalizedName) return sum;
+    if (excludeId && item?._id === excludeId) return sum;
+    return sum + (Number(item.qty) || 0);
+  }, 0);
+
+  return totalInward - totalOutward - extraQty;
+}
+
 const EMPTY_HEADER = {
   date: todayStr(),
   project: "",
@@ -50,8 +70,17 @@ const EMPTY_ITEM = {
   remarks: "",
 };
 
+const DEPARTMENT_OPTIONS = ["Production", "Site", "Maintenance"];
+const ISSUED_BY_OPTIONS = ["Tanmay Patil", "Krishna Vishwakarma"];
+const OTHER_VALUE = "__other__";
+
+function getSelectValue(value, options) {
+  if (!value || value === OTHER_VALUE) return "Other";
+  return options.includes(value) ? value : "Other";
+}
+
 /* ── Edit Modal ──────────────────────────────────────────────────────────── */
-function EditModal({ entry, master, onSave, onClose }) {
+function EditModal({ entry, master, inwardEntries, outwardEntries, onSave, onClose }) {
   const [form, setForm] = useState({
     date: entry.date || "",
     project: entry.project || "",
@@ -115,6 +144,14 @@ function EditModal({ entry, master, onSave, onClose }) {
       setErr("Enter a valid quantity.");
       return;
     }
+
+    const qty = parseFloat(form.qty);
+    const available = getMaterialBalance(form.name, inwardEntries, outwardEntries, 0, entry._id);
+    if (qty > available) {
+      setErr(`Insufficient stock for ${form.name}. Available balance: ${available}`);
+      return;
+    }
+
     setSaving(true);
     try {
       await onSave(entry._id, {
@@ -260,13 +297,33 @@ function EditModal({ entry, master, onSave, onClose }) {
               </div>
               <div className="field">
                 <label>Department</label>
-                <input
-                  value={form.dept}
+                <select
+                  value={getSelectValue(form.dept, DEPARTMENT_OPTIONS)}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, dept: e.target.value }))
+                    setForm((f) => ({
+                      ...f,
+                      dept: e.target.value === "Other" ? OTHER_VALUE : e.target.value,
+                    }))
                   }
-                  placeholder="e.g. Production"
-                />
+                >
+                  <option value="">— Select department —</option>
+                  {DEPARTMENT_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="Other">Other</option>
+                </select>
+                {getSelectValue(form.dept, DEPARTMENT_OPTIONS) === "Other" && (
+                  <input
+                    value={form.dept === OTHER_VALUE ? "" : form.dept}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, dept: e.target.value }))
+                    }
+                    placeholder="Enter department"
+                    style={{ marginTop: 8 }}
+                  />
+                )}
               </div>
               <div className="field">
                 <label>Received by</label>
@@ -280,13 +337,33 @@ function EditModal({ entry, master, onSave, onClose }) {
               </div>
               <div className="field">
                 <label>Issued by (store)</label>
-                <input
-                  value={form.by}
+                <select
+                  value={getSelectValue(form.by, ISSUED_BY_OPTIONS)}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, by: e.target.value }))
+                    setForm((f) => ({
+                      ...f,
+                      by: e.target.value === "Other" ? OTHER_VALUE : e.target.value,
+                    }))
                   }
-                  placeholder="Store keeper's name"
-                />
+                >
+                  <option value="">— Select issued by —</option>
+                  {ISSUED_BY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="Other">Other</option>
+                </select>
+                {getSelectValue(form.by, ISSUED_BY_OPTIONS) === "Other" && (
+                  <input
+                    value={form.by === OTHER_VALUE ? "" : form.by}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, by: e.target.value }))
+                    }
+                    placeholder="Enter issued by name"
+                    style={{ marginTop: 8 }}
+                  />
+                )}
               </div>
               <div className="field full">
                 <label>
@@ -393,6 +470,7 @@ export default function OutwardEntry() {
 
   const [master, setMaster] = useState([]);
   const [entries, setEntries] = useState([]);
+  const [inwardEntries, setInwardEntries] = useState([]);
   const [header, setHeader] = useState(EMPTY_HEADER);
   const [items, setItems] = useState([{ ...EMPTY_ITEM }]);
   const [msg, setMsg] = useState({ text: "", ok: true });
@@ -401,9 +479,10 @@ export default function OutwardEntry() {
   const [editEntry, setEditEntry] = useState(null);
 
   const load = useCallback(async () => {
-    const [m, e] = await Promise.all([getMaster(), getOutward()]);
+    const [m, e, i] = await Promise.all([getMaster(), getOutward(), getInward()]);
     setMaster(m);
     setEntries(Array.isArray(e) ? e.map(normalizeOutwardEntry) : []);
+    setInwardEntries(Array.isArray(i) ? i : []);
   }, []);
   useEffect(() => {
     load();
@@ -506,6 +585,7 @@ export default function OutwardEntry() {
       setMsg({ text: "Please add at least one material.", ok: false });
       return;
     }
+    const pendingByName = new Map();
     for (const it of cleanItems) {
       if (!it.name) {
         setMsg({ text: "Please select a material for every row.", ok: false });
@@ -522,6 +602,19 @@ export default function OutwardEntry() {
         setMsg({ text: `Enter a valid quantity for ${it.name}.`, ok: false });
         return;
       }
+
+      const name = it.name.trim();
+      const qty = parseFloat(it.qty);
+      const pendingBefore = pendingByName.get(name) || 0;
+      const available = getMaterialBalance(name, inwardEntries, entries, pendingBefore);
+      if (qty > available) {
+        setMsg({
+          text: `Insufficient stock for ${name}. Available balance: ${available}`,
+          ok: false,
+        });
+        return;
+      }
+      pendingByName.set(name, pendingBefore + qty);
     }
 
     setLoading(true);
@@ -793,6 +886,8 @@ export default function OutwardEntry() {
         <EditModal
           entry={editEntry}
           master={master}
+          inwardEntries={inwardEntries}
+          outwardEntries={entries}
           onSave={handleEditSave}
           onClose={() => setEditEntry(null)}
         />
@@ -933,14 +1028,35 @@ export default function OutwardEntry() {
               <label>
                 Department <span style={{ color: "var(--red)" }}>*</span>
               </label>
-              <input
+              <select
                 required
-                value={header.dept}
+                value={getSelectValue(header.dept, DEPARTMENT_OPTIONS)}
                 onChange={(e) =>
-                  setHeader((h) => ({ ...h, dept: e.target.value }))
+                  setHeader((h) => ({
+                    ...h,
+                    dept: e.target.value === "Other" ? OTHER_VALUE : e.target.value,
+                  }))
                 }
-                placeholder="e.g. Production"
-              />
+              >
+                <option value="">— Select department —</option>
+                {DEPARTMENT_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                <option value="Other">Other</option>
+              </select>
+              {getSelectValue(header.dept, DEPARTMENT_OPTIONS) === "Other" && (
+                <input
+                  required
+                  value={header.dept === OTHER_VALUE ? "" : header.dept}
+                  onChange={(e) =>
+                    setHeader((h) => ({ ...h, dept: e.target.value }))
+                  }
+                  placeholder="Enter department"
+                  style={{ marginTop: 8 }}
+                />
+              )}
             </div>
             <div className="field">
               <label>
@@ -960,14 +1076,35 @@ export default function OutwardEntry() {
               <label>
                 Issued by (store) <span style={{ color: "var(--red)" }}>*</span>
               </label>
-              <input
+              <select
                 required
-                value={header.by}
+                value={getSelectValue(header.by, ISSUED_BY_OPTIONS)}
                 onChange={(e) =>
-                  setHeader((h) => ({ ...h, by: e.target.value }))
+                  setHeader((h) => ({
+                    ...h,
+                    by: e.target.value === "Other" ? OTHER_VALUE : e.target.value,
+                  }))
                 }
-                placeholder="Store keeper's name"
-              />
+              >
+                <option value="">— Select issued by —</option>
+                {ISSUED_BY_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                <option value="Other">Other</option>
+              </select>
+              {getSelectValue(header.by, ISSUED_BY_OPTIONS) === "Other" && (
+                <input
+                  required
+                  value={header.by === OTHER_VALUE ? "" : header.by}
+                  onChange={(e) =>
+                    setHeader((h) => ({ ...h, by: e.target.value }))
+                  }
+                  placeholder="Enter issued by name"
+                  style={{ marginTop: 8 }}
+                />
+              )}
             </div>
 
             {/* Item rows */}

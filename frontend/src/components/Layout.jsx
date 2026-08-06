@@ -35,7 +35,7 @@ const NAV_SECTIONS = [
      {
   label: 'Purchase Dashboard', path: '/dashboard/purchase',  roles: ['admin','purchase'] },
       { label: 'Live Stock',      path: '/stock',              roles: ['admin','purchase'] },
-      { label: 'Item Master',   path: '/master',             roles: ['admin','purchase'] },
+      { label: 'Item Master',   path: '/master',             roles: ['admin','purchase','viewer'] },
       { label: 'Price Entry',     path: '/price',              roles: ['admin','purchase'] },
       { label: 'Purchase Orders', path: '/purchase-orders',    roles: ['admin','purchase'] },
       { label: 'PO Matching',     path: '/po-matching',        roles: ['admin','purchase','store_manager'] },
