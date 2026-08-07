@@ -161,7 +161,11 @@ const tdS = { padding: '7px 10px', verticalAlign: 'middle' };
 export default function InwardEntry() {
   const { user } = useAuth();
   const canSeePrice   = user?.role === 'admin' || user?.role === 'purchase';
-  const canEditDelete = user?.role === 'admin' || user?.role === 'inward';
+  const canEditDelete =
+    user?.role === 'admin' ||
+    user?.role === 'inward' ||
+    user?.role === 'store' ||
+    user?.role === 'store_manager';
 
   const [master,      setMaster]      = useState([]);
   const [entries,     setEntries]     = useState([]);
