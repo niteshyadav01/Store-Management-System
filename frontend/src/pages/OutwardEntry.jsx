@@ -79,6 +79,66 @@ function getSelectValue(value, options) {
   return options.includes(value) ? value : "Other";
 }
 
+function parseDateValue(value) {
+  if (!value && value !== 0) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) {
+    const [year, month, day] = raw.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isDateInRange(value, fromDate, toDate) {
+  const current = parseDateValue(value);
+  const start = parseDateValue(fromDate);
+  const end = parseDateValue(toDate);
+
+  if (!current) return true;
+  if (start && current < start) return false;
+  if (end && current > end) return false;
+  return true;
+}
+
+function matchesSearchText(entry, query) {
+  const text = (query || "").trim().toLowerCase();
+  if (!text) return true;
+
+  const haystack = [
+    entry?.project,
+    entry?.custpo,
+    entry?.slip,
+    entry?.dept,
+    entry?.recby,
+    entry?.by,
+    entry?.name,
+    entry?.type,
+    entry?.code,
+    entry?.category,
+    entry?.remarks,
+    entry?.uom,
+    entry?.qty,
+    entry?.reqty,
+    entry?.date,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(text);
+}
+
 /* ── Edit Modal ──────────────────────────────────────────────────────────── */
 function EditModal({ entry, master, inwardEntries, outwardEntries, onSave, onClose }) {
   const [form, setForm] = useState({
@@ -463,10 +523,8 @@ function EditModal({ entry, master, inwardEntries, outwardEntries, onSave, onClo
 
 export default function OutwardEntry() {
   const { user } = useAuth();
-  const canEditDelete =
-    user?.role === "admin" ||
-    user?.role === "store" ||
-    user?.role === "store_manager";
+  const OUTWARD_EDIT_ROLES = ["admin", "store", "store_manager"];
+  const canEditDelete = OUTWARD_EDIT_ROLES.includes(user?.role);
 
   const [master, setMaster] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -477,6 +535,9 @@ export default function OutwardEntry() {
   const [bulkMsg, setBulkMsg] = useState({ text: "", ok: true });
   const [loading, setLoading] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
+  const [searchText, setSearchText] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const load = useCallback(async () => {
     const [m, e, i] = await Promise.all([getMaster(), getOutward(), getInward()]);
@@ -487,6 +548,13 @@ export default function OutwardEntry() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const filteredEntries = entries.filter((entry) => {
+    return (
+      isDateInRange(entry.date, fromDate, toDate) &&
+      matchesSearchText(entry, searchText)
+    );
+  });
 
   async function handleEditSave(id, data) {
     await updateOutward(id, data);
@@ -1220,11 +1288,40 @@ export default function OutwardEntry() {
         </form>
       </div>
 
-      {/* Recent entries table */}
+      {/* All entries table */}
       <div className="card entries-section">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 240 }}>
+            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>Search</span>
+            <input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Material / project / PO / slip / remarks"
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170 }}>
+            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>From date</span>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170 }}>
+            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>To date</span>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setSearchText("");
+              setFromDate("");
+              setToDate("");
+            }}
+          >
+            Clear
+          </button>
+        </div>
         <h3>
-          Recent outward entries{" "}
-          <span className="pill-count">{entries.length || 0}</span>
+          All outward entries{" "}
+          <span className="pill-count">{filteredEntries.length || 0}</span>
         </h3>
         <div
           className="tablewrap"
@@ -1264,7 +1361,7 @@ export default function OutwardEntry() {
               </tr>
             </thead>
             <tbody>
-              {entries.slice(0, 100).map((e) => {
+              {filteredEntries.map((e) => {
                 const hasReqty =
                   e.reqty !== undefined && e.reqty !== null && e.reqty !== "";
                 const remaining = hasReqty
@@ -1326,6 +1423,11 @@ export default function OutwardEntry() {
           <div className="empty">
             No outward entries yet.
             <p>Use the form above to record your first issue.</p>
+          </div>
+        )}
+        {entries.length > 0 && !filteredEntries.length && (
+          <div className="empty">
+            No outward entries match the current filters.
           </div>
         )}
       </div>

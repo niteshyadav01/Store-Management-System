@@ -2,6 +2,8 @@ const router  = require('express').Router();
 const Outward = require('../models/Outward');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
+const OUTWARD_EDIT_ROLES = ['admin', 'store', 'store_manager'];
+
 function normalizeOutwardPayload(entry) {
   if (!entry || typeof entry !== 'object') return { reqty: null };
   const reqtyRaw =
@@ -29,7 +31,7 @@ router.get('/', authMiddleware, async (req, res) => {
 });
 
 // POST /api/outward — single
-router.post('/', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+router.post('/', authMiddleware, requireRole(...OUTWARD_EDIT_ROLES), async (req, res) => {
   try {
     const entry = await Outward.create(normalizeOutwardPayload(req.body));
     res.status(201).json(normalizeOutwardResponse(entry.toObject()));
@@ -37,7 +39,7 @@ router.post('/', authMiddleware, requireRole('admin','store','store_manager'), a
 });
 
 // POST /api/outward/bulk
-router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+router.post('/bulk', authMiddleware, requireRole(...OUTWARD_EDIT_ROLES), async (req, res) => {
   try {
     const { entries } = req.body;
     if (!Array.isArray(entries) || !entries.length)
@@ -47,8 +49,8 @@ router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// PUT /api/outward/:id — full edit (admin + store team)
-router.put('/:id', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+// PUT /api/outward/:id — full edit (admin + store in/out team)
+router.put('/:id', authMiddleware, requireRole(...OUTWARD_EDIT_ROLES), async (req, res) => {
   try {
     const doc = await Outward.findByIdAndUpdate(
       req.params.id,
@@ -60,8 +62,8 @@ router.put('/:id', authMiddleware, requireRole('admin','store','store_manager'),
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// DELETE /api/outward/:id (admin + store team)
-router.delete('/:id', authMiddleware, requireRole('admin','store','store_manager'), async (req, res) => {
+// DELETE /api/outward/:id (admin + store in/out team)
+router.delete('/:id', authMiddleware, requireRole(...OUTWARD_EDIT_ROLES), async (req, res) => {
   try {
     const doc = await Outward.findByIdAndDelete(req.params.id);
     if (!doc) return res.status(404).json({ error: 'Not found.' });
