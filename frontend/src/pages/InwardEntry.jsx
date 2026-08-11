@@ -531,14 +531,14 @@ export default function InwardEntry() {
   const [pending, setPending] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  // ── Duplicate detection state ─────────────────────────────────────────
-  const [dupMode, setDupMode] = useState(false);
-  const [dupGroups, setDupGroups] = useState([]);
-  const [dupLoading, setDupLoading] = useState(false);
-  const [dupMsg, setDupMsg] = useState("");
-  const [selectedDups, setSelectedDups] = useState(new Set());
-  const [dupFrom, setDupFrom] = useState("");
-  const [dupTo, setDupTo] = useState("");
+  // ── Duplicate detection state — DISABLED ──────────────────────────────
+  // const [dupMode, setDupMode] = useState(false);
+  // const [dupGroups, setDupGroups] = useState([]);
+  // const [dupLoading, setDupLoading] = useState(false);
+  // const [dupMsg, setDupMsg] = useState("");
+  // const [selectedDups, setSelectedDups] = useState(new Set());
+  // const [dupFrom, setDupFrom] = useState("");
+  // const [dupTo, setDupTo] = useState("");
 
   const load = useCallback(async () => {
     const [m, e, pos] = await Promise.all([
@@ -561,7 +561,7 @@ export default function InwardEntry() {
     );
   });
 
-  // ── Duplicate detection logic (respects From / To date range) ─────────
+  /* ── Duplicate detection logic — DISABLED ─────────────────────────────
   function findDuplicates(fromArg, toArg) {
     const from = fromArg !== undefined ? fromArg : dupFrom;
     const to = toArg !== undefined ? toArg : dupTo;
@@ -602,10 +602,7 @@ export default function InwardEntry() {
 
     Object.values(map).forEach((group) => {
       if (group.length < 2) return;
-      const ids = group
-        .map((e) => e._id)
-        .sort()
-        .join(",");
+      const ids = group.map((e) => e._id).sort().join(",");
       if (seen.has(ids)) return;
       seen.add(ids);
       groups.push({
@@ -616,10 +613,7 @@ export default function InwardEntry() {
 
     Object.values(challanMap).forEach((group) => {
       if (group.length < 2) return;
-      const ids = group
-        .map((e) => e._id)
-        .sort()
-        .join(",");
+      const ids = group.map((e) => e._id).sort().join(",");
       if (seen.has(ids)) return;
       seen.add(ids);
       groups.push({
@@ -633,11 +627,11 @@ export default function InwardEntry() {
 
     const rangeNote =
       from || to
-        ? ` (${from ? formatDateDMY(from) : "start"} → ${to ? formatDateDMY(to) : "today"}, ${scope.length} entries scanned)`
+        ? ` (${from ? formatDateDMY(from) : "start"} -> ${to ? formatDateDMY(to) : "today"}, ${scope.length} entries scanned)`
         : ` (all ${scope.length} entries scanned)`;
 
     if (!groups.length) {
-      setDupMsg(`✓ No duplicates found${rangeNote}.`);
+      setDupMsg(`No duplicates found${rangeNote}.`);
     } else {
       const extraCount = groups.reduce((s, g) => s + g.entries.length - 1, 0);
       setDupMsg(
@@ -677,12 +671,12 @@ export default function InwardEntry() {
     const preview = toDelete
       .map(
         (e) =>
-          `• ${e.name}  |  ${e.vendor || "—"}  |  ${formatDateDMY(e.date)}  |  Qty: ${e.qty}  |  Challan: ${e.challan || "—"}`,
+          `- ${e.name}  |  ${e.vendor || "-"}  |  ${formatDateDMY(e.date)}  |  Qty: ${e.qty}  |  Challan: ${e.challan || "-"}`,
       )
       .join("\n");
 
     const confirmed = window.confirm(
-      `⚠ You are about to permanently DELETE ${selectedDups.size} inward entr${selectedDups.size === 1 ? "y" : "ies"}:\n\n${preview}\n\nThis will affect your stock balances. This action cannot be undone.\n\nAre you sure you want to proceed?`,
+      `You are about to permanently DELETE ${selectedDups.size} inward entr${selectedDups.size === 1 ? "y" : "ies"}:\n\n${preview}\n\nThis will affect your stock balances. This action cannot be undone.\n\nAre you sure you want to proceed?`,
     );
     if (!confirmed) return;
 
@@ -698,13 +692,14 @@ export default function InwardEntry() {
     }
 
     setDupMsg(
-      `✓ Deleted ${deleted} entr${deleted === 1 ? "y" : "ies"} successfully.${failed ? ` ${failed} failed — please try again.` : ""}`,
+      `Deleted ${deleted} entr${deleted === 1 ? "y" : "ies"} successfully.${failed ? ` ${failed} failed — please try again.` : ""}`,
     );
     setSelectedDups(new Set());
     await load();
     setDupGroups([]);
     setTimeout(() => findDuplicates(), 300);
   }
+  ──────────────────────────────────────────────────────────────────────── */
 
   // ── PO logic ──────────────────────────────────────────────────────────
   async function handlePoSelect(poNumber) {
@@ -1264,12 +1259,6 @@ export default function InwardEntry() {
         .compact-form .actionrow { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); align-items:center; }
         .compact-form .doc-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px 16px; margin-bottom:14px; }
 
-        .dup-group { border:1.5px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:0; }
-        .dup-group-header { background:var(--paper-dim); padding:10px 16px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
-        .daterange { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
-        .daterange .f label { display:block; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--text-3); margin-bottom:4px; }
-        .daterange .f input { padding:7px 10px; font-size:13px; height:34px; border-radius:8px; border:1px solid var(--line); }
-
         .stage-box { border:1.5px solid var(--line); border-radius:10px; overflow:hidden; margin-top:14px; text-align:left; }
         .stage-head { background:var(--paper-dim); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--line); }
         .stage-stat { display:inline-flex; flex-direction:column; gap:2px; margin-right:18px; }
@@ -1552,267 +1541,12 @@ export default function InwardEntry() {
         </div>
       </div>
 
-      {/* ── Find & Remove Duplicates ── */}
+      {/* ── Find & Remove Duplicates — DISABLED ──────────────────────────
       <div className="card">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 10,
-            marginBottom: 14,
-          }}
-        >
-          <div>
-            <h3 style={{ margin: 0 }}>Find &amp; Remove Duplicates</h3>
-            {!dupMode && (
-              <p
-                style={{
-                  fontSize: 12,
-                  color: "var(--text-3)",
-                  margin: "4px 0 0",
-                }}
-              >
-                Scan inward entries for duplicate records by material, vendor,
-                date, qty and challan no.
-              </p>
-            )}
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 8,
-              alignItems: "center",
-              flexWrap: "wrap",
-            }}
-          >
-            {dupMode && selectedDups.size > 0 && (
-              <button
-                className="btn-del"
-                onClick={deleteSelectedDuplicates}
-                style={{ fontSize: 13, padding: "8px 16px" }}
-              >
-                🗑 Delete {selectedDups.size} selected entr
-                {selectedDups.size === 1 ? "y" : "ies"}
-              </button>
-            )}
-            {dupMode && dupGroups.length > 0 && (
-              <button className="btn btn-ghost" onClick={selectAllDuplicates}>
-                Auto-select duplicates
-              </button>
-            )}
-            {dupMode && (
-              <button className="btn btn-ghost" onClick={clearDupMode}>
-                ✕ Close
-              </button>
-            )}
-            <button
-              className="btn btn-in"
-              onClick={() => {
-                setDupMode(true);
-                findDuplicates();
-              }}
-              disabled={dupLoading}
-            >
-              {dupLoading ? "Scanning…" : "🔍 Find Duplicates"}
-            </button>
-          </div>
-        </div>
-
-        <div className="daterange">
-          <div className="f">
-            <label>From date</label>
-            <input
-              type="date"
-              value={dupFrom}
-              max={dupTo || undefined}
-              onChange={(e) => setDupFrom(e.target.value)}
-            />
-            {dupFrom && <span style={dmyHint}>{formatDateDMY(dupFrom)}</span>}
-          </div>
-          <div className="f">
-            <label>To date</label>
-            <input
-              type="date"
-              value={dupTo}
-              min={dupFrom || undefined}
-              onChange={(e) => setDupTo(e.target.value)}
-            />
-            {dupTo && <span style={dmyHint}>{formatDateDMY(dupTo)}</span>}
-          </div>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              setDupFrom("");
-              setDupTo("");
-              if (dupMode) findDuplicates("", "");
-            }}
-          >
-            Clear dates
-          </button>
-          <span style={{ fontSize: 11, color: "var(--text-3)" }}>
-            Leave blank to scan all entries
-          </span>
-        </div>
-
-        {dupMode && (
-          <div style={{ marginTop: 16 }}>
-            {dupMsg && (
-              <div
-                className={`alert ${dupGroups.length ? "err" : "ok"}`}
-                style={{ marginBottom: dupGroups.length ? 16 : 0 }}
-              >
-                {dupMsg}
-              </div>
-            )}
-
-            {dupGroups.length > 0 && (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 16 }}
-              >
-                {dupGroups.map((group, gi) => (
-                  <div key={gi} className="dup-group">
-                    <div className="dup-group-header">
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          color: "var(--rust-dark)",
-                          background: "#f8ede7",
-                          padding: "3px 8px",
-                          borderRadius: 10,
-                        }}
-                      >
-                        {group.entries.length} entries
-                      </span>
-                      <span style={{ fontSize: 12, color: "#8a8270" }}>
-                        {group.reason}
-                      </span>
-                      <label
-                        style={{
-                          marginLeft: "auto",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          fontSize: 12,
-                          color: "var(--text-3)",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={group.entries.every((e) =>
-                            selectedDups.has(e._id),
-                          )}
-                          onChange={(ev) => {
-                            const next = new Set(selectedDups);
-                            group.entries.forEach((entry) => {
-                              if (ev.target.checked) next.add(entry._id);
-                              else next.delete(entry._id);
-                            });
-                            setSelectedDups(next);
-                          }}
-                        />
-                        Select all in group
-                      </label>
-                    </div>
-
-                    <div className="tablewrap" style={{ margin: 0 }}>
-                      <table>
-                        <thead>
-                          <tr>
-                            <th style={{ width: 40 }}></th>
-                            <th>Date</th>
-                            <th>Material</th>
-                            <th>Vendor</th>
-                            <th>Challan</th>
-                            <th>PO</th>
-                            <th className="num">Qty</th>
-                            <th>Location</th>
-                            <th>Remarks</th>
-                            <th>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.entries.map((e, ei) => {
-                            const isSelected = selectedDups.has(e._id);
-                            const isFirst = ei === 0;
-                            return (
-                              <tr
-                                key={e._id}
-                                style={{
-                                  background: isSelected
-                                    ? "#fef2f0"
-                                    : isFirst
-                                      ? "#f0faf8"
-                                      : undefined,
-                                  opacity: isSelected ? 0.85 : 1,
-                                  cursor: "pointer",
-                                }}
-                                onClick={() => toggleDupSelect(e._id)}
-                              >
-                                <td onClick={(ev) => ev.stopPropagation()}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleDupSelect(e._id)}
-                                  />
-                                </td>
-                                <td>{formatDateDMY(e.date)}</td>
-                                <td style={{ fontWeight: 500 }}>{e.name}</td>
-                                <td>{e.vendor || "—"}</td>
-                                <td className="mono">{e.challan || "—"}</td>
-                                <td className="mono">{e.po || "—"}</td>
-                                <td className="num">{formatNum(e.qty)}</td>
-                                <td>{e.location || "—"}</td>
-                                <td>{e.remarks || "—"}</td>
-                                <td>
-                                  {isFirst ? (
-                                    <span
-                                      style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: "var(--teal-dark)",
-                                        background: "var(--teal-light)",
-                                        padding: "2px 8px",
-                                        borderRadius: 10,
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      ✓ KEEP
-                                    </span>
-                                  ) : (
-                                    <span
-                                      style={{
-                                        fontSize: 10,
-                                        fontWeight: 700,
-                                        color: "var(--rust-dark)",
-                                        background: "#f8ede7",
-                                        padding: "2px 8px",
-                                        borderRadius: 10,
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      DUPLICATE
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        ... duplicate finder card was here; re-enable by uncommenting this
+        block together with the duplicate state and the five functions above.
       </div>
+      ────────────────────────────────────────────────────────────────── */}
 
       {/* ── New entry form ── */}
       <div className="card compact-form">
