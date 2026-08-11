@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import * as XLSX from "xlsx";
 import {
   getMaster,
   getPurchaseRequests,
@@ -44,6 +45,7 @@ export default function PurchaseOrders() {
   const [formLoading, setFormLoading] = useState(false);
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [stockMap, setStockMap] = useState({});
+  const [exportLoading, setExportLoading] = useState(false);
 
   const load = useCallback(async () => {
     const [m, reqs, pos, inw, out] = await Promise.all([
@@ -190,6 +192,89 @@ export default function PurchaseOrders() {
     } catch (err) {
       setMsg({ text: "Error: " + err.message, ok: false });
     } finally { setFormLoading(false); }
+  }
+
+  // ── Export all pending-PO data to Excel ──────────────────────────────────
+  async function exportPendingToExcel() {
+    setExportLoading(true);
+    try {
+      // Sheet 1: PR summary
+      const prHeaders = ["PR No", "Date", "Project", "Request From", "Requested by", "Items", "Status"];
+      const prRows = eligiblePRs.map((pr) => [
+        pr.prNumber,
+        toDDMMYYYY(pr.date),
+        pr.projectName || "",
+        pr.requestFrom || "",
+        pr.requestedByName || "",
+        pr.items.length,
+        STATUS_LABEL[pr.status] || pr.status,
+      ]);
+
+      // Sheet 2: item-level detail (remaining/pending qty) for every eligible PR
+      const itemHeaders = [
+        "PR No",
+        "Material",
+        "Code",
+        "UOM",
+        "PR Qty",
+        "Already Ordered",
+        "Remaining",
+        "Current Stock",
+      ];
+      const itemRows = [];
+
+      for (const pr of eligiblePRs) {
+        let rows = prItemsMap[pr._id];
+        if (!rows) {
+          const existingPOs = await getPurchaseOrdersByPR(pr._id);
+          const alreadyOrdered = {};
+          for (const po of existingPOs || [])
+            for (const it of po.items || [])
+              alreadyOrdered[it.name] =
+                (alreadyOrdered[it.name] || 0) + (it.orderedQty || 0);
+
+          rows = pr.items.map((it) => {
+            const already = alreadyOrdered[it.name] || 0;
+            const remaining = Math.max(
+              0,
+              parseFloat((it.qty - already).toFixed(6)),
+            );
+            return { ...it, already, remaining };
+          });
+        }
+
+        rows.forEach((it) => {
+          const stock = stockMap[it.name];
+          itemRows.push([
+            pr.prNumber,
+            it.name,
+            it.code || "",
+            it.uom || "",
+            it.qty,
+            it.already > 0 ? it.already : 0,
+            it.remaining,
+            stock === undefined || stock === null ? "" : stock,
+          ]);
+        });
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([prHeaders, ...prRows]),
+        "Pending PRs",
+      );
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([itemHeaders, ...itemRows]),
+        "Pending Items",
+      );
+      XLSX.writeFile(wb, `Pending_PO_Data_${todayStr()}.xlsx`);
+    } catch (err) {
+      alert("Export failed: " + err.message);
+    } finally {
+      setExportLoading(false);
+    }
   }
 
   const prMap = Object.fromEntries(requests.map(r => [r.prNumber, r]));
@@ -355,10 +440,20 @@ export default function PurchaseOrders() {
 
       {/* ── Pending PRs section ───────────────────────────────────────────── */}
       <div className="card">
-        <h3>
-          Pending purchase requests
-          <span className="pill-count">{eligiblePRs.length}</span>
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8,  marginBottom: 16, }}>
+          <h3 style={{ margin: 0 }}>
+            Pending purchase requests
+            <span className="pill-count">{eligiblePRs.length}</span>
+          </h3>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={exportPendingToExcel}
+            disabled={exportLoading || eligiblePRs.length === 0}
+          >
+            {exportLoading ? 'Exporting…' : '⭳ Export Excel'}
+          </button>
+        </div>
         {eligiblePRs.length === 0 ? (
           <div className="empty">No approved or partially ordered PRs available.</div>
         ) : (
