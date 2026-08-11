@@ -1290,26 +1290,103 @@ export default function OutwardEntry() {
 
       {/* All entries table */}
       <div className="card entries-section">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "end", marginBottom: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 240 }}>
-            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>Search</span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 240, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>Search</span>
             <input
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               placeholder="Material / project / PO / slip / remarks"
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 170 }}>
-            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>From date</span>
-            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>From date</span>
+            <input 
+              type="date" 
+              value={fromDate} 
+              onChange={(e) => setFromDate(e.target.value)}
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 170 }}>
-            <span style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 4 }}>To date</span>
-            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>To date</span>
+            <input 
+              type="date" 
+              value={toDate} 
+              onChange={(e) => setToDate(e.target.value)}
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
           </label>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
+            style={{
+              height: "var(--input-h)",
+              padding: "10px 14px",
+              fontSize: "13.5px",
+              fontFamily: "'Inter', 'Poppins', sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
             onClick={() => {
               setSearchText("");
               setFromDate("");

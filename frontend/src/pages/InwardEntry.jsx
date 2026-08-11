@@ -157,6 +157,65 @@ const styles = {
 
 const tdS = { padding: '7px 10px', verticalAlign: 'middle' };
 
+/* ── Filter helpers ──────────────────────────────────────────────────── */
+function parseDateValue(value) {
+  if (!value && value !== 0) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^\d{4}-\d{2}-\d{2}/);
+  if (isoMatch) {
+    const [year, month, day] = raw.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, day, month, year] = slashMatch;
+    return new Date(Number(year), Number(month) - 1, Number(day));
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function isDateInRange(value, fromDate, toDate) {
+  const current = parseDateValue(value);
+  const start = parseDateValue(fromDate);
+  const end = parseDateValue(toDate);
+
+  if (!current) return true;
+  if (start && current < start) return false;
+  if (end && current > end) return false;
+  return true;
+}
+
+function matchesSearchText(entry, query) {
+  const text = (query || "").trim().toLowerCase();
+  if (!text) return true;
+
+  const haystack = [
+    entry?.vendor,
+    entry?.challan,
+    entry?.po,
+    entry?.name,
+    entry?.type,
+    entry?.code,
+    entry?.category,
+    entry?.remarks,
+    entry?.uom,
+    entry?.qty,
+    entry?.by,
+    entry?.location,
+    entry?.date,
+  ]
+    .filter((value) => value !== undefined && value !== null && value !== "")
+    .join(" ")
+    .toLowerCase();
+
+  return haystack.includes(text);
+}
+
 /* ── Main component ──────────────────────────────────────────────────── */
 export default function InwardEntry() {
   const { user } = useAuth();
@@ -179,12 +238,22 @@ export default function InwardEntry() {
   const [poRows,      setPoRows]      = useState([]);
   const [poLoading,   setPoLoading]   = useState(false);
   const [manualRows,  setManualRows]  = useState([emptyManualRow()]);
+  const [searchText,  setSearchText]  = useState("");
+  const [fromDate,    setFromDate]    = useState("");
+  const [toDate,      setToDate]      = useState("");
 
   const load = useCallback(async () => {
     const [m, e, pos] = await Promise.all([getMaster(), getInward(), getPendingInwardPOs()]);
     setMaster(m); setEntries(e); setPoList(pos);
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  const filteredEntries = entries.filter((entry) => {
+    return (
+      isDateInRange(entry.date, fromDate, toDate) &&
+      matchesSearchText(entry, searchText)
+    );
+  });
 
   async function handlePoSelect(poNumber) {
     setForm(f => ({ ...f, po: poNumber, vendor: '' }));
@@ -688,7 +757,113 @@ export default function InwardEntry() {
 
       {/* Entries table */}
       <div className="card entries-section">
-        <h3>Recent inward entries <span className="pill-count">{entries.length || 0}</span></h3>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 240, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>Search</span>
+            <input
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="Vendor / PO / challan / material / remarks"
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>From date</span>
+            <input 
+              type="date" 
+              value={fromDate} 
+              onChange={(e) => setFromDate(e.target.value)}
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
+            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>To date</span>
+            <input 
+              type="date" 
+              value={toDate} 
+              onChange={(e) => setToDate(e.target.value)}
+              style={{
+                border: "1.5px solid var(--line)",
+                borderRadius: "var(--radius)",
+                padding: "10px 14px",
+                height: "var(--input-h)",
+                fontSize: "13.5px",
+                fontFamily: "'Inter', 'Poppins', sans-serif",
+                background: "#fff",
+                color: "var(--ink)",
+                width: "100%",
+                transition: "border-color var(--transition), box-shadow var(--transition)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--teal)";
+                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--line)";
+                e.target.style.boxShadow = "none";
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            style={{
+              height: "var(--input-h)",
+              padding: "10px 14px",
+              fontSize: "13.5px",
+              fontFamily: "'Inter', 'Poppins', sans-serif",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+            onClick={() => {
+              setSearchText("");
+              setFromDate("");
+              setToDate("");
+            }}
+          >
+            Clear
+          </button>
+        </div>
+        <h3>Recent inward entries <span className="pill-count">{filteredEntries.length || 0}</span></h3>
         <div className="tablewrap" style={{ overflowX: 'scroll', overflowY: 'scroll', maxHeight: '82vh' }}>
           <table style={{ minWidth: '1700px' }}>
             <thead>
@@ -702,7 +877,7 @@ export default function InwardEntry() {
               </tr>
             </thead>
             <tbody>
-              {entries.slice(0, 100).map(e => (
+              {filteredEntries.slice(0, 100).map(e => (
                 <tr key={e._id}>
                   <td>{toDDMMYYYY(e.date)}</td>
                   <td>{e.invdate ? toDDMMYYYY(e.invdate) : '—'}</td>
