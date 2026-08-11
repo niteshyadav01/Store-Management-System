@@ -1,163 +1,65 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { getMaster, getInward, addInward, bulkInward, updateInward, deleteInward, getPendingInwardPOs, getPurchaseOrderByNumber } from '../api/api';
-import { useAuth } from '../context/AuthContext';
-import { formatNum, todayStr, readSheetFile, pickCol, parseExcelDate, exportXlsx, toDDMMYYYY } from '../utils/helpers';
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  getMaster,
+  getInward,
+  addInward,
+  bulkInward,
+  updateInward,
+  deleteInward,
+  getPendingInwardPOs,
+  getPurchaseOrderByNumber,
+} from "../api/api";
+import { useAuth } from "../context/AuthContext";
+import {
+  formatNum,
+  todayStr,
+  readSheetFile,
+  pickCol,
+  parseExcelDate,
+  exportXlsx,
+  formatDateDMY,
+} from "../utils/helpers";
 
 const EMPTY = {
-  date: todayStr(), invdate: '', challan: '', po: '', vendor: '',
-  name: '', type: '', code: '', category: '', uom: '',
-  qty: '', by: '', location: '', remarks: '', price: ''
+  date: todayStr(),
+  invdate: "",
+  challan: "",
+  po: "",
+  vendor: "",
+  name: "",
+  type: "",
+  code: "",
+  category: "",
+  uom: "",
+  qty: "",
+  by: "",
+  location: "",
+  remarks: "",
+  price: "",
 };
 
 const emptyManualRow = () => ({
   _key: Math.random().toString(36).slice(2),
-  name: '', type: '', code: '', category: '', uom: '', qty: '', location: '', remarks: ''
+  name: "",
+  type: "",
+  code: "",
+  category: "",
+  uom: "",
+  qty: "",
+  location: "",
+  remarks: "",
 });
 
-/* ── Inline Edit Modal ───────────────────────────────────────────────── */
-function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
-  const [form, setForm] = useState({
-    date: entry.date || '',
-    invdate: entry.invdate || '',
-    challan: entry.challan || '',
-    po: entry.po || '',
-    vendor: entry.vendor || '',
-    name: entry.name || '',
-    type: entry.type || '',
-    code: entry.code || '',
-    category: entry.category || '',
-    uom: entry.uom || '',
-    qty: entry.qty || '',
-    by: entry.by || '',
-    location: entry.location || '',
-    remarks: entry.remarks || '',
-    price: entry.price || '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
+/* ── Dropdown-with-Other pattern (same as Outward) ────────────────────── */
+const RECEIVED_BY_OPTIONS = ["Tanmay Patil", "Krishna Vishwakarma"];
+const OTHER_VALUE = "__other__";
 
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
-
-  useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
-
-  function autofill(name) {
-    const m = master.find(x => x.name === name);
-    setForm(f => ({ ...f, name, type: m?.type || '', code: m?.code || '', category: m?.category || '', uom: m?.uom || '' }));
-  }
-
-  async function handleSave(e) {
-    e.preventDefault();
-    setErr('');
-    if (!form.name) { setErr('Please select a material.'); return; }
-    if (!form.qty || parseFloat(form.qty) <= 0) { setErr('Enter a valid quantity.'); return; }
-    setSaving(true);
-    try {
-      await onSave(entry._id, { ...form, qty: parseFloat(form.qty), price: parseFloat(form.price) || 0 });
-    } catch (e) { setErr(e.message); }
-    finally { setSaving(false); }
-  }
-
-  return (
-    <div style={styles.overlay} onClick={onClose}>
-      <div style={styles.modal} onClick={e => e.stopPropagation()}>
-        <div style={styles.modalHeader}>
-          <h2 style={styles.modalTitle}>Edit Inward Entry</h2>
-          <button style={styles.closeBtn} onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <div style={styles.modalBody}>
-            <div className="formgrid">
-              <div className="field"><label>Entry date</label><input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} /></div>
-              <div className="field"><label>Invoice date</label><input type="date" value={form.invdate} onChange={e => setForm(f => ({ ...f, invdate: e.target.value }))} /></div>
-              <div className="field"><label>Challan / Invoice no</label><input value={form.challan} onChange={e => setForm(f => ({ ...f, challan: e.target.value }))} placeholder="e.g. INV-1023" /></div>
-              <div className="field"><label>PO no</label><input value={form.po} onChange={e => setForm(f => ({ ...f, po: e.target.value }))} placeholder="e.g. PO-4456" /></div>
-              <div className="field full"><label>Vendor name</label><input value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="e.g. ABC Vendors Pvt. Ltd." /></div>
-              <div className="field full">
-                <label>Material description <span style={{ color: 'var(--red)' }}>*</span></label>
-                <select value={form.name} onChange={e => autofill(e.target.value)}>
-                  <option value="">— Select material —</option>
-                  {master.map(m => <option key={m._id} value={m.name}>{m.name}</option>)}
-                </select>
-              </div>
-              <div className="field code"><label>Material type</label><input readOnly value={form.type} /></div>
-              <div className="field code"><label>Material code</label><input readOnly value={form.code} /></div>
-              <div className="field"><label>Category</label><input readOnly value={form.category} /></div>
-              <div className="field"><label>UOM</label><input readOnly value={form.uom} /></div>
-              <div className="field">
-                <label>Received qty <span style={{ color: 'var(--red)' }}>*</span></label>
-                <input type="number" min="0" step="any" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} placeholder="0" />
-              </div>
-              <div className="field"><label>Received by</label><input value={form.by} onChange={e => setForm(f => ({ ...f, by: e.target.value }))} placeholder="Your name" /></div>
-              <div className="field"><label>Storage location</label><input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="e.g. Warehouse A / Rack 3" /></div>
-              <div className="field"><label>Remarks</label><input value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} placeholder="Optional notes" /></div>
-              {canSeePrice && (
-                <div className="field full" style={{ borderTop: '1px dashed var(--line)', paddingTop: 14, marginTop: 4 }}>
-                  <label>Unit price <span style={{ fontWeight: 400, color: '#8a8270', marginLeft: 6 }}>(purchase team only)</span></label>
-                  <input type="number" min="0" step="any" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
-                </div>
-              )}
-            </div>
-            {err && <div className="alert err" style={{ marginTop: 14 }}>{err}</div>}
-          </div>
-          <div style={styles.modalFooter}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-in" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
+function getSelectValue(value, options) {
+  if (!value || value === OTHER_VALUE) return "Other";
+  return options.includes(value) ? value : "Other";
 }
 
-const styles = {
-  overlay: {
-    position: 'fixed', inset: 0,
-    background: 'rgba(28,26,22,0.55)',
-    backdropFilter: 'blur(3px)',
-    zIndex: 1000,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: '20px', overflowY: 'auto',
-  },
-  modal: {
-    background: 'var(--card)',
-    border: '1px solid var(--line)',
-    borderRadius: 'var(--radius-lg)',
-    boxShadow: 'var(--shadow-lg)',
-    width: '100%', maxWidth: '760px',
-    height: 'min(90vh, 700px)',
-    display: 'flex', flexDirection: 'column',
-    overflow: 'hidden', flexShrink: 0,
-  },
-  modalHeader: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '20px 28px', borderBottom: '1px solid var(--line)', flexShrink: 0,
-  },
-  modalTitle: { fontSize: 16, fontWeight: 700, color: 'var(--ink)', margin: 0 },
-  closeBtn: {
-    background: 'none', border: 'none', cursor: 'pointer',
-    fontSize: 18, color: '#8a8270', padding: '4px 8px', borderRadius: '4px', lineHeight: 1,
-  },
-  modalBody: {
-    padding: '24px 28px', overflowY: 'auto', flex: 1, minHeight: 0,
-  },
-  modalFooter: {
-    display: 'flex', gap: 10, justifyContent: 'flex-end',
-    padding: '16px 28px', borderTop: '1px solid var(--line)',
-    flexShrink: 0, background: 'var(--paper-dim)',
-  },
-};
-
-const tdS = { padding: '7px 10px', verticalAlign: 'middle' };
-
-/* ── Filter helpers ──────────────────────────────────────────────────── */
+/* ── Date + search helpers (same as Outward) ──────────────────────────── */
 function parseDateValue(value) {
   if (!value && value !== 0) return null;
   const raw = String(value).trim();
@@ -194,20 +96,22 @@ function matchesSearchText(entry, query) {
   const text = (query || "").trim().toLowerCase();
   if (!text) return true;
 
+  // NOTE: price is deliberately excluded — it's role-restricted.
   const haystack = [
-    entry?.vendor,
+    entry?.date,
+    entry?.invdate,
     entry?.challan,
     entry?.po,
+    entry?.vendor,
     entry?.name,
     entry?.type,
     entry?.code,
     entry?.category,
-    entry?.remarks,
     entry?.uom,
     entry?.qty,
     entry?.by,
     entry?.location,
-    entry?.date,
+    entry?.remarks,
   ]
     .filter((value) => value !== undefined && value !== null && value !== "")
     .join(" ")
@@ -216,37 +120,439 @@ function matchesSearchText(entry, query) {
   return haystack.includes(text);
 }
 
+/* ── Inline Edit Modal ───────────────────────────────────────────────── */
+function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
+  const [form, setForm] = useState({
+    date: entry.date || "",
+    invdate: entry.invdate || "",
+    challan: entry.challan || "",
+    po: entry.po || "",
+    vendor: entry.vendor || "",
+    name: entry.name || "",
+    type: entry.type || "",
+    code: entry.code || "",
+    category: entry.category || "",
+    uom: entry.uom || "",
+    qty: entry.qty || "",
+    by: entry.by || "",
+    location: entry.location || "",
+    remarks: entry.remarks || "",
+    price: entry.price || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  function autofill(name) {
+    const m = master.find((x) => x.name === name);
+    setForm((f) => ({
+      ...f,
+      name,
+      type: m?.type || "",
+      code: m?.code || "",
+      category: m?.category || "",
+      uom: m?.uom || "",
+    }));
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setErr("");
+    if (!form.name) {
+      setErr("Please select a material.");
+      return;
+    }
+    if (!form.qty || parseFloat(form.qty) <= 0) {
+      setErr("Enter a valid quantity.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(entry._id, {
+        ...form,
+        qty: parseFloat(form.qty),
+        price: parseFloat(form.price) || 0,
+      });
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const dmyHint = {
+    fontSize: 11,
+    color: "var(--text-3, #8a8270)",
+    marginTop: 2,
+    display: "block",
+  };
+
+  const styles = {
+    overlay: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(28,26,22,0.55)",
+      backdropFilter: "blur(3px)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "20px",
+      overflowY: "auto",
+    },
+    modal: {
+      background: "var(--card)",
+      border: "1px solid var(--line)",
+      borderRadius: "var(--radius-lg)",
+      boxShadow: "var(--shadow-lg)",
+      width: "100%",
+      maxWidth: "760px",
+      height: "min(90vh,700px)",
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      flexShrink: 0,
+    },
+    header: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "20px 28px",
+      borderBottom: "1px solid var(--line)",
+      flexShrink: 0,
+    },
+    body: { padding: "24px 28px", overflowY: "auto", flex: 1, minHeight: 0 },
+    footer: {
+      display: "flex",
+      gap: 10,
+      justifyContent: "flex-end",
+      padding: "16px 28px",
+      borderTop: "1px solid var(--line)",
+      flexShrink: 0,
+      background: "var(--paper-dim)",
+    },
+  };
+
+  return (
+    <div style={styles.overlay} onClick={onClose}>
+      <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div style={styles.header}>
+          <h2
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "var(--ink)",
+              margin: 0,
+            }}
+          >
+            Edit Inward Entry
+          </h2>
+          <button
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 18,
+              color: "#8a8270",
+              padding: "4px 8px",
+              borderRadius: "4px",
+              lineHeight: 1,
+            }}
+            onClick={onClose}
+          >
+            ✕
+          </button>
+        </div>
+        <form
+          onSubmit={handleSave}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
+          <div style={styles.body}>
+            <div className="formgrid">
+              <div className="field">
+                <label>Entry date</label>
+                <input
+                  type="date"
+                  value={form.date}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, date: e.target.value }))
+                  }
+                />
+                {form.date && (
+                  <span style={dmyHint}>{formatDateDMY(form.date)}</span>
+                )}
+              </div>
+              <div className="field">
+                <label>Invoice date</label>
+                <input
+                  type="date"
+                  value={form.invdate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, invdate: e.target.value }))
+                  }
+                />
+                {form.invdate && (
+                  <span style={dmyHint}>{formatDateDMY(form.invdate)}</span>
+                )}
+              </div>
+              <div className="field">
+                <label>Challan / Invoice no</label>
+                <input
+                  value={form.challan}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, challan: e.target.value }))
+                  }
+                  placeholder="e.g. INV-1023"
+                />
+              </div>
+              <div className="field">
+                <label>PO no</label>
+                <input
+                  value={form.po}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, po: e.target.value }))
+                  }
+                  placeholder="e.g. PO-4456"
+                />
+              </div>
+              <div className="field full">
+                <label>Vendor name</label>
+                <input
+                  value={form.vendor}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, vendor: e.target.value }))
+                  }
+                  placeholder="e.g. ABC Vendors Pvt. Ltd."
+                />
+              </div>
+              <div className="field full">
+                <label>
+                  Material description{" "}
+                  <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                <select
+                  value={form.name}
+                  onChange={(e) => autofill(e.target.value)}
+                >
+                  <option value="">— Select material —</option>
+                  {master.map((m) => (
+                    <option key={m._id} value={m.name}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Material type</label>
+                <input readOnly value={form.type} />
+              </div>
+              <div className="field">
+                <label>Material code</label>
+                <input readOnly value={form.code} />
+              </div>
+              <div className="field">
+                <label>Category</label>
+                <input readOnly value={form.category} />
+              </div>
+              <div className="field">
+                <label>UOM</label>
+                <input readOnly value={form.uom} />
+              </div>
+              <div className="field">
+                <label>
+                  Received qty <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={form.qty}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, qty: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+              <div className="field">
+                <label>Received by</label>
+                <select
+                  value={getSelectValue(form.by, RECEIVED_BY_OPTIONS)}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      by:
+                        e.target.value === "Other"
+                          ? OTHER_VALUE
+                          : e.target.value,
+                    }))
+                  }
+                >
+                  <option value="">— Select received by —</option>
+                  {RECEIVED_BY_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="Other">Other</option>
+                </select>
+                {getSelectValue(form.by, RECEIVED_BY_OPTIONS) === "Other" && (
+                  <input
+                    value={form.by === OTHER_VALUE ? "" : form.by}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, by: e.target.value }))
+                    }
+                    placeholder="Enter name"
+                    style={{ marginTop: 8 }}
+                  />
+                )}
+              </div>
+              <div className="field">
+                <label>Storage location</label>
+                <input
+                  value={form.location}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, location: e.target.value }))
+                  }
+                  placeholder="e.g. Warehouse A / Rack 3"
+                />
+              </div>
+              <div className="field">
+                <label>Remarks</label>
+                <input
+                  value={form.remarks}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, remarks: e.target.value }))
+                  }
+                  placeholder="Optional notes"
+                />
+              </div>
+              {canSeePrice && (
+                <div
+                  className="field full"
+                  style={{
+                    borderTop: "1px dashed var(--line)",
+                    paddingTop: 14,
+                    marginTop: 4,
+                  }}
+                >
+                  <label>
+                    Unit price{" "}
+                    <span
+                      style={{
+                        fontWeight: 400,
+                        color: "#8a8270",
+                        marginLeft: 6,
+                      }}
+                    >
+                      (purchase team only)
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={form.price}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, price: e.target.value }))
+                    }
+                    placeholder="0.00"
+                  />
+                </div>
+              )}
+            </div>
+            {err && (
+              <div className="alert err" style={{ marginTop: 14 }}>
+                {err}
+              </div>
+            )}
+          </div>
+          <div style={styles.footer}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-in" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+const tdS = { padding: "7px 10px", verticalAlign: "middle" };
+
 /* ── Main component ──────────────────────────────────────────────────── */
 export default function InwardEntry() {
   const { user } = useAuth();
-  const canSeePrice   = user?.role === 'admin' || user?.role === 'purchase';
-  const canEditDelete =
-    user?.role === 'admin' ||
-    user?.role === 'inward' ||
-    user?.role === 'store' ||
-    user?.role === 'store_manager';
+  const canSeePrice = user?.role === "admin" || user?.role === "purchase";
+  const canEditDelete = user?.role === "admin" || user?.role === "manager";
 
-  const [master,      setMaster]      = useState([]);
-  const [entries,     setEntries]     = useState([]);
-  const [poList,      setPoList]      = useState([]);
-  const [form,        setForm]        = useState(EMPTY);
-  const [msg,         setMsg]         = useState({ text: '', ok: true });
-  const [bulkMsg,     setBulkMsg]     = useState({ text: '', ok: true });
-  const [loading,     setLoading]     = useState(false);
-  const [editEntry,   setEditEntry]   = useState(null);
-  const [poManual,    setPoManual]    = useState(false);
-  const [poRows,      setPoRows]      = useState([]);
-  const [poLoading,   setPoLoading]   = useState(false);
-  const [manualRows,  setManualRows]  = useState([emptyManualRow()]);
-  const [searchText,  setSearchText]  = useState("");
-  const [fromDate,    setFromDate]    = useState("");
-  const [toDate,      setToDate]      = useState("");
+  const [master, setMaster] = useState([]);
+  const [entries, setEntries] = useState([]);
+  const [poList, setPoList] = useState([]);
+  const [form, setForm] = useState(EMPTY);
+  const [msg, setMsg] = useState({ text: "", ok: true });
+  const [bulkMsg, setBulkMsg] = useState({ text: "", ok: true });
+  const [skippedRows, setSkippedRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
+  const [poManual, setPoManual] = useState(false);
+  const [poRows, setPoRows] = useState([]);
+  const [poLoading, setPoLoading] = useState(false);
+  const [manualRows, setManualRows] = useState([emptyManualRow()]);
+
+  // ── Entries table filters ─────────────────────────────────────────────
+  const [searchText, setSearchText] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  // ── Staged upload (waits for confirmation) ────────────────────────────
+  const [pending, setPending] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  // ── Duplicate detection state ─────────────────────────────────────────
+  const [dupMode, setDupMode] = useState(false);
+  const [dupGroups, setDupGroups] = useState([]);
+  const [dupLoading, setDupLoading] = useState(false);
+  const [dupMsg, setDupMsg] = useState("");
+  const [selectedDups, setSelectedDups] = useState(new Set());
+  const [dupFrom, setDupFrom] = useState("");
+  const [dupTo, setDupTo] = useState("");
 
   const load = useCallback(async () => {
-    const [m, e, pos] = await Promise.all([getMaster(), getInward(), getPendingInwardPOs()]);
-    setMaster(m); setEntries(e); setPoList(pos);
+    const [m, e, pos] = await Promise.all([
+      getMaster(),
+      getInward(),
+      getPendingInwardPOs(),
+    ]);
+    setMaster(m);
+    setEntries(Array.isArray(e) ? e : []);
+    setPoList(pos);
   }, []);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filteredEntries = entries.filter((entry) => {
     return (
@@ -255,204 +561,685 @@ export default function InwardEntry() {
     );
   });
 
+  // ── Duplicate detection logic (respects From / To date range) ─────────
+  function findDuplicates(fromArg, toArg) {
+    const from = fromArg !== undefined ? fromArg : dupFrom;
+    const to = toArg !== undefined ? toArg : dupTo;
+
+    setDupLoading(true);
+    setDupMsg("");
+    setSelectedDups(new Set());
+
+    const scope = entries.filter((e) => isDateInRange(e.date, from, to));
+
+    // Group by name + vendor + date + qty
+    const map = {};
+    scope.forEach((e) => {
+      const key = [
+        (e.name || "").trim().toLowerCase(),
+        (e.vendor || "").trim().toLowerCase(),
+        (e.date || "").trim(),
+        String(parseFloat(e.qty) || 0),
+      ].join("|||");
+      if (!map[key]) map[key] = [];
+      map[key].push(e);
+    });
+
+    // Group by challan + name
+    const challanMap = {};
+    scope.forEach((e) => {
+      if (!e.challan || !e.challan.trim()) return;
+      const key = [
+        (e.challan || "").trim().toLowerCase(),
+        (e.name || "").trim().toLowerCase(),
+      ].join("|||");
+      if (!challanMap[key]) challanMap[key] = [];
+      challanMap[key].push(e);
+    });
+
+    const groups = [];
+    const seen = new Set();
+
+    Object.values(map).forEach((group) => {
+      if (group.length < 2) return;
+      const ids = group
+        .map((e) => e._id)
+        .sort()
+        .join(",");
+      if (seen.has(ids)) return;
+      seen.add(ids);
+      groups.push({
+        reason: "Same material, vendor, date & qty",
+        entries: group,
+      });
+    });
+
+    Object.values(challanMap).forEach((group) => {
+      if (group.length < 2) return;
+      const ids = group
+        .map((e) => e._id)
+        .sort()
+        .join(",");
+      if (seen.has(ids)) return;
+      seen.add(ids);
+      groups.push({
+        reason: "Same challan / invoice no & material",
+        entries: group,
+      });
+    });
+
+    setDupGroups(groups);
+    setDupLoading(false);
+
+    const rangeNote =
+      from || to
+        ? ` (${from ? formatDateDMY(from) : "start"} → ${to ? formatDateDMY(to) : "today"}, ${scope.length} entries scanned)`
+        : ` (all ${scope.length} entries scanned)`;
+
+    if (!groups.length) {
+      setDupMsg(`✓ No duplicates found${rangeNote}.`);
+    } else {
+      const extraCount = groups.reduce((s, g) => s + g.entries.length - 1, 0);
+      setDupMsg(
+        `Found ${groups.length} duplicate group(s) — ${extraCount} extra entr${extraCount === 1 ? "y" : "ies"} can be removed${rangeNote}.`,
+      );
+    }
+  }
+
+  function toggleDupSelect(id) {
+    setSelectedDups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllDuplicates() {
+    const toSelect = new Set();
+    dupGroups.forEach((g) => {
+      g.entries.slice(1).forEach((e) => toSelect.add(e._id));
+    });
+    setSelectedDups(toSelect);
+  }
+
+  function clearDupMode() {
+    setDupMode(false);
+    setDupGroups([]);
+    setDupMsg("");
+    setSelectedDups(new Set());
+  }
+
+  async function deleteSelectedDuplicates() {
+    if (!selectedDups.size) return;
+
+    const toDelete = entries.filter((e) => selectedDups.has(e._id));
+    const preview = toDelete
+      .map(
+        (e) =>
+          `• ${e.name}  |  ${e.vendor || "—"}  |  ${formatDateDMY(e.date)}  |  Qty: ${e.qty}  |  Challan: ${e.challan || "—"}`,
+      )
+      .join("\n");
+
+    const confirmed = window.confirm(
+      `⚠ You are about to permanently DELETE ${selectedDups.size} inward entr${selectedDups.size === 1 ? "y" : "ies"}:\n\n${preview}\n\nThis will affect your stock balances. This action cannot be undone.\n\nAre you sure you want to proceed?`,
+    );
+    if (!confirmed) return;
+
+    let deleted = 0,
+      failed = 0;
+    for (const id of selectedDups) {
+      try {
+        await deleteInward(id);
+        deleted++;
+      } catch {
+        failed++;
+      }
+    }
+
+    setDupMsg(
+      `✓ Deleted ${deleted} entr${deleted === 1 ? "y" : "ies"} successfully.${failed ? ` ${failed} failed — please try again.` : ""}`,
+    );
+    setSelectedDups(new Set());
+    await load();
+    setDupGroups([]);
+    setTimeout(() => findDuplicates(), 300);
+  }
+
+  // ── PO logic ──────────────────────────────────────────────────────────
   async function handlePoSelect(poNumber) {
-    setForm(f => ({ ...f, po: poNumber, vendor: '' }));
+    setForm((f) => ({ ...f, po: poNumber, vendor: "" }));
     setPoRows([]);
     setPoManual(false);
     if (!poNumber) return;
     setPoLoading(true);
     try {
       const po = await getPurchaseOrderByNumber(poNumber);
-      setForm(f => ({ ...f, vendor: po.vendorName || '' }));
-      const rows = (po.items || []).map(it => {
-        const mat = master.find(m => m.name === it.name || m.code === it.code);
+      setForm((f) => ({ ...f, vendor: po.vendorName || "" }));
+      const rows = (po.items || []).map((it) => {
+        const mat = master.find((m) => m.name === it.name || m.code === it.code);
         return {
-          _key:     Math.random().toString(36).slice(2),
-          name:     it.name,
-          type:     mat?.type     || '',
-          code:     it.code       || mat?.code     || '',
-          category: it.category   || mat?.category || '',
-          uom:      it.uom        || mat?.uom      || '',
-          poQty:    it.orderedQty,
-          qty:      String(it.orderedQty),
-          location: '',
-          remarks:  '',
+          _key: Math.random().toString(36).slice(2),
+          name: it.name,
+          type: mat?.type || "",
+          code: it.code || mat?.code || "",
+          category: it.category || mat?.category || "",
+          uom: it.uom || mat?.uom || "",
+          poQty: it.orderedQty,
+          qty: String(it.orderedQty),
+          location: "",
+          remarks: "",
         };
       });
       setPoRows(rows);
-    } catch (err) {
+    } catch {
       setPoRows([]);
-    } finally { setPoLoading(false); }
+    } finally {
+      setPoLoading(false);
+    }
   }
 
   function updatePoRow(key, patch) {
-    setPoRows(list => list.map(r => r._key === key ? { ...r, ...patch } : r));
+    setPoRows((list) =>
+      list.map((r) => (r._key === key ? { ...r, ...patch } : r)),
+    );
   }
 
-  function autofill(name) {
-    const m = master.find(x => x.name === name);
-    setForm(f => ({ ...f, name, type: m?.type || '', code: m?.code || '', category: m?.category || '', uom: m?.uom || '' }));
-  }
-
-  // ── Manual row helpers ────────────────────────────────────────────────
   function updateManualRow(key, patch) {
-    setManualRows(list => list.map(r => r._key === key ? { ...r, ...patch } : r));
+    setManualRows((list) =>
+      list.map((r) => (r._key === key ? { ...r, ...patch } : r)),
+    );
   }
 
   function autofillManualRow(key, name) {
-    const m = master.find(x => x.name === name);
+    const m = master.find((x) => x.name === name);
     updateManualRow(key, {
       name,
-      type:     m?.type     || '',
-      code:     m?.code     || '',
-      category: m?.category || '',
-      uom:      m?.uom      || '',
+      type: m?.type || "",
+      code: m?.code || "",
+      category: m?.category || "",
+      uom: m?.uom || "",
     });
   }
 
   function addManualRow() {
-    setManualRows(list => [...list, emptyManualRow()]);
+    setManualRows((list) => [...list, emptyManualRow()]);
   }
 
   function removeManualRow(key) {
-    setManualRows(list => list.length > 1 ? list.filter(r => r._key !== key) : list);
+    setManualRows((list) =>
+      list.length > 1 ? list.filter((r) => r._key !== key) : list,
+    );
   }
 
   /* ── Submit ─── */
   async function handleSubmit(e) {
     e.preventDefault();
-    setMsg({ text: '', ok: true });
+    setMsg({ text: "", ok: true });
 
-    if (!form.date.trim())   { setMsg({ text: 'Please enter the entry date.', ok: false }); return; }
-    if (!form.vendor.trim()) { setMsg({ text: 'Please enter the vendor name.', ok: false }); return; }
-    if (!form.by.trim())     { setMsg({ text: 'Please enter who received the material.', ok: false }); return; }
-    if (!form.po.trim() && !form.challan.trim()) { setMsg({ text: 'Enter either a PO number or a Challan / Invoice no.', ok: false }); return; }
+    const receivedBy = form.by === OTHER_VALUE ? "" : form.by;
+
+    if (!form.date.trim()) {
+      setMsg({ text: "Please enter the entry date.", ok: false });
+      return;
+    }
+    if (!form.vendor.trim()) {
+      setMsg({ text: "Please enter the vendor name.", ok: false });
+      return;
+    }
+    if (!receivedBy.trim()) {
+      setMsg({ text: "Please enter who received the material.", ok: false });
+      return;
+    }
+    if (!form.po.trim() && !form.challan.trim()) {
+      setMsg({
+        text: "Enter either a PO number or a Challan / Invoice no.",
+        ok: false,
+      });
+      return;
+    }
 
     if (form.po && poRows.length > 0) {
-      // PO mode
-      const invalidQty = poRows.find(r => !r.qty || parseFloat(r.qty) <= 0);
-      if (invalidQty) { setMsg({ text: `"${invalidQty.name}": enter a valid received qty.`, ok: false }); return; }
-      const invalidLoc = poRows.find(r => !r.location.trim());
-      if (invalidLoc) { setMsg({ text: `"${invalidLoc.name}": enter a storage location.`, ok: false }); return; }
+      const invalidQty = poRows.find((r) => !r.qty || parseFloat(r.qty) <= 0);
+      if (invalidQty) {
+        setMsg({
+          text: `"${invalidQty.name}": enter a valid received qty.`,
+          ok: false,
+        });
+        return;
+      }
+      const invalidLoc = poRows.find((r) => !r.location.trim());
+      if (invalidLoc) {
+        setMsg({
+          text: `"${invalidLoc.name}": enter a storage location.`,
+          ok: false,
+        });
+        return;
+      }
       setLoading(true);
       try {
-        const batch = poRows.map(r => ({
-          date: form.date, invdate: form.invdate, challan: form.challan,
-          po: form.po, vendor: form.vendor,
-          name: r.name, type: r.type, code: r.code, category: r.category, uom: r.uom,
+        const batch = poRows.map((r) => ({
+          date: form.date,
+          invdate: form.invdate,
+          challan: form.challan,
+          po: form.po,
+          vendor: form.vendor,
+          name: r.name,
+          type: r.type,
+          code: r.code,
+          category: r.category,
+          uom: r.uom,
           qty: parseFloat(r.qty),
-          by: form.by, location: r.location, remarks: r.remarks, price: 0,
+          by: receivedBy,
+          location: r.location,
+          remarks: r.remarks,
+          price: 0,
         }));
         await bulkInward(batch);
-        setMsg({ text: `✓ ${batch.length} inward entr${batch.length === 1 ? 'y' : 'ies'} saved from ${form.po}.`, ok: true });
+        setMsg({
+          text: `✓ ${batch.length} inward entr${batch.length === 1 ? "y" : "ies"} saved from ${form.po}.`,
+          ok: true,
+        });
         setForm({ ...EMPTY, date: form.date });
         setPoRows([]);
         load();
-        setTimeout(() => setMsg({ text: '', ok: true }), 5000);
-      } catch (err) { setMsg({ text: 'Error: ' + err.message, ok: false }); }
-      finally { setLoading(false); }
-
+        setTimeout(() => setMsg({ text: "", ok: true }), 5000);
+      } catch (err) {
+        setMsg({ text: "Error: " + err.message, ok: false });
+      } finally {
+        setLoading(false);
+      }
     } else {
-      // Manual mode — multiple items
-      const validRows = manualRows.filter(r => r.name && parseFloat(r.qty) > 0);
-      if (!validRows.length) { setMsg({ text: 'Add at least one item with a material and quantity.', ok: false }); return; }
-      const missingLoc = validRows.find(r => !r.location.trim());
-      if (missingLoc) { setMsg({ text: `"${missingLoc.name}": enter a storage location.`, ok: false }); return; }
+      const validRows = manualRows.filter(
+        (r) => r.name && parseFloat(r.qty) > 0,
+      );
+      if (!validRows.length) {
+        setMsg({
+          text: "Add at least one item with a material and quantity.",
+          ok: false,
+        });
+        return;
+      }
+      const missingLoc = validRows.find((r) => !r.location.trim());
+      if (missingLoc) {
+        setMsg({
+          text: `"${missingLoc.name}": enter a storage location.`,
+          ok: false,
+        });
+        return;
+      }
       setLoading(true);
       try {
-        if (validRows.length === 1) {
-          await addInward({
-            ...form,
-            name: validRows[0].name, type: validRows[0].type, code: validRows[0].code,
-            category: validRows[0].category, uom: validRows[0].uom,
-            qty: parseFloat(validRows[0].qty), location: validRows[0].location,
-            remarks: validRows[0].remarks, price: 0,
-          });
-        } else {
-          const batch = validRows.map(r => ({
-            date: form.date, invdate: form.invdate, challan: form.challan,
-            po: form.po, vendor: form.vendor, by: form.by,
-            name: r.name, type: r.type, code: r.code, category: r.category, uom: r.uom,
-            qty: parseFloat(r.qty), location: r.location, remarks: r.remarks, price: 0,
-          }));
-          await bulkInward(batch);
-        }
-        setMsg({ text: `✓ ${validRows.length} inward entr${validRows.length === 1 ? 'y' : 'ies'} saved.`, ok: true });
+        const batch = validRows.map((r) => ({
+          date: form.date,
+          invdate: form.invdate,
+          challan: form.challan,
+          po: form.po,
+          vendor: form.vendor,
+          by: receivedBy,
+          name: r.name,
+          type: r.type,
+          code: r.code,
+          category: r.category,
+          uom: r.uom,
+          qty: parseFloat(r.qty),
+          location: r.location,
+          remarks: r.remarks,
+          price: 0,
+        }));
+        if (batch.length === 1) await addInward(batch[0]);
+        else await bulkInward(batch);
+
+        setMsg({
+          text: `✓ ${validRows.length} inward entr${validRows.length === 1 ? "y" : "ies"} saved.`,
+          ok: true,
+        });
         setForm({ ...EMPTY, date: todayStr() });
         setManualRows([emptyManualRow()]);
         load();
-        setTimeout(() => setMsg({ text: '', ok: true }), 4000);
-      } catch (err) { setMsg({ text: 'Error: ' + err.message, ok: false }); }
-      finally { setLoading(false); }
+        setTimeout(() => setMsg({ text: "", ok: true }), 4000);
+      } catch (err) {
+        setMsg({ text: "Error: " + err.message, ok: false });
+      } finally {
+        setLoading(false);
+      }
     }
   }
 
   async function handleEditSave(id, data) {
-    await updateInward(id, data);
+    await updateInward(id, {
+      ...data,
+      by: data.by === OTHER_VALUE ? "" : data.by,
+    });
     setEditEntry(null);
     load();
   }
 
   async function handleDelete(e) {
-    if (!window.confirm(`Delete this inward entry for "${e.name}" (Qty: ${e.qty})?\n\nThis will affect the stock balance.`)) return;
+    if (
+      !window.confirm(
+        `Delete this inward entry for "${e.name}" (Qty: ${e.qty})?\n\nThis will affect the stock balance.`,
+      )
+    )
+      return;
     try {
       await deleteInward(e._id);
       load();
-    } catch (err) { alert('Error: ' + err.message); }
+    } catch (err) {
+      alert("Error: " + err.message);
+    }
   }
 
-  async function handleBulk(e) {
+  /* ── STEP 1: read + validate the file. Nothing is saved yet. ────────── */
+  async function handleBulkFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    setBulkMsg({ text: 'Reading file…', ok: true });
+    setBulkMsg({ text: "Reading file…", ok: true });
+    setSkippedRows([]);
+    setPending(null);
     try {
       const rows = await readSheetFile(file);
-      if (!rows.length) { setBulkMsg({ text: 'Sheet is empty.', ok: false }); return; }
-      const today = todayStr();
-      const batch = []; let skipped = 0;
-      for (const row of rows) {
-        const matName = pickCol(row, ['materialname', 'material', 'name', 'materialdescription', 'description']);
-        if (!matName) { skipped++; continue; }
-        const m = master.find(x => x.name.toLowerCase() === matName.toLowerCase());
-        if (!m) { skipped++; continue; }
-        const qty = parseFloat(pickCol(row, ['qty', 'quantity', 'receivedqty', 'receivedquantity']));
-        if (!qty || qty <= 0) { skipped++; continue; }
-        const vendor   = pickCol(row, ['vendorname', 'vendor', 'supplier']);
-        const by       = pickCol(row, ['receivedby', 'by']);
-        const location = pickCol(row, ['location', 'rack', 'warehouse']);
-        const po       = pickCol(row, ['pono', 'po']);
-        const challan  = pickCol(row, ['challanno', 'invoiceno', 'challan', 'invoice']);
-        batch.push({
-          date: parseExcelDate(pickCol(row, ['date', 'entrydate'])) || today,
-          invdate: parseExcelDate(pickCol(row, ['invoicedate', 'invdate'])),
-          challan, po, vendor,
-          name: m.name, type: m.type, code: m.code, category: m.category, uom: m.uom,
-          qty, by, location,
-          remarks: pickCol(row, ['remarks', 'notes']),
-          price: canSeePrice ? (parseFloat(pickCol(row, ['price', 'rate', 'unitprice', 'unitrate', 'mrp'])) || 0) : 0,
-        });
+      if (!rows.length) {
+        setBulkMsg({ text: "Sheet is empty.", ok: false });
+        e.target.value = "";
+        return;
       }
-      if (!batch.length) { setBulkMsg({ text: `No valid rows found. ${skipped} row(s) skipped.`, ok: false }); return; }
-      const res = await bulkInward(batch);
-      setBulkMsg({ text: `✓ ${res.inserted} entr${res.inserted === 1 ? 'y' : 'ies'} imported.${skipped ? ` ${skipped} skipped.` : ''}`, ok: true });
+      const today = todayStr();
+
+      // Match key: Material + Vendor + Date + Challan/PO no + Qty
+      const keyOf = (o) =>
+        [
+          (o.name || "").trim().toLowerCase(),
+          (o.vendor || "").trim().toLowerCase(),
+          (o.date || "").trim(),
+          (o.challan || "").trim().toLowerCase(),
+          (o.po || "").trim().toLowerCase(),
+          String(parseFloat(o.qty) || 0),
+        ].join("|||");
+
+      const existingByKey = {};
+      entries.forEach((en) => {
+        existingByKey[keyOf(en)] = en;
+      });
+
+      const batch = [];
+      const toDelete = new Set();
+      const skips = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const excelRow = i + 2; // header is row 1
+
+        const matName = pickCol(row, [
+          "materialname",
+          "material",
+          "name",
+          "materialdescription",
+          "description",
+        ]);
+        const qtyRaw = pickCol(row, [
+          "qty",
+          "quantity",
+          "receivedqty",
+          "receivedquantity",
+        ]);
+        const qty = parseFloat(qtyRaw);
+        const vendor = pickCol(row, ["vendorname", "vendor", "supplier"]);
+        const by = pickCol(row, ["receivedby", "by"]);
+        const location = pickCol(row, ["location", "rack", "warehouse"]);
+        const po = pickCol(row, ["pono", "po"]);
+        const challan = pickCol(row, [
+          "challanno",
+          "invoiceno",
+          "challan",
+          "invoice",
+        ]);
+
+        const skipInfo = {
+          row: excelRow,
+          material: matName || "(blank)",
+          vendor: vendor || "—",
+          qty: qtyRaw || "—",
+          po: po || "—",
+          challan: challan || "—",
+        };
+
+        if (!matName) {
+          skips.push({ ...skipInfo, reason: "Material name is blank" });
+          continue;
+        }
+        const m = master.find(
+          (x) => x.name.toLowerCase() === matName.toLowerCase(),
+        );
+        if (!m) {
+          skips.push({
+            ...skipInfo,
+            reason: `"${matName}" not found in master list`,
+          });
+          continue;
+        }
+        if (!qty || qty <= 0) {
+          skips.push({
+            ...skipInfo,
+            reason: "Qty is missing or not a valid number",
+          });
+          continue;
+        }
+        if (!vendor) {
+          skips.push({ ...skipInfo, reason: "Vendor name is blank" });
+          continue;
+        }
+        if (!by) {
+          skips.push({ ...skipInfo, reason: "Received By is blank" });
+          continue;
+        }
+        if (!location) {
+          skips.push({ ...skipInfo, reason: "Location is blank" });
+          continue;
+        }
+        if (!po && !challan) {
+          skips.push({
+            ...skipInfo,
+            reason: "Both PO No and Challan No are blank (need at least one)",
+          });
+          continue;
+        }
+
+        const date =
+          parseExcelDate(pickCol(row, ["date", "entrydate"])) || today;
+        const newEntry = {
+          date,
+          invdate: parseExcelDate(pickCol(row, ["invoicedate", "invdate"])),
+          challan,
+          po,
+          vendor,
+          name: m.name,
+          type: m.type,
+          code: m.code,
+          category: m.category,
+          uom: m.uom,
+          qty,
+          by,
+          location,
+          remarks: pickCol(row, ["remarks", "notes"]),
+          price: 0,
+        };
+
+        const key = keyOf(newEntry);
+        const match = existingByKey[key];
+        if (match) {
+          toDelete.add(match._id);
+          delete existingByKey[key];
+        }
+
+        newEntry._excelRow = excelRow;
+        newEntry._isReplace = !!match;
+        batch.push(newEntry);
+      }
+
+      setSkippedRows(skips);
+
+      if (!batch.length) {
+        setBulkMsg({
+          text: `No valid rows found in "${file.name}". ${skips.length} row(s) skipped — see details below.`,
+          ok: false,
+        });
+        e.target.value = "";
+        return;
+      }
+
+      setPending({
+        fileName: file.name,
+        batch,
+        toDelete: Array.from(toDelete),
+      });
+      setBulkMsg({
+        text: `Ready to upload "${file.name}" — review below, then press Confirm & Upload. Nothing has been saved yet.`,
+        ok: true,
+      });
+    } catch (err) {
+      setBulkMsg({ text: "Error: " + err.message, ok: false });
+    }
+    e.target.value = "";
+  }
+
+  /* ── STEP 2: user confirmed — delete matches, then insert ───────────── */
+  async function confirmUpload() {
+    if (!pending) return;
+    setUploading(true);
+    setBulkMsg({ text: "Uploading…", ok: true });
+    try {
+      for (const id of pending.toDelete) {
+        try {
+          await deleteInward(id);
+        } catch {
+          /* continue */
+        }
+      }
+      const clean = pending.batch.map(
+        ({ _excelRow, _isReplace, ...rest }) => rest,
+      );
+      const res = await bulkInward(clean);
+
+      const parts = [
+        `✓ ${res.inserted} entr${res.inserted === 1 ? "y" : "ies"} imported.`,
+      ];
+      if (pending.toDelete.length)
+        parts.push(
+          `${pending.toDelete.length} existing entr${pending.toDelete.length === 1 ? "y" : "ies"} replaced.`,
+        );
+      if (skippedRows.length)
+        parts.push(`${skippedRows.length} skipped — see details below.`);
+      setBulkMsg({ text: parts.join(" "), ok: true });
+      setPending(null);
       load();
     } catch (err) {
-      setBulkMsg({ text: 'Error: ' + err.message, ok: false });
+      setBulkMsg({ text: "Error: " + err.message, ok: false });
+    } finally {
+      setUploading(false);
     }
-    e.target.value = '';
+  }
+
+  function cancelUpload() {
+    setPending(null);
+    setSkippedRows([]);
+    setBulkMsg({ text: "Upload cancelled — nothing was saved.", ok: true });
+  }
+
+  function downloadSkippedRows() {
+    exportXlsx(
+      [
+        "Row #",
+        "Material",
+        "Vendor",
+        "Qty",
+        "PO No",
+        "Challan No",
+        "Reason skipped",
+      ],
+      skippedRows.map((s) => [
+        s.row,
+        s.material,
+        s.vendor,
+        s.qty,
+        s.po,
+        s.challan,
+        s.reason,
+      ]),
+      "Skipped Rows",
+      "Skipped_Inward_Rows.xlsx",
+    );
   }
 
   function downloadTemplate() {
-    const headers = ['Date', 'Invoice Date', 'Challan No', 'PO No', 'Vendor Name', 'Material Name', 'Qty', 'Received By', 'Location', 'Remarks'];
-    const example = [todayStr(), '', 'INV-1001', 'PO-2001', 'ABC Suppliers', '[Material Name from master]', '10', 'Store Keeper', 'Rack A', ''];
-    if (canSeePrice) {
-      headers.push('Price');
-      example.push('500');
-    }
-    exportXlsx(headers, [example], 'Inward Template', 'Stockyard_Inward_Template.xlsx');
+    exportXlsx(
+      [
+        "Date",
+        "Invoice Date",
+        "Challan No",
+        "PO No",
+        "Vendor Name",
+        "Material Name",
+        "Qty",
+        "Received By",
+        "Location",
+        "Remarks",
+      ],
+      [
+        [
+          formatDateDMY(todayStr()),
+          "",
+          "INV-1001",
+          "PO-2001",
+          "ABC Suppliers",
+          "[Material Name from master]",
+          "10",
+          "Store Keeper",
+          "Rack A",
+          "",
+        ],
+      ],
+      "Inward Template",
+      "Stockyard_Inward_Template.xlsx",
+    );
   }
 
-  const validManualCount = manualRows.filter(r => r.name && parseFloat(r.qty) > 0).length;
+  const validManualCount = manualRows.filter(
+    (r) => r.name && parseFloat(r.qty) > 0,
+  ).length;
+
+  const filterInputStyle = {
+    border: "1.5px solid var(--line)",
+    borderRadius: "var(--radius)",
+    padding: "10px 14px",
+    height: "var(--input-h)",
+    fontSize: "13.5px",
+    fontFamily: "'Inter', 'Poppins', sans-serif",
+    background: "#fff",
+    color: "var(--ink)",
+    width: "100%",
+    transition: "border-color var(--transition), box-shadow var(--transition)",
+  };
+  const filterFocus = (e) => {
+    e.target.style.borderColor = "var(--teal)";
+    e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
+  };
+  const filterBlur = (e) => {
+    e.target.style.borderColor = "var(--line)";
+    e.target.style.boxShadow = "none";
+  };
+  const filterLabelStyle = {
+    fontSize: 12,
+    color: "#5a5444",
+    fontWeight: 600,
+    letterSpacing: "0.1px",
+  };
+  const dmyHint = {
+    fontSize: 11,
+    color: "var(--text-3, #8a8270)",
+    marginTop: 2,
+    display: "block",
+  };
 
   return (
     <>
@@ -467,170 +1254,228 @@ export default function InwardEntry() {
       )}
 
       <style>{`
-        .compact-form .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 16px; }
-        .compact-form .field.full { grid-column: 1 / -1; }
-        .compact-form .field label { font-size: 12px; font-weight: 600; margin-bottom: 5px; display: block; color: var(--ink); }
-        .compact-form .field input, .compact-form .field select { padding: 8px 10px; font-size: 13.5px; height: 36px; border-radius: 8px; border: 1px solid var(--line); transition: border-color 0.15s ease, box-shadow 0.15s ease; }
-        .compact-form .field input:focus, .compact-form .field select:focus { outline: none; border-color: #1f5c46; box-shadow: 0 0 0 3px rgba(31,92,70,0.14); }
-        .compact-form .section-label { display: flex; align-items: center; gap: 10px; margin: 22px 0 12px; font-size: 11px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-3); }
-        .compact-form .section-label:first-of-type { margin-top: 2px; }
-        .compact-form .section-label::after { content: ''; flex: 1; height: 1px; background: var(--line); }
-        .compact-form .required-legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
-        .compact-form .required-legend .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-3); background: var(--paper-dim); border: 1px solid var(--line); padding: 4px 10px; border-radius: 20px; }
-        .compact-form .actionrow { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); align-items: center; }
-        .compact-form .doc-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px 16px; margin-bottom: 14px; }
-        @media (max-width: 900px) { .compact-form .doc-row { grid-template-columns: repeat(3, 1fr); } }
-        @media (max-width: 560px) { .compact-form .doc-row { grid-template-columns: repeat(2, 1fr); } }
-        .entries-section .tablewrap { max-height: 82vh !important; }
+        .compact-form .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap:14px 16px; }
+        .compact-form .field.full { grid-column: 1/-1; }
+        .compact-form .field label { font-size:12px; font-weight:600; margin-bottom:5px; display:block; color:var(--ink); }
+        .compact-form .field input, .compact-form .field select { padding:8px 10px; font-size:13.5px; height:36px; border-radius:8px; border:1px solid var(--line); }
+        .compact-form .field input:focus, .compact-form .field select:focus { outline:none; border-color:#1f5c46; box-shadow:0 0 0 3px rgba(31,92,70,.14); }
+        .compact-form .section-label { display:flex; align-items:center; gap:10px; margin:22px 0 12px; font-size:11px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-3); }
+        .compact-form .section-label::after { content:''; flex:1; height:1px; background:var(--line); }
+        .compact-form .actionrow { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); align-items:center; }
+        .compact-form .doc-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px 16px; margin-bottom:14px; }
+
+        .dup-group { border:1.5px solid var(--line); border-radius:10px; overflow:hidden; margin-bottom:0; }
+        .dup-group-header { background:var(--paper-dim); padding:10px 16px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+        .daterange { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+        .daterange .f label { display:block; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--text-3); margin-bottom:4px; }
+        .daterange .f input { padding:7px 10px; font-size:13px; height:34px; border-radius:8px; border:1px solid var(--line); }
+
+        .stage-box { border:1.5px solid var(--line); border-radius:10px; overflow:hidden; margin-top:14px; text-align:left; }
+        .stage-head { background:var(--paper-dim); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--line); }
+        .stage-stat { display:inline-flex; flex-direction:column; gap:2px; margin-right:18px; }
+        .stage-stat b { font-size:18px; line-height:1; color:var(--ink); }
+        .stage-stat span { font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.05em; }
+
+        /* Recent inward entries — taller rows, taller section */
+        .entries-section .tablewrap { max-height: 82vh !important; overflow-x:auto; -webkit-overflow-scrolling: touch; }
         .entries-section table td, .entries-section table th { padding: 16px 14px; }
+        .filterbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-bottom:12px; }
+
+        /* ---------- Responsive breakpoints ---------- */
+        @media (max-width:1100px) { .compact-form .doc-row { grid-template-columns:repeat(4,1fr); } }
+        @media (max-width:900px) {
+          .compact-form .doc-row { grid-template-columns:repeat(3,1fr); }
+          .compact-form .formgrid { grid-template-columns:repeat(2,1fr); }
+        }
+        @media (max-width:600px) {
+          .pagehead { flex-direction:column; align-items:flex-start; gap:8px; }
+          .card { padding:12px; }
+          .compact-form .doc-row { grid-template-columns:1fr; }
+          .compact-form .formgrid { grid-template-columns:1fr; }
+          .actionrow { flex-direction:column; align-items:stretch; }
+          .actionrow .btn { width:100%; }
+          .entries-section table { min-width:900px; }
+          .uploadbox { flex-direction:column; align-items:flex-start; }
+          .filterbar > label, .filterbar > button { width:100%; }
+        }
+        @media (max-width:420px) {
+          .compact-form h3, .card h3 { font-size:15px; }
+          .pagehead-text h2 { font-size:18px; }
+        }
       `}</style>
 
       <div className="pagehead">
         <div className="pagehead-text">
           <h2>Inward Entry</h2>
-          <p>Record materials received into stock. Details auto-fill from the master list.</p>
+          <p>
+            Record materials received into stock. Details auto-fill from the
+            master list.
+          </p>
         </div>
       </div>
 
-      {/* Bulk upload */}
+      {/* ── Bulk upload ── */}
       <div className="card">
         <h3>Bulk upload</h3>
         <div className="uploadbox">
           <label htmlFor="inward-bulk">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
             Choose sheet (.xlsx, .xls, .csv)
           </label>
-          <input type="file" id="inward-bulk" accept=".xlsx,.xls,.csv" onChange={handleBulk} />
+          <input
+            type="file"
+            id="inward-bulk"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleBulkFile}
+          />
           <div className="hint">
-            Required: <strong>Material Name, Qty</strong> — All other columns optional: Date, Invoice Date, Challan No, PO No, Vendor Name, Received By, Location, Remarks{canSeePrice ? ', Price' : ''}<br />
-            Material Name must match an entry in the master list.{' '}
+            Required:{" "}
+            <strong>
+              Material Name, Qty, Vendor Name, Received By, Location
+            </strong>
+            , plus <strong>either</strong> PO No <strong>or</strong> Challan No
+            <br />
+            Date format dd/mm/yyyy. The file is checked first — nothing is saved
+            until you confirm.{" "}
             <button onClick={downloadTemplate}>Download template</button>
           </div>
-          {bulkMsg.text && <div className={`alert ${bulkMsg.ok ? 'ok' : 'err'}`} style={{ marginTop: 14, textAlign: 'left' }}>{bulkMsg.text}</div>}
-        </div>
-      </div>
 
-      {/* New entry form */}
-      <div className="card compact-form">
-        <h3>New inward entry</h3>
-        <div className="required-legend">
-          <span className="chip"><strong style={{ color: 'var(--red)' }}>*</strong>&nbsp;required</span>
-          <span className="chip"><strong style={{ color: 'var(--red)' }}>*†</strong>&nbsp;one of these two is required</span>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="section-label">Document details</div>
-          <div className="doc-row">
-            <div className="field">
-              <label>Entry date <span style={{ color: 'var(--red)' }}>*</span></label>
-              <input required type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
+          {bulkMsg.text && (
+            <div
+              className={`alert ${bulkMsg.ok ? "ok" : "err"}`}
+              style={{ marginTop: 14, textAlign: "left" }}
+            >
+              {bulkMsg.text}
             </div>
-            <div className="field">
-              <label>Invoice date</label>
-              <input type="date" value={form.invdate} onChange={e => setForm(f => ({ ...f, invdate: e.target.value }))} />
-            </div>
-            <div className="field">
-              <label>Challan / Invoice no <span style={{ color: 'var(--red)' }}>*†</span></label>
-              <input value={form.challan} onChange={e => setForm(f => ({ ...f, challan: e.target.value }))} placeholder="e.g. INV-1023" />
-            </div>
-            <div className="field">
-              <label>PO Number <span style={{ color: 'var(--red)' }}>*†</span></label>
-              {poManual ? (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    value={form.po}
-                    onChange={e => setForm(f => ({ ...f, po: e.target.value }))}
-                    placeholder="Enter PO number manually"
-                    autoFocus
-                    style={{ flex: 1 }}
-                  />
+          )}
+
+          {/* ── Staged upload preview + confirm ── */}
+          {pending && (
+            <div className="stage-box">
+              <div className="stage-head">
+                <div style={{ display: "flex", flexWrap: "wrap" }}>
+                  <span className="stage-stat">
+                    <b>{pending.batch.length}</b>
+                    <span>rows to save</span>
+                  </span>
+                  <span className="stage-stat">
+                    <b style={{ color: "var(--rust-dark)" }}>
+                      {pending.toDelete.length}
+                    </b>
+                    <span>will replace existing</span>
+                  </span>
+                  <span className="stage-stat">
+                    <b style={{ color: "var(--red)" }}>{skippedRows.length}</b>
+                    <span>skipped</span>
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    style={{ whiteSpace: 'nowrap' }}
-                    onClick={() => { setPoManual(false); setForm(f => ({ ...f, po: '' })); setPoRows([]); }}
+                    className="btn btn-ghost"
+                    onClick={cancelUpload}
+                    disabled={uploading}
                   >
-                    ← Back
+                    Cancel
+                  </button>
+                  <button
+                    className="btn btn-in"
+                    onClick={confirmUpload}
+                    disabled={uploading}
+                  >
+                    {uploading
+                      ? "Uploading…"
+                      : `✓ Confirm & Upload ${pending.batch.length} row${pending.batch.length === 1 ? "" : "s"}`}
                   </button>
                 </div>
-              ) : (
-                <select
-                  value={form.po}
-                  onChange={e => {
-                    if (e.target.value === '__manual__') {
-                      setPoManual(true);
-                      setForm(f => ({ ...f, po: '' }));
-                      setPoRows([]);
-                    } else {
-                      handlePoSelect(e.target.value);
-                    }
-                  }}
-                >
-                  <option value="">— Select PO (optional) —</option>
-                  {poList.map(po => (
-                    <option key={po._id} value={po.poNumber}>
-                      {po.poNumber} — {po.vendorName} ({po.remainingItems ?? po.items?.length ?? 0} items pending)
-                    </option>
-                  ))}
-                  <option value="__manual__">✎ Enter PO number manually…</option>
-                </select>
-              )}
-            </div>
-            <div className="field">
-              <label>Received by <span style={{ color: 'var(--red)' }}>*</span></label>
-              <input required value={form.by} onChange={e => setForm(f => ({ ...f, by: e.target.value }))} placeholder="Your name" />
-            </div>
-          </div>
-
-          <div className="formgrid">
-            <div className="field full">
-              <label>Vendor name <span style={{ color: 'var(--red)' }}>*</span></label>
-              <input required value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Auto-filled from PO, or enter manually" />
-            </div>
-          </div>
-
-          {poLoading && <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '12px 0' }}>Loading PO items…</p>}
-
-          {/* PO Mode */}
-          {form.po && poRows.length > 0 && (
-            <div>
-              <div className="section-label">Materials from {form.po}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8, marginTop: -6 }}>
-                Edit received qty, location and remarks per item
               </div>
-              <div className="tablewrap">
-                <table style={{ minWidth: 700 }}>
+
+              {pending.toDelete.length > 0 && (
+                <div
+                  className="alert err"
+                  style={{ margin: 12, textAlign: "left" }}
+                >
+                  ⚠ {pending.toDelete.length} existing entr
+                  {pending.toDelete.length === 1 ? "y" : "ies"} will be deleted
+                  and replaced by the uploaded data. This affects stock balances
+                  and cannot be undone.
+                </div>
+              )}
+
+              <div
+                className="tablewrap"
+                style={{ margin: 0, maxHeight: 320, overflowY: "auto" }}
+              >
+                <table style={{ minWidth: 1100 }}>
                   <thead>
                     <tr>
-                      <th>Material</th><th>Code</th><th>Category</th><th>UOM</th>
-                      <th className="num">PO Qty</th>
-                      <th className="num" style={{ minWidth: 90 }}>Recv Qty *</th>
-                      <th style={{ minWidth: 130 }}>Location *</th>
-                      <th style={{ minWidth: 130 }}>Remarks</th>
+                      <th>Row #</th>
+                      <th>Date</th>
+                      <th>Material</th>
+                      <th>Vendor</th>
+                      <th>Challan</th>
+                      <th>PO</th>
+                      <th className="num">Qty</th>
+                      <th>Location</th>
+                      <th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {poRows.map(r => (
-                      <tr key={r._key}>
+                    {pending.batch.map((r, i) => (
+                      <tr
+                        key={i}
+                        style={{
+                          background: r._isReplace ? "#fff8f4" : undefined,
+                        }}
+                      >
+                        <td className="mono">{r._excelRow}</td>
+                        <td>{formatDateDMY(r.date)}</td>
                         <td style={{ fontWeight: 500 }}>{r.name}</td>
-                        <td className="mono">{r.code || '—'}</td>
-                        <td>{r.category || '—'}</td>
-                        <td>{r.uom || '—'}</td>
-                        <td className="num" style={{ color: 'var(--text-3)' }}>{r.poQty}</td>
-                        <td style={tdS}>
-                          <input type="number" min="0.0001" step="any" value={r.qty}
-                            onChange={e => updatePoRow(r._key, { qty: e.target.value })}
-                            style={{ width: 80, textAlign: 'right' }} />
-                        </td>
-                        <td style={tdS}>
-                          <input value={r.location} onChange={e => updatePoRow(r._key, { location: e.target.value })}
-                            placeholder="e.g. Rack A" style={{ width: '100%' }} />
-                        </td>
-                        <td style={tdS}>
-                          <input value={r.remarks} onChange={e => updatePoRow(r._key, { remarks: e.target.value })}
-                            placeholder="Optional" style={{ width: '100%' }} />
+                        <td>{r.vendor || "—"}</td>
+                        <td className="mono">{r.challan || "—"}</td>
+                        <td className="mono">{r.po || "—"}</td>
+                        <td className="num">{formatNum(r.qty)}</td>
+                        <td>{r.location || "—"}</td>
+                        <td>
+                          {r._isReplace ? (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: "var(--rust-dark)",
+                                background: "#f8ede7",
+                                padding: "2px 8px",
+                                borderRadius: 10,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              REPLACES EXISTING
+                            </span>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                color: "var(--teal-dark)",
+                                background: "var(--teal-light)",
+                                padding: "2px 8px",
+                                borderRadius: 10,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              NEW
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -640,7 +1485,580 @@ export default function InwardEntry() {
             </div>
           )}
 
-          {/* Manual Mode — multi-item table */}
+          {/* ── Skipped rows ── */}
+          {skippedRows.length > 0 && (
+            <div style={{ marginTop: 14, textAlign: "left" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginBottom: 8,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "var(--text-3)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  Skipped rows ({skippedRows.length})
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={downloadSkippedRows}
+                >
+                  Download skipped rows
+                </button>
+              </div>
+              <div
+                className="tablewrap"
+                style={{ maxHeight: 280, overflowY: "auto" }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Row #</th>
+                      <th>Material</th>
+                      <th>Vendor</th>
+                      <th className="num">Qty</th>
+                      <th>PO No</th>
+                      <th>Challan No</th>
+                      <th>Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {skippedRows.map((s, i) => (
+                      <tr key={i}>
+                        <td className="mono">{s.row}</td>
+                        <td>{s.material}</td>
+                        <td>{s.vendor}</td>
+                        <td className="num">{s.qty}</td>
+                        <td className="mono">{s.po}</td>
+                        <td className="mono">{s.challan}</td>
+                        <td style={{ color: "var(--rust-dark)" }}>
+                          {s.reason}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Find & Remove Duplicates ── */}
+      <div className="card">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0 }}>Find &amp; Remove Duplicates</h3>
+            {!dupMode && (
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-3)",
+                  margin: "4px 0 0",
+                }}
+              >
+                Scan inward entries for duplicate records by material, vendor,
+                date, qty and challan no.
+              </p>
+            )}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {dupMode && selectedDups.size > 0 && (
+              <button
+                className="btn-del"
+                onClick={deleteSelectedDuplicates}
+                style={{ fontSize: 13, padding: "8px 16px" }}
+              >
+                🗑 Delete {selectedDups.size} selected entr
+                {selectedDups.size === 1 ? "y" : "ies"}
+              </button>
+            )}
+            {dupMode && dupGroups.length > 0 && (
+              <button className="btn btn-ghost" onClick={selectAllDuplicates}>
+                Auto-select duplicates
+              </button>
+            )}
+            {dupMode && (
+              <button className="btn btn-ghost" onClick={clearDupMode}>
+                ✕ Close
+              </button>
+            )}
+            <button
+              className="btn btn-in"
+              onClick={() => {
+                setDupMode(true);
+                findDuplicates();
+              }}
+              disabled={dupLoading}
+            >
+              {dupLoading ? "Scanning…" : "🔍 Find Duplicates"}
+            </button>
+          </div>
+        </div>
+
+        <div className="daterange">
+          <div className="f">
+            <label>From date</label>
+            <input
+              type="date"
+              value={dupFrom}
+              max={dupTo || undefined}
+              onChange={(e) => setDupFrom(e.target.value)}
+            />
+            {dupFrom && <span style={dmyHint}>{formatDateDMY(dupFrom)}</span>}
+          </div>
+          <div className="f">
+            <label>To date</label>
+            <input
+              type="date"
+              value={dupTo}
+              min={dupFrom || undefined}
+              onChange={(e) => setDupTo(e.target.value)}
+            />
+            {dupTo && <span style={dmyHint}>{formatDateDMY(dupTo)}</span>}
+          </div>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setDupFrom("");
+              setDupTo("");
+              if (dupMode) findDuplicates("", "");
+            }}
+          >
+            Clear dates
+          </button>
+          <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+            Leave blank to scan all entries
+          </span>
+        </div>
+
+        {dupMode && (
+          <div style={{ marginTop: 16 }}>
+            {dupMsg && (
+              <div
+                className={`alert ${dupGroups.length ? "err" : "ok"}`}
+                style={{ marginBottom: dupGroups.length ? 16 : 0 }}
+              >
+                {dupMsg}
+              </div>
+            )}
+
+            {dupGroups.length > 0 && (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 16 }}
+              >
+                {dupGroups.map((group, gi) => (
+                  <div key={gi} className="dup-group">
+                    <div className="dup-group-header">
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          textTransform: "uppercase",
+                          color: "var(--rust-dark)",
+                          background: "#f8ede7",
+                          padding: "3px 8px",
+                          borderRadius: 10,
+                        }}
+                      >
+                        {group.entries.length} entries
+                      </span>
+                      <span style={{ fontSize: 12, color: "#8a8270" }}>
+                        {group.reason}
+                      </span>
+                      <label
+                        style={{
+                          marginLeft: "auto",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 12,
+                          color: "var(--text-3)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={group.entries.every((e) =>
+                            selectedDups.has(e._id),
+                          )}
+                          onChange={(ev) => {
+                            const next = new Set(selectedDups);
+                            group.entries.forEach((entry) => {
+                              if (ev.target.checked) next.add(entry._id);
+                              else next.delete(entry._id);
+                            });
+                            setSelectedDups(next);
+                          }}
+                        />
+                        Select all in group
+                      </label>
+                    </div>
+
+                    <div className="tablewrap" style={{ margin: 0 }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{ width: 40 }}></th>
+                            <th>Date</th>
+                            <th>Material</th>
+                            <th>Vendor</th>
+                            <th>Challan</th>
+                            <th>PO</th>
+                            <th className="num">Qty</th>
+                            <th>Location</th>
+                            <th>Remarks</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.entries.map((e, ei) => {
+                            const isSelected = selectedDups.has(e._id);
+                            const isFirst = ei === 0;
+                            return (
+                              <tr
+                                key={e._id}
+                                style={{
+                                  background: isSelected
+                                    ? "#fef2f0"
+                                    : isFirst
+                                      ? "#f0faf8"
+                                      : undefined,
+                                  opacity: isSelected ? 0.85 : 1,
+                                  cursor: "pointer",
+                                }}
+                                onClick={() => toggleDupSelect(e._id)}
+                              >
+                                <td onClick={(ev) => ev.stopPropagation()}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => toggleDupSelect(e._id)}
+                                  />
+                                </td>
+                                <td>{formatDateDMY(e.date)}</td>
+                                <td style={{ fontWeight: 500 }}>{e.name}</td>
+                                <td>{e.vendor || "—"}</td>
+                                <td className="mono">{e.challan || "—"}</td>
+                                <td className="mono">{e.po || "—"}</td>
+                                <td className="num">{formatNum(e.qty)}</td>
+                                <td>{e.location || "—"}</td>
+                                <td>{e.remarks || "—"}</td>
+                                <td>
+                                  {isFirst ? (
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: "var(--teal-dark)",
+                                        background: "var(--teal-light)",
+                                        padding: "2px 8px",
+                                        borderRadius: 10,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      ✓ KEEP
+                                    </span>
+                                  ) : (
+                                    <span
+                                      style={{
+                                        fontSize: 10,
+                                        fontWeight: 700,
+                                        color: "var(--rust-dark)",
+                                        background: "#f8ede7",
+                                        padding: "2px 8px",
+                                        borderRadius: 10,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                    >
+                                      DUPLICATE
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── New entry form ── */}
+      <div className="card compact-form">
+        <h3>New inward entry</h3>
+        <p
+          style={{ fontSize: 12, color: "var(--text-3)", margin: "-6px 0 12px" }}
+        >
+          <span style={{ color: "var(--red)" }}>*</span> required &nbsp;·&nbsp;
+          <span style={{ color: "var(--red)" }}>*†</span> at least one of these
+          two is required
+        </p>
+        <form onSubmit={handleSubmit}>
+          <div className="section-label">Document details</div>
+          <div className="doc-row">
+            <div className="field">
+              <label>
+                Entry date <span style={{ color: "var(--red)" }}>*</span>
+              </label>
+              <input
+                required
+                type="date"
+                value={form.date}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, date: e.target.value }))
+                }
+              />
+              {form.date && (
+                <span style={dmyHint}>{formatDateDMY(form.date)}</span>
+              )}
+            </div>
+            <div className="field">
+              <label>Invoice date</label>
+              <input
+                type="date"
+                value={form.invdate}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, invdate: e.target.value }))
+                }
+              />
+              {form.invdate && (
+                <span style={dmyHint}>{formatDateDMY(form.invdate)}</span>
+              )}
+            </div>
+            <div className="field">
+              <label>
+                Challan / Invoice no{" "}
+                <span style={{ color: "var(--red)" }}>*†</span>
+              </label>
+              <input
+                value={form.challan}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, challan: e.target.value }))
+                }
+                placeholder="e.g. INV-1023"
+              />
+            </div>
+            <div className="field">
+              <label>
+                PO Number <span style={{ color: "var(--red)" }}>*†</span>
+              </label>
+              {poManual ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    value={form.po}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, po: e.target.value }))
+                    }
+                    placeholder="Enter PO number manually"
+                    autoFocus
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ whiteSpace: "nowrap" }}
+                    onClick={() => {
+                      setPoManual(false);
+                      setForm((f) => ({ ...f, po: "" }));
+                      setPoRows([]);
+                    }}
+                  >
+                    ← Back
+                  </button>
+                </div>
+              ) : (
+                <select
+                  value={form.po}
+                  onChange={(e) => {
+                    if (e.target.value === "__manual__") {
+                      setPoManual(true);
+                      setForm((f) => ({ ...f, po: "" }));
+                      setPoRows([]);
+                    } else handlePoSelect(e.target.value);
+                  }}
+                >
+                  <option value="">— Select PO (optional) —</option>
+                  {poList.map((po) => (
+                    <option key={po._id} value={po.poNumber}>
+                      {po.poNumber} — {po.vendorName} (
+                      {po.remainingItems ?? po.items?.length ?? 0} items pending)
+                    </option>
+                  ))}
+                  <option value="__manual__">✎ Enter PO number manually…</option>
+                </select>
+              )}
+            </div>
+            <div className="field">
+              <label>
+                Received by <span style={{ color: "var(--red)" }}>*</span>
+              </label>
+              <select
+                required
+                value={getSelectValue(form.by, RECEIVED_BY_OPTIONS)}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    by:
+                      e.target.value === "Other" ? OTHER_VALUE : e.target.value,
+                  }))
+                }
+              >
+                <option value="">— Select received by —</option>
+                {RECEIVED_BY_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                <option value="Other">Other</option>
+              </select>
+              {getSelectValue(form.by, RECEIVED_BY_OPTIONS) === "Other" && (
+                <input
+                  required
+                  value={form.by === OTHER_VALUE ? "" : form.by}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, by: e.target.value }))
+                  }
+                  placeholder="Enter name"
+                  style={{ marginTop: 8 }}
+                />
+              )}
+            </div>
+          </div>
+
+          <div className="formgrid">
+            <div className="field full">
+              <label>
+                Vendor name <span style={{ color: "var(--red)" }}>*</span>
+              </label>
+              <input
+                required
+                value={form.vendor}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, vendor: e.target.value }))
+                }
+                placeholder="Auto-filled from PO, or enter manually"
+              />
+            </div>
+          </div>
+
+          {poLoading && (
+            <p style={{ fontSize: 13, color: "var(--text-3)", margin: "12px 0" }}>
+              Loading PO items…
+            </p>
+          )}
+
+          {/* PO Mode */}
+          {form.po && poRows.length > 0 && (
+            <div>
+              <div className="section-label">Materials from {form.po}</div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--text-3)",
+                  marginBottom: 8,
+                  marginTop: -6,
+                }}
+              >
+                Edit received qty, location and remarks per item
+              </div>
+              <div className="tablewrap">
+                <table style={{ minWidth: 700 }}>
+                  <thead>
+                    <tr>
+                      <th>Material</th>
+                      <th>Code</th>
+                      <th>Category</th>
+                      <th>UOM</th>
+                      <th className="num">PO Qty</th>
+                      <th className="num" style={{ minWidth: 90 }}>
+                        Recv Qty *
+                      </th>
+                      <th style={{ minWidth: 130 }}>Location *</th>
+                      <th style={{ minWidth: 130 }}>Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poRows.map((r) => (
+                      <tr key={r._key}>
+                        <td style={{ fontWeight: 500 }}>{r.name}</td>
+                        <td className="mono">{r.code || "—"}</td>
+                        <td>{r.category || "—"}</td>
+                        <td>{r.uom || "—"}</td>
+                        <td className="num" style={{ color: "var(--text-3)" }}>
+                          {r.poQty}
+                        </td>
+                        <td style={tdS}>
+                          <input
+                            type="number"
+                            min="0.0001"
+                            step="any"
+                            value={r.qty}
+                            onChange={(e) =>
+                              updatePoRow(r._key, { qty: e.target.value })
+                            }
+                            style={{ width: 80, textAlign: "right" }}
+                          />
+                        </td>
+                        <td style={tdS}>
+                          <input
+                            value={r.location}
+                            onChange={(e) =>
+                              updatePoRow(r._key, { location: e.target.value })
+                            }
+                            placeholder="e.g. Rack A"
+                            style={{ width: "100%" }}
+                          />
+                        </td>
+                        <td style={tdS}>
+                          <input
+                            value={r.remarks}
+                            onChange={(e) =>
+                              updatePoRow(r._key, { remarks: e.target.value })
+                            }
+                            placeholder="Optional"
+                            style={{ width: "100%" }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Manual Mode */}
           {(!form.po || poManual || (!poLoading && poRows.length === 0)) && (
             <>
               <div className="section-label">Material &amp; quantity</div>
@@ -660,57 +2078,144 @@ export default function InwardEntry() {
                     </tr>
                   </thead>
                   <tbody>
-                    {manualRows.map(r => (
+                    {manualRows.map((r) => (
                       <tr key={r._key}>
                         <td>
                           <select
                             value={r.name}
-                            onChange={e => autofillManualRow(r._key, e.target.value)}
-                            style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }}
+                            onChange={(e) =>
+                              autofillManualRow(r._key, e.target.value)
+                            }
+                            style={{
+                              width: "100%",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
                           >
                             <option value="">— Select material —</option>
-                            {master.map(m => <option key={m._id} value={m.name}>{m.name}</option>)}
+                            {master.map((m) => (
+                              <option key={m._id} value={m.name}>
+                                {m.name}
+                              </option>
+                            ))}
                           </select>
                         </td>
                         <td>
-                          <input readOnly value={r.type} placeholder="—"
-                            style={{ width: '100%', background: 'var(--paper-dim)', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }} />
-                        </td>
-                        <td>
-                          <input readOnly value={r.code} placeholder="—"
-                            style={{ width: '100%', background: 'var(--paper-dim)', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }} />
-                        </td>
-                        <td>
-                          <input readOnly value={r.category} placeholder="—"
-                            style={{ width: '100%', background: 'var(--paper-dim)', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }} />
-                        </td>
-                        <td>
-                          <input readOnly value={r.uom} placeholder="—"
-                            style={{ width: 60, background: 'var(--paper-dim)', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }} />
+                          <input
+                            readOnly
+                            value={r.type}
+                            placeholder="—"
+                            style={{
+                              width: "100%",
+                              background: "var(--paper-dim)",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
+                          />
                         </td>
                         <td>
                           <input
-                            type="number" min="0" step="any"
+                            readOnly
+                            value={r.code}
+                            placeholder="—"
+                            style={{
+                              width: "100%",
+                              background: "var(--paper-dim)",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            readOnly
+                            value={r.category}
+                            placeholder="—"
+                            style={{
+                              width: "100%",
+                              background: "var(--paper-dim)",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            readOnly
+                            value={r.uom}
+                            placeholder="—"
+                            style={{
+                              width: 60,
+                              background: "var(--paper-dim)",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
                             value={r.qty}
-                            onChange={e => updateManualRow(r._key, { qty: e.target.value })}
+                            onChange={(e) =>
+                              updateManualRow(r._key, { qty: e.target.value })
+                            }
                             placeholder="0"
-                            style={{ width: 80, textAlign: 'right', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }}
+                            style={{
+                              width: 80,
+                              textAlign: "right",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
                           />
                         </td>
                         <td>
                           <input
                             value={r.location}
-                            onChange={e => updateManualRow(r._key, { location: e.target.value })}
+                            onChange={(e) =>
+                              updateManualRow(r._key, {
+                                location: e.target.value,
+                              })
+                            }
                             placeholder="e.g. Rack 3"
-                            style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }}
+                            style={{
+                              width: "100%",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
                           />
                         </td>
                         <td>
                           <input
                             value={r.remarks}
-                            onChange={e => updateManualRow(r._key, { remarks: e.target.value })}
+                            onChange={(e) =>
+                              updateManualRow(r._key, {
+                                remarks: e.target.value,
+                              })
+                            }
                             placeholder="Optional"
-                            style={{ width: '100%', fontSize: 13, padding: '6px 8px', border: '1px solid var(--line)', borderRadius: 6 }}
+                            style={{
+                              width: "100%",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
                           />
                         </td>
                         <td>
@@ -719,127 +2224,123 @@ export default function InwardEntry() {
                             className="btn-del btn-sm"
                             onClick={() => removeManualRow(r._key)}
                             disabled={manualRows.length === 1}
-                          >✕</button>
+                          >
+                            ✕
+                          </button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={addManualRow} style={{ marginBottom: 8 }}>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={addManualRow}
+                style={{ marginBottom: 8 }}
+              >
                 + Add item
               </button>
             </>
           )}
 
           <div className="actionrow" style={{ marginTop: 16 }}>
-            <button className="btn btn-in" type="submit" disabled={loading || poLoading}>
+            <button
+              className="btn btn-in"
+              type="submit"
+              disabled={loading || poLoading}
+            >
               {!loading && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
                   <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                   <polyline points="17 21 17 13 7 13 7 21" />
                   <polyline points="7 3 7 8 15 8" />
                 </svg>
               )}
-              {loading ? 'Saving…' : (form.po && poRows.length > 0)
-                ? `Save ${poRows.length} inward entr${poRows.length === 1 ? 'y' : 'ies'}`
-                : `Save ${validManualCount > 0 ? validManualCount : ''} inward entr${validManualCount === 1 ? 'y' : 'ies'}`}
+              {loading
+                ? "Saving…"
+                : form.po && poRows.length > 0
+                  ? `Save ${poRows.length} inward entr${poRows.length === 1 ? "y" : "ies"}`
+                  : `Save ${validManualCount > 0 ? validManualCount : ""} inward entr${validManualCount === 1 ? "y" : "ies"}`}
             </button>
             {form.po && (
-              <button type="button" className="btn btn-ghost" onClick={() => { handlePoSelect(''); }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => handlePoSelect("")}
+              >
                 Clear PO
               </button>
             )}
-            {msg.text && <span className={`msg ${msg.ok ? 'ok' : 'err'}`}>{msg.text}</span>}
+            {msg.text && (
+              <span className={`msg ${msg.ok ? "ok" : "err"}`}>{msg.text}</span>
+            )}
           </div>
         </form>
       </div>
 
-      {/* Entries table */}
+      {/* ── All entries table ── */}
       <div className="card entries-section">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 240, gap: "6px" }}>
-            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>Search</span>
+        <div className="filterbar">
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 240,
+              gap: "6px",
+            }}
+          >
+            <span style={filterLabelStyle}>Search</span>
             <input
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Vendor / PO / challan / material / remarks"
-              style={{
-                border: "1.5px solid var(--line)",
-                borderRadius: "var(--radius)",
-                padding: "10px 14px",
-                height: "var(--input-h)",
-                fontSize: "13.5px",
-                fontFamily: "'Inter', 'Poppins', sans-serif",
-                background: "#fff",
-                color: "var(--ink)",
-                width: "100%",
-                transition: "border-color var(--transition), box-shadow var(--transition)",
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "var(--teal)";
-                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "var(--line)";
-                e.target.style.boxShadow = "none";
-              }}
+              placeholder="Material / vendor / challan / PO / location"
+              style={filterInputStyle}
+              onFocus={filterFocus}
+              onBlur={filterBlur}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
-            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>From date</span>
-            <input 
-              type="date" 
-              value={fromDate} 
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 170,
+              gap: "6px",
+            }}
+          >
+            <span style={filterLabelStyle}>From date</span>
+            <input
+              type="date"
+              value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              style={{
-                border: "1.5px solid var(--line)",
-                borderRadius: "var(--radius)",
-                padding: "10px 14px",
-                height: "var(--input-h)",
-                fontSize: "13.5px",
-                fontFamily: "'Inter', 'Poppins', sans-serif",
-                background: "#fff",
-                color: "var(--ink)",
-                width: "100%",
-                transition: "border-color var(--transition), box-shadow var(--transition)",
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "var(--teal)";
-                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "var(--line)";
-                e.target.style.boxShadow = "none";
-              }}
+              style={filterInputStyle}
+              onFocus={filterFocus}
+              onBlur={filterBlur}
             />
           </label>
-          <label style={{ display: "flex", flexDirection: "column", minWidth: 170, gap: "6px" }}>
-            <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>To date</span>
-            <input 
-              type="date" 
-              value={toDate} 
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minWidth: 170,
+              gap: "6px",
+            }}
+          >
+            <span style={filterLabelStyle}>To date</span>
+            <input
+              type="date"
+              value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              style={{
-                border: "1.5px solid var(--line)",
-                borderRadius: "var(--radius)",
-                padding: "10px 14px",
-                height: "var(--input-h)",
-                fontSize: "13.5px",
-                fontFamily: "'Inter', 'Poppins', sans-serif",
-                background: "#fff",
-                color: "var(--ink)",
-                width: "100%",
-                transition: "border-color var(--transition), box-shadow var(--transition)",
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "var(--teal)";
-                e.target.style.boxShadow = "0 0 0 3px rgba(31,92,82,.1)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "var(--line)";
-                e.target.style.boxShadow = "none";
-              }}
+              style={filterInputStyle}
+              onFocus={filterFocus}
+              onBlur={filterBlur}
             />
           </label>
           <button
@@ -863,42 +2364,82 @@ export default function InwardEntry() {
             Clear
           </button>
         </div>
-        <h3>Recent inward entries <span className="pill-count">{filteredEntries.length || 0}</span></h3>
-        <div className="tablewrap" style={{ overflowX: 'scroll', overflowY: 'scroll', maxHeight: '82vh' }}>
-          <table style={{ minWidth: '1700px' }}>
-            <thead>
+
+        <h3>
+          All inward entries{" "}
+          <span className="pill-count">{filteredEntries.length || 0}</span>
+        </h3>
+        <div
+          className="tablewrap"
+          style={{
+            overflowX: "scroll",
+            overflowY: "scroll",
+            maxHeight: "82vh",
+          }}
+        >
+          <table style={{ minWidth: "1700px" }}>
+            <thead
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: "var(--paper-dim)",
+              }}
+            >
               <tr>
-                <th>Date</th><th>Inv date</th><th>Challan / Inv no</th><th>PO no</th>
-                <th>Vendor</th><th>Material</th><th>Type</th><th>Code</th>
-                <th>Category</th><th>UOM</th><th className="num">Qty</th>
-                <th>Received by</th><th>Location</th><th>Remarks</th>
+                <th>Date</th>
+                <th>Inv date</th>
+                <th>Challan / Inv no</th>
+                <th>PO no</th>
+                <th>Vendor</th>
+                <th>Material</th>
+                <th>Type</th>
+                <th>Code</th>
+                <th>Category</th>
+                <th>UOM</th>
+                <th className="num">Qty</th>
+                <th>Received by</th>
+                <th>Location</th>
+                <th>Remarks</th>
                 {canSeePrice && <th className="num">Price</th>}
-                {canEditDelete && <th style={{ minWidth: 100 }}>Actions</th>}
+                {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {filteredEntries.slice(0, 100).map(e => (
+              {filteredEntries.map((e) => (
                 <tr key={e._id}>
-                  <td>{toDDMMYYYY(e.date)}</td>
-                  <td>{e.invdate ? toDDMMYYYY(e.invdate) : '—'}</td>
-                  <td>{e.challan || '—'}</td>
-                  <td>{e.po || '—'}</td>
-                  <td>{e.vendor || '—'}</td>
+                  <td>{formatDateDMY(e.date)}</td>
+                  <td>{e.invdate ? formatDateDMY(e.invdate) : "—"}</td>
+                  <td>{e.challan || "—"}</td>
+                  <td>{e.po || "—"}</td>
+                  <td>{e.vendor || "—"}</td>
                   <td style={{ fontWeight: 500 }}>{e.name}</td>
                   <td>{e.type}</td>
                   <td className="mono">{e.code}</td>
                   <td>{e.category}</td>
                   <td>{e.uom}</td>
                   <td className="num">{formatNum(e.qty)}</td>
-                  <td>{e.by || '—'}</td>
-                  <td>{e.location || '—'}</td>
-                  <td>{e.remarks || '—'}</td>
+                  <td>{e.by || "—"}</td>
+                  <td>{e.location || "—"}</td>
+                  <td>{e.remarks || "—"}</td>
                   {canSeePrice && <td className="num">{formatNum(e.price)}</td>}
                   {canEditDelete && (
                     <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditEntry(e)} title="Edit this entry">✏ Edit</button>
-                        <button className="btn-del btn-sm" onClick={() => handleDelete(e)} title="Delete this entry">🗑 Delete</button>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => setEditEntry(e)}
+                          title="Edit"
+                        >
+                          ✏ Edit
+                        </button>
+                        <button
+                          className="btn-del btn-sm"
+                          onClick={() => handleDelete(e)}
+                          title="Delete"
+                        >
+                          🗑 Delete
+                        </button>
                       </div>
                     </td>
                   )}
@@ -907,12 +2448,18 @@ export default function InwardEntry() {
             </tbody>
           </table>
         </div>
-        {!entries.length && <div className="empty">No inward entries yet.<p>Use the form above to record your first receipt.</p></div>}
+        {!entries.length && (
+          <div className="empty">
+            No inward entries yet.
+            <p>Use the form above to record your first receipt.</p>
+          </div>
+        )}
+        {entries.length > 0 && !filteredEntries.length && (
+          <div className="empty">
+            No inward entries match the current filters.
+          </div>
+        )}
       </div>
     </>
   );
 }
-
-// // ── Inline table styles for PO items grid ─────────────────────────────────────
-// const thS = { padding: '8px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11.5, letterSpacing: '0.04em', whiteSpace: 'nowrap', borderBottom: '2px solid var(--line)' };
-// const tdS = { padding: '7px 10px', verticalAlign: 'middle' };
