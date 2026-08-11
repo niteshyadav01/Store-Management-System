@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { getInward, updatePrice } from "../api/api";
 import { formatNum, exportXlsx } from "../utils/helpers";
+// NOTE: adjust this import path if your AuthContext file lives elsewhere.
+import { useAuth } from "../context/AuthContext";
 
 // Display dates as dd-mm-yyyy regardless of the underlying stored format.
 function toDDMMYYYY(dateStr) {
@@ -35,12 +37,15 @@ function monthKeyToLabel(key) {
 // Normalize a header/key for loose matching against Excel column names,
 // e.g. "Unit Price", "unit_price" and "UnitPrice" all become "unitprice".
 function normKey(k) {
-  return String(k ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return String(k ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 function pickField(rowNormMap, candidates) {
   for (const c of candidates) {
-    if (rowNormMap[c] !== undefined && rowNormMap[c] !== "") return rowNormMap[c];
+    if (rowNormMap[c] !== undefined && rowNormMap[c] !== "")
+      return rowNormMap[c];
   }
   return undefined;
 }
@@ -399,6 +404,9 @@ const itemStyle = {
 };
 
 export default function PriceEntry() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
   const [entries, setEntries] = useState([]);
   const [search, setSearch] = useState("");
   const [prices, setPrices] = useState({});
@@ -435,6 +443,13 @@ export default function PriceEntry() {
     load();
   }, [load]);
 
+  // A row can be edited by Purchase only while its price is still 0 (first
+  // entry). Once a price exists, only Admin may change it.
+  function canEditEntry(entry) {
+    if (isAdmin) return true;
+    return (entry?.price ?? 0) === 0;
+  }
+
   const filtered = entries
     .filter(
       (e) =>
@@ -468,19 +483,27 @@ export default function PriceEntry() {
   }
 
   async function handleSave(id) {
+    const entry = entries.find((e) => e._id === id);
+    if (!canEditEntry(entry)) return; // defense in depth — UI already blocks this
     try {
       const priceValue = prices[id] === "" ? 0 : (prices[id] ?? 0);
-      const entry = entries.find((e) => e._id === id);
 
       // Only when the "sync same name" toggle is on do we also update every
       // other entry that shares the same material name (case/whitespace
       // insensitive). Otherwise, just this single row is saved.
+      // Non-admins can only sweep in other rows that are still unpriced —
+      // an already-priced row stays admin-only even under "Bulk Update".
       const normName = (entry?.name || "").trim().toLowerCase();
-      const matchingIds = syncSameName && normName
-        ? entries
-            .filter((e) => (e.name || "").trim().toLowerCase() === normName)
-            .map((e) => e._id)
-        : [id];
+      const matchingIds =
+        syncSameName && normName
+          ? entries
+              .filter(
+                (e) =>
+                  (e.name || "").trim().toLowerCase() === normName &&
+                  canEditEntry(e),
+              )
+              .map((e) => e._id)
+          : [id];
 
       await Promise.all(matchingIds.map((mid) => updatePrice(mid, priceValue)));
 
@@ -586,9 +609,10 @@ export default function PriceEntry() {
           if ((!codeVal && !nameVal) || isNaN(priceVal)) {
             unmatched.push({
               row: idx + 2, // +2 to account for header row + 1-index
-              reason: !codeVal && !nameVal
-                ? "No Code or Material Name column found"
-                : "No valid Price found",
+              reason:
+                !codeVal && !nameVal
+                  ? "No Code or Material Name column found"
+                  : "No valid Price found",
               raw: row,
             });
             return;
@@ -654,6 +678,37 @@ export default function PriceEntry() {
             return;
           }
 
+          // Role gate: a non-admin uploader can only set prices that are
+          // still 0. Any already-priced entries in this match are dropped
+          // here rather than silently overwritten.
+          if (!isAdmin) {
+            const priced = ids.filter((id) => {
+              const en = entries.find((e) => e._id === id);
+              return (en?.price ?? 0) !== 0;
+            });
+            ids = ids.filter((id) => {
+              const en = entries.find((e) => e._id === id);
+              return (en?.price ?? 0) === 0;
+            });
+            if (!ids.length) {
+              unmatched.push({
+                row: idx + 2,
+                reason: `Already priced — admin only ("${codeVal || nameVal}")`,
+                raw: row,
+              });
+              return;
+            }
+            if (priced.length) {
+              // Some entries under this code/name were skipped, but others
+              // (still unpriced) will go through — note it against the row.
+              unmatched.push({
+                row: idx + 2,
+                reason: `${priced.length} of ${priced.length + ids.length} matching entries already priced — admin only ("${codeVal || nameVal}")`,
+                raw: row,
+              });
+            }
+          }
+
           matched.push({
             row: idx + 2,
             code: codeVal || "",
@@ -686,7 +741,9 @@ export default function PriceEntry() {
     try {
       const updates = [];
       excelPreview.matched.forEach((m) => {
-        m.ids.forEach((id) => updates.push({ id, price: m.price, name: m.name, code: m.code }));
+        m.ids.forEach((id) =>
+          updates.push({ id, price: m.price, name: m.name, code: m.code }),
+        );
       });
 
       await Promise.all(updates.map((u) => updatePrice(u.id, u.price)));
@@ -695,8 +752,10 @@ export default function PriceEntry() {
         [
           ...excelPreview.matched.map((m) => ({
             _id: m.ids[0],
-            name: m.name || (entries.find((e) => e._id === m.ids[0])?.name ?? ""),
-            code: m.code || (entries.find((e) => e._id === m.ids[0])?.code ?? ""),
+            name:
+              m.name || (entries.find((e) => e._id === m.ids[0])?.name ?? ""),
+            code:
+              m.code || (entries.find((e) => e._id === m.ids[0])?.code ?? ""),
             price: m.price,
             updatedAt: new Date().toISOString(),
           })),
@@ -731,7 +790,13 @@ export default function PriceEntry() {
       const key = `${base}|${vendorKey}`;
       if (!base || seen.has(key)) return;
       seen.add(key);
-      rows.push([e.code || "", e.name || "", e.vendor || "", e.category || "", e.price ?? 0]);
+      rows.push([
+        e.code || "",
+        e.name || "",
+        e.vendor || "",
+        e.category || "",
+        e.price ?? 0,
+      ]);
     });
 
     // If there's no data yet (e.g. fresh install), fall back to one sample row.
@@ -745,7 +810,12 @@ export default function PriceEntry() {
       ]);
     }
 
-    exportXlsx(headers, rows, "Price Template", "Stockyard_Price_Template.xlsx");
+    exportXlsx(
+      headers,
+      rows,
+      "Price Template",
+      "Stockyard_Price_Template.xlsx",
+    );
   }
 
   return (
@@ -756,6 +826,13 @@ export default function PriceEntry() {
           <p>
             Enter or update unit prices for inward entries. Visible to Admin and
             Purchase team only.
+            {!isAdmin && (
+              <>
+                {" "}
+                Purchase can set a price once; editing an existing price
+                requires Admin.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -769,9 +846,17 @@ export default function PriceEntry() {
             Placed first so it's visible immediately, above the search/filter row. */}
         <div className="uploadbox">
           <label htmlFor="price-bulk">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
             {excelBusy ? "Reading…" : "Choose sheet (.xlsx, .xls, .csv)"}
           </label>
@@ -784,18 +869,34 @@ export default function PriceEntry() {
             onChange={(e) => handleExcelFile(e.target.files?.[0])}
           />
           <div className="hint">
-            Match by <strong>Code</strong> (preferred) or <strong>Material Name</strong>, plus a{" "}
-            <strong>Price</strong> column — column names are matched loosely (e.g. "Unit Price",
-            "Rate", "Cost" all work). Add a <strong>Vendor</strong> and/or <strong>Category</strong> column
-            to narrow the match when the same material was received from more than one vendor or
-            exists under more than one category.<br />
+            Match by <strong>Code</strong> (preferred) or{" "}
+            <strong>Material Name</strong>, plus a <strong>Price</strong> column
+            — column names are matched loosely (e.g. "Unit Price", "Rate",
+            "Cost" all work). Add a <strong>Vendor</strong> and/or{" "}
+            <strong>Category</strong> column to narrow the match when the same
+            material was received from more than one vendor or exists under more
+            than one category.
+            {!isAdmin && (
+              <>
+                {" "}
+                Rows that already have a price will be skipped — only Admin can
+                overwrite an existing price.
+              </>
+            )}
+            <br />
             <button onClick={downloadTemplate}>Download template</button>
           </div>
         </div>
 
         <div
           className="searchbar"
-          style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 16 }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+            marginTop: 16,
+          }}
         >
           <input
             value={search}
@@ -819,7 +920,12 @@ export default function PriceEntry() {
               type="checkbox"
               checked={syncSameName}
               onChange={(e) => setSyncSameName(e.target.checked)}
-              style={{ cursor: "pointer", accentColor: "var(--teal)", width: 14, height: 14 }}
+              style={{
+                cursor: "pointer",
+                accentColor: "var(--teal)",
+                width: 14,
+                height: 14,
+              }}
             />
             Bulk Update
           </label>
@@ -858,7 +964,8 @@ export default function PriceEntry() {
                   fontWeight: 600,
                 }}
               >
-                {excelPreview.matched.reduce((n, m) => n + m.ids.length, 0)} row(s) will update
+                {excelPreview.matched.reduce((n, m) => n + m.ids.length, 0)}{" "}
+                row(s) will update
               </span>
               {excelPreview.unmatched.length > 0 && (
                 <span
@@ -899,13 +1006,27 @@ export default function PriceEntry() {
                 <table style={{ width: "100%", fontSize: 12.5 }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Row</th>
-                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Code</th>
-                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Name</th>
-                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Vendor</th>
-                      <th style={{ textAlign: "left", padding: "6px 14px" }}>Category</th>
-                      <th style={{ textAlign: "right", padding: "6px 14px" }}>New price</th>
-                      <th style={{ textAlign: "right", padding: "6px 14px" }}>Entries affected</th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>
+                        Row
+                      </th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>
+                        Code
+                      </th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>
+                        Name
+                      </th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>
+                        Vendor
+                      </th>
+                      <th style={{ textAlign: "left", padding: "6px 14px" }}>
+                        Category
+                      </th>
+                      <th style={{ textAlign: "right", padding: "6px 14px" }}>
+                        New price
+                      </th>
+                      <th style={{ textAlign: "right", padding: "6px 14px" }}>
+                        Entries affected
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -916,8 +1037,12 @@ export default function PriceEntry() {
                           {m.code || "—"}
                         </td>
                         <td style={{ padding: "5px 14px" }}>{m.name || "—"}</td>
-                        <td style={{ padding: "5px 14px" }}>{m.vendor || "—"}</td>
-                        <td style={{ padding: "5px 14px" }}>{m.category || "—"}</td>
+                        <td style={{ padding: "5px 14px" }}>
+                          {m.vendor || "—"}
+                        </td>
+                        <td style={{ padding: "5px 14px" }}>
+                          {m.category || "—"}
+                        </td>
                         <td className="num" style={{ padding: "5px 14px" }}>
                           {formatNum(m.price)}
                         </td>
@@ -1111,6 +1236,7 @@ export default function PriceEntry() {
             <tbody>
               {filtered.map((e) => {
                 const isZero = (e.price ?? 0) === 0;
+                const canEdit = canEditEntry(e);
                 return (
                   <tr
                     key={e._id}
@@ -1151,15 +1277,49 @@ export default function PriceEntry() {
                           }))
                         }
                         placeholder="0.00"
+                        readOnly={
+                          user?.role !== "admin" && Number(e.price) !== 0
+                        }
+                        style={{
+                          background:
+                            user?.role !== "admin" && Number(e.price) !== 0
+                              ? "var(--paper-dim)"
+                              : "#fff",
+                          cursor:
+                            user?.role !== "admin" && Number(e.price) !== 0
+                              ? "not-allowed"
+                              : "text",
+                        }}
                       />
                     </td>
                     <td>
-                      <button
-                        className={`btn btn-sm ${saved[e._id] ? "btn-ghost" : "btn-in"}`}
-                        onClick={() => handleSave(e._id)}
-                      >
-                        {saved[e._id] ? "✓ Saved" : "Save"}
-                      </button>
+                      {canEdit ? (
+                        user?.role === "admin" || Number(e.price) === 0 ? (
+                          <button
+                            className={`btn btn-sm ${saved[e._id] ? "btn-ghost" : "btn-in"}`}
+                            onClick={() => handleSave(e._id)}
+                          >
+                            {saved[e._id] ? "✓ Saved" : "Save"}
+                          </button>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              color: "var(--text-3)",
+                              padding: "4px 8px",
+                            }}
+                          >
+                            View only
+                          </span>
+                        )
+                      ) : (
+                        <span
+                          style={{ fontSize: 11.5, color: "var(--text-3)" }}
+                          title="Only Admin can edit a price that's already set"
+                        >
+                          🔒 Admin only
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

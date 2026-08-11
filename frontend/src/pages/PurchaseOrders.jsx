@@ -38,6 +38,7 @@ export default function PurchaseOrders() {
   const [selectedPr, setSelectedPr] = useState(null);
   const [poNumber, setPoNumber] = useState("");
   const [vendorName, setVendorName] = useState("");
+  const [poProjectName, setPoProjectName] = useState("");
   const [poDate, setPoDate] = useState(todayStr());
   const [poExpectedDate, setPoExpectedDate] = useState("");
   const [poItems, setPoItems] = useState([]);
@@ -109,10 +110,12 @@ export default function PurchaseOrders() {
   async function handlePrChange(prId) {
     setSelectedPrId(prId);
     setPoItems([]);
+    setPoProjectName("");
     setMsg({ text: "", ok: true });
     if (!prId) { setSelectedPr(null); return; }
     const pr = requests.find(r => r._id === prId);
     setSelectedPr(pr);
+    setPoProjectName(pr.projectName || "");
     setInitLoading(true);
     try {
       const existingPOs = await getPurchaseOrdersByPR(prId);
@@ -130,6 +133,7 @@ export default function PurchaseOrders() {
           _key: Math.random().toString(36).slice(2),
           name: it.name, code: it.code || '', category: it.category || '',
           uom: it.uom || '', remarks: it.remarks || '',
+          projectName: it.projectName || pr.projectName || '',
           orderedQty: String(remaining), price: '',
           maxQty: remaining, prQty: it.qty, alreadyOrdered: already,
         });
@@ -150,7 +154,7 @@ export default function PurchaseOrders() {
   function resetForm() {
     setShowForm(false);
     setSelectedPrId(""); setSelectedPr(null);
-    setPoNumber(""); setVendorName("");
+    setPoNumber(""); setVendorName(""); setPoProjectName("");
     setPoDate(todayStr()); setPoExpectedDate("");
     setPoItems([]); setMsg({ text: "", ok: true });
   }
@@ -172,15 +176,18 @@ export default function PurchaseOrders() {
 
     setFormLoading(true);
     try {
+      const uniqueProjectNames = [...new Set(poItems.map(it => it.projectName).filter(Boolean))];
       await createPurchaseOrder({
         poNumber: poNumber.trim(),
         prNumber: selectedPr.prNumber,
         prId: selectedPr._id,
         vendorName: vendorName.trim(),
+        projectName: poProjectName || uniqueProjectNames.join(", "),
         poDate, poExpectedDate,
         items: poItems.map(it => ({
           name: it.name, code: it.code, category: it.category, uom: it.uom,
           remarks: it.remarks,
+          projectName: it.projectName || poProjectName || '',
           orderedQty: parseFloat(it.orderedQty),
           price: parseFloat(it.price) || 0,
         })),
@@ -213,6 +220,7 @@ export default function PurchaseOrders() {
       // Sheet 2: item-level detail (remaining/pending qty) for every eligible PR
       const itemHeaders = [
         "PR No",
+        "Project",
         "Material",
         "Code",
         "UOM",
@@ -247,6 +255,7 @@ export default function PurchaseOrders() {
           const stock = stockMap[it.name];
           itemRows.push([
             pr.prNumber,
+            it.projectName || pr.projectName || "",
             it.name,
             it.code || "",
             it.uom || "",
@@ -335,6 +344,10 @@ export default function PurchaseOrders() {
                 <input type="text" value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="e.g. ABC Suppliers Pvt. Ltd." />
               </div>
               <div className="field">
+                <label>Project Name</label>
+                <input type="text" value={poProjectName} onChange={e => setPoProjectName(e.target.value)} placeholder="e.g. Thailand - Damac & Stock" />
+              </div>
+              <div className="field">
                 <label>PO Date <span style={{ color: 'var(--red)' }}>*</span></label>
                 <input type="date" value={poDate} min={todayStr()} onChange={e => setPoDate(e.target.value)} />
               </div>
@@ -361,10 +374,10 @@ export default function PurchaseOrders() {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                       <thead>
                         <tr style={{ background: 'var(--paper-dim)' }}>
-                          {['Material', 'Code', 'UOM', 'PR Qty', 'Already Ordered', 'Remaining', 'Current Stock', 'PO Qty *', 'Unit Price', ''].map((h, i) => (
+                          {['Material', 'Code', 'Project', 'UOM', 'PR Qty', 'Already Ordered', 'Remaining', 'Current Stock', 'PO Qty *', 'Unit Price', ''].map((h, i) => (
                             <th key={i} style={{
                               padding: '8px 10px',
-                              textAlign: i >= 3 && i <= 7 ? 'right' : 'left',
+                              textAlign: i >= 4 && i <= 8 ? 'right' : 'left',
                               fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
                               borderBottom: '2px solid var(--line)', whiteSpace: 'nowrap',
                             }}>{h}</th>
@@ -376,6 +389,15 @@ export default function PurchaseOrders() {
                           <tr key={it._key} style={{ borderBottom: '1px solid var(--line)' }}>
                             <td style={{ padding: '7px 10px', fontWeight: 500 }}>{it.name}</td>
                             <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 12 }}>{it.code || '—'}</td>
+                            <td style={{ padding: '7px 10px' }}>
+                              <input
+                                type="text"
+                                value={it.projectName}
+                                onChange={e => updatePoItem(it._key, { projectName: e.target.value })}
+                                placeholder={selectedPr?.projectName || 'Project'}
+                                style={{ width: 110 }}
+                              />
+                            </td>
                             <td style={{ padding: '7px 10px' }}>{it.uom || '—'}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', color: 'var(--text-3)' }}>{it.prQty}</td>
                             <td style={{ padding: '7px 10px', textAlign: 'right', color: it.alreadyOrdered > 0 ? '#2a9d8f' : 'var(--text-3)' }}>
@@ -514,6 +536,7 @@ export default function PurchaseOrders() {
                                     <tr>
                                       <th style={thStyle}>Material</th>
                                       <th style={thStyle}>Code</th>
+                                      <th style={thStyle}>Project</th>
                                       <th style={thStyle}>UOM</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>PR Qty</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Already Ordered</th>
@@ -530,6 +553,7 @@ export default function PurchaseOrders() {
                                         <tr key={i} style={{ borderBottom: '1px solid var(--line)' }}>
                                           <td style={tdStyle}><strong>{it.name}</strong></td>
                                           <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{it.code || '—'}</td>
+                                          <td style={tdStyle}>{it.projectName || pr.projectName || '—'}</td>
                                           <td style={tdStyle}>{it.uom || '—'}</td>
                                           <td style={{ ...tdStyle, textAlign: 'right', color: 'var(--text-3)' }}>{it.qty}</td>
                                           <td style={{ ...tdStyle, textAlign: 'right', color: it.already > 0 ? '#2a9d8f' : 'var(--text-3)' }}>
@@ -608,7 +632,7 @@ export default function PurchaseOrders() {
                       <td>{po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td className="mono">{po.prNumber}</td>
                       <td>{po.vendorName}</td>
-                      <td>{pr?.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td>{po.projectName || pr?.projectName || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td>{po.items?.length || 0}</td>
                       <td className="num">
                         {totalValue > 0 ? totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
@@ -631,6 +655,7 @@ export default function PurchaseOrders() {
                                       <th style={thStyle}>Material</th>
                                       <th style={thStyle}>Code</th>
                                       <th style={thStyle}>Category</th>
+                                      <th style={thStyle}>Project</th>
                                       <th style={thStyle}>UOM</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Ordered Qty</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Unit Price</th>
@@ -644,6 +669,7 @@ export default function PurchaseOrders() {
                                         <td style={tdStyle}><strong>{it.name}</strong></td>
                                         <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{it.code || '—'}</td>
                                         <td style={tdStyle}>{it.category || '—'}</td>
+                                        <td style={tdStyle}>{it.projectName || po.projectName || pr?.projectName || '—'}</td>
                                         <td style={tdStyle}>{it.uom || '—'}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>{it.orderedQty}</td>
                                         <td style={{ ...tdStyle, textAlign: 'right' }}>
