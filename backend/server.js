@@ -61,6 +61,7 @@ app.use('/api/outward', require('./routes/outward'));
 app.use('/api/users',   require('./routes/users'));
 app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/purchase-orders',   require('./routes/purchaseOrders'));
+app.use('/api/job-orders', require('./routes/jobOrders'));
 
 // ── 404 handler for unknown routes ───────────────────────────────────────────
 app.use((req, res) => {

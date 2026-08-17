@@ -20,6 +20,8 @@ const NAV_SECTIONS = [
       { label: 'Outward Entry',      path: '/outward',           roles: ['admin','store','store_manager'] },
       { label: 'PR Request',  path: '/purchase-requests', roles: ['admin','store','store_manager', 'viewer'] },
       { label: 'PO Matching',        path: '/po-matching',       roles: ['admin','store_manager'] },
+            { label: 'Job Orders', path: '/job-orders', roles: ['admin','store_manager','store'] },
+
     ],
   },
   {
@@ -65,7 +67,9 @@ const NAV_SECTIONS = [
       { label: 'Users', path: '/users', roles: ['admin'] },
     ],
   },
+    
 ];
+
 
 // Top-level links (above all sections) — visible to admin only
 const TOP_LINKS = [

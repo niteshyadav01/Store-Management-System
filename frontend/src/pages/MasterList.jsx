@@ -27,6 +27,8 @@ export default function MasterList() {
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [uploadMsg, setUploadMsg] = useState({ text: "", ok: true });
   const isViewerOnly = user?.role === "viewer";
+  const isAdmin = user?.role === "admin";
+  const isPurchase = user?.role === "purchase";
 
   const load = useCallback(async () => {
     try {
@@ -44,6 +46,31 @@ export default function MasterList() {
       (m.code || "").toLowerCase().includes(search.toLowerCase()),
   );
 
+  // Coerce possibly-missing/undefined/null minStock to 0 safely. Plain
+  // Number(undefined) is NaN, and NaN !== 0 is true — which was wrongly
+  // locking any older record that never had minStock saved (treating
+  // "unset" as if it were a real non-zero value already in place). `|| 0`
+  // collapses NaN/0/null/undefined all down to 0, which is what "unset"
+  // should mean for this rule.
+  const numMinStock = (v) => Number(v) || 0;
+
+  // The material currently being edited (if any), looked up fresh from `list`
+  // so we always check its LATEST saved minStock — not a stale snapshot.
+  const editingMaterial = editingId
+    ? list.find((m) => m._id === editingId)
+    : null;
+
+  // Minimum Stock rule: while a material's saved minStock is still 0/unset,
+  // anyone with page access (any non-viewer — this explicitly includes the
+  // "purchase" role) can set it. Once it's been set to a non-zero value,
+  // only an admin can change it further. This only applies when EDITING an
+  // existing material — a brand new material (not yet in the list) always
+  // starts at 0, so anyone with access can set its initial value.
+  const minStockLocked =
+    !!editingMaterial &&
+    numMinStock(editingMaterial.minStock) !== 0 &&
+    !isAdmin;
+
   async function handleAdd(e) {
     e.preventDefault();
     setMsg({ text: "", ok: true });
@@ -59,6 +86,11 @@ export default function MasterList() {
       ...form,
       minStock: form.minStock === "" ? 0 : parseFloat(form.minStock) || 0,
     };
+    // Defense in depth: even if the disabled input were somehow bypassed,
+    // never let a non-admin change an already-set minStock via this form.
+    if (minStockLocked) {
+      payload.minStock = editingMaterial.minStock;
+    }
     try {
       if (editingId) {
         await updateMaterial(editingId, payload);
@@ -285,7 +317,22 @@ export default function MasterList() {
                   />
                 </div>
                 <div className="field">
-                  <label>Minimum stock</label>
+                  <label>
+                    Minimum stock
+                    {minStockLocked && (
+                      <span
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "#8a8270",
+                          textTransform: "none",
+                        }}
+                      >
+                        (admin only once set)
+                      </span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     min="0"
@@ -295,6 +342,12 @@ export default function MasterList() {
                       setForm((f) => ({ ...f, minStock: e.target.value }))
                     }
                     placeholder="e.g. 10"
+                    disabled={minStockLocked}
+                    title={
+                      minStockLocked
+                        ? "This material's minimum stock has already been set — only an admin can change it."
+                        : undefined
+                    }
                   />
                 </div>
               </div>
@@ -374,7 +427,21 @@ export default function MasterList() {
                   <td className="mono">{m.code}</td>
                   <td>{m.category}</td>
                   <td>{m.uom}</td>
-                  <td className="num">{m.minStock ?? 0}</td>
+                  <td className="num">
+                    {m.minStock ?? 0}
+                    {numMinStock(m.minStock) !== 0 && !isAdmin && (
+                      <span
+                        title="Only an admin can change this once set"
+                        style={{
+                          marginLeft: 6,
+                          fontSize: 11,
+                          color: "#8a8270",
+                        }}
+                      >
+                        🔒
+                      </span>
+                    )}
+                  </td>
                   {!isViewerOnly && (
                     <td style={{ whiteSpace: "nowrap" }}>
                       <button

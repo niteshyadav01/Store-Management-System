@@ -14,6 +14,7 @@ import PurchaseRequest from "./pages/PurchaseRequest";
 import Dashboard from "./pages/Dashboard";
 import PoMatching from "./pages/PoMatching";
 import PurchaseOrders from "./pages/PurchaseOrders";
+import JobOrder from './pages/JobOrder';
 
 const ROLE_ACCESS = {
   dashboard: ["admin", "store", "store_manager", "purchase"],
@@ -27,6 +28,7 @@ const ROLE_ACCESS = {
   purchaseRequests: ["admin", "store", "store_manager", "viewer"],
   purchaseOrders: ["admin", "purchase"],
   poMatching: ["admin", "purchase", "store_manager"],
+  jobOrders: ['admin', 'store_manager', 'store'],
 };
 
 function getDefaultPath(role) {
@@ -178,7 +180,9 @@ function AppRoutes() {
             </ProtectedRoute>
           }
         />
+        <Route path="/job-orders" element={<ProtectedRoute page="jobOrders"><JobOrder /></ProtectedRoute>} />
       </Route>
+      
       <Route path="*" element={<Navigate to={defaultPath} replace />} />
     </Routes>
   );
