@@ -35,6 +35,8 @@ async function inwardedQtyMap(poNumbers) {
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // GET /api/purchase-orders/next-number
+// Still available as a *suggestion* for the UI (e.g. to pre-fill the input),
+// but it is no longer used to force-generate the PO number on save.
 router.get('/next-number', authMiddleware, async (req, res) => {
   try {
     const counter    = await Counter.findOne({ _id: 'purchaseOrder' });
@@ -112,14 +114,22 @@ router.get('/', authMiddleware, async (req, res) => {
 // POST /api/purchase-orders — create a new PO
 router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
   try {
-    const { prNumber, prId, vendorName, poDate, poExpectedDate, items } = req.body;
+    const { poNumber, prNumber, prId, vendorName, poDate, poExpectedDate, items } = req.body;
 
+    const cleanPoNumber = String(poNumber || '').trim();
+
+    if (!cleanPoNumber)                      return res.status(400).json({ error: 'PO number is required.' });
     if (!prNumber)                           return res.status(400).json({ error: 'PR number is required.' });
     if (!prId)                               return res.status(400).json({ error: 'PR reference id is required.' });
     if (!vendorName)                         return res.status(400).json({ error: 'Vendor name is required.' });
     if (!poDate)                             return res.status(400).json({ error: 'PO date is required.' });
     if (!Array.isArray(items) || !items.length)
       return res.status(400).json({ error: 'At least one item is required.' });
+
+    // Make sure the user-entered PO number isn't already taken.
+    const existing = await PurchaseOrder.findOne({ poNumber: cleanPoNumber }).lean();
+    if (existing)
+      return res.status(409).json({ error: `PO number "${cleanPoNumber}" already exists.` });
 
     const pr = await PurchaseRequest.findById(prId);
     if (!pr) return res.status(404).json({ error: 'Purchase request not found.' });
@@ -147,11 +157,8 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     if (!cleanItems.length)
       return res.status(400).json({ error: 'At least one valid item with qty is required.' });
 
-    const seq      = await nextSeq('purchaseOrder');
-    const poNumber = `PO-${String(seq).padStart(5, '0')}`;
-
     const po = await PurchaseOrder.create({
-      poNumber, prNumber, prId,
+      poNumber: cleanPoNumber, prNumber, prId,
       vendorName: vendorName.trim(), poDate,
       poExpectedDate: poExpectedDate || '',
       items: cleanItems,
@@ -163,14 +170,14 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     const fullyCovered   = pr.items.every(it => (updatedOrdered[it.name] ?? 0) >= it.qty - 0.00001);
 
     if (fullyCovered) {
-      pr.status = 'ordered'; pr.poNumber = poNumber;
+      pr.status = 'ordered'; pr.poNumber = cleanPoNumber;
       pr.vendor = vendorName.trim(); pr.orderedAt = new Date();
       pr.history.push({ status: 'ordered', byName: req.user.name, byUsername: req.user.username,
-        note: `Fully covered. Last PO: ${poNumber}`, at: new Date() });
+        note: `Fully covered. Last PO: ${cleanPoNumber}`, at: new Date() });
     } else {
       pr.status = 'partial';
       pr.history.push({ status: 'partial', byName: req.user.name, byUsername: req.user.username,
-        note: `Partial PO created: ${poNumber}`, at: new Date() });
+        note: `Partial PO created: ${cleanPoNumber}`, at: new Date() });
     }
     await pr.save();
 
