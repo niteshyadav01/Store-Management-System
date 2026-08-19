@@ -84,6 +84,7 @@ export const createPurchaseRequest    = (data)       => client.post('/purchase-r
 export const updatePurchaseRequest    = (id, data)   => client.put(`/purchase-requests/${id}`, data);
 export const deletePurchaseRequest    = (id)         => client.delete(`/purchase-requests/${id}`);
 export const setPurchaseRequestStatus = (id, data)   => client.patch(`/purchase-requests/${id}/status`, data);
+export const savePrItemPrices         = (id, items)  => client.patch(`/purchase-requests/${id}/item-prices`, { items });
 
 // ── Purchase orders ──────────────────────────────────────────────────────────
 export const getPONextNumber          = ()           => client.get('/purchase-orders/next-number');
@@ -93,3 +94,4 @@ export const getPurchaseOrderByNumber = (poNumber)   => client.get(`/purchase-or
 export const getPendingInwardPOs      = ()           => client.get('/purchase-orders/pending-inward');
 export const getPoMatching            = ()           => client.get('/purchase-orders/po-matching');
 export const createPurchaseOrder      = (data)       => client.post('/purchase-orders', data);
+export const renamePurchaseOrderNumber = (id, poNumber) => client.patch(`/purchase-orders/${id}/number`, { poNumber });

@@ -9,6 +9,8 @@ import {
   getPurchaseOrders,
   getInward,
   getOutward,
+  renamePurchaseOrderNumber,
+  savePrItemPrices,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { todayStr, toDDMMYYYY } from "../utils/helpers";
@@ -47,6 +49,16 @@ export default function PurchaseOrders() {
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [stockMap, setStockMap] = useState({});
   const [exportLoading, setExportLoading] = useState(false);
+
+  // ── Inline PO-number rename state ────────────────────────────────────────
+  const [editingPoId, setEditingPoId] = useState(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [renameLoading, setRenameLoading] = useState(false);
+  const [renameError, setRenameError] = useState("");
+
+  // ── Price-save state per PR (keyed by PR id) ─────────────────────────────
+  const [priceSaveLoading, setPriceSaveLoading] = useState({});
+  const [priceSaveMsg, setPriceSaveMsg] = useState({});
 
   const load = useCallback(async () => {
     const [m, reqs, pos, inw, out] = await Promise.all([
@@ -92,7 +104,7 @@ export default function PurchaseOrders() {
       const rows = pr.items.map(it => {
         const already = alreadyOrdered[it.name] || 0;
         const remaining = Math.max(0, parseFloat((it.qty - already).toFixed(6)));
-        return { ...it, already, remaining };
+        return { ...it, already, remaining, price: it.price ?? '' };
       });
       setPrItemsMap(prev => ({ ...prev, [pr._id]: rows }));
     } catch (err) {
@@ -104,6 +116,84 @@ export default function PurchaseOrders() {
 
   function togglePoRow(id) {
     setExpandedPo(prev => prev === id ? null : id);
+  }
+
+  // Update the (locally-entered, reference-only) price for one item row
+  // inside a PR's expanded material list.
+  function updatePrItemPrice(prId, idx, value) {
+    setPrItemsMap(prev => {
+      const rows = prev[prId];
+      if (!rows) return prev;
+      const updated = rows.map((row, i) => i === idx ? { ...row, price: value } : row);
+      return { ...prev, [prId]: updated };
+    });
+  }
+
+  // Persist the entered prices for all items under this PR.
+  async function savePrPrices(pr) {
+    const rows = prItemsMap[pr._id];
+    if (!rows || !rows.length) return;
+
+    setPriceSaveLoading(prev => ({ ...prev, [pr._id]: true }));
+    setPriceSaveMsg(prev => ({ ...prev, [pr._id]: { text: "", ok: true } }));
+    try {
+      const payload = rows.map(r => ({ name: r.name, price: parseFloat(r.price) || 0 }));
+      const updatedPr = await savePrItemPrices(pr._id, payload);
+      // Reflect saved prices back into local state so the fields show the saved values.
+      setPrItemsMap(prev => ({
+        ...prev,
+        [pr._id]: prev[pr._id].map(row => {
+          const match = updatedPr.items.find(it => it.name === row.name);
+          return match ? { ...row, price: match.price } : row;
+        }),
+      }));
+      setPriceSaveMsg(prev => ({ ...prev, [pr._id]: { text: "✓ Prices saved.", ok: true } }));
+    } catch (err) {
+      setPriceSaveMsg(prev => ({ ...prev, [pr._id]: { text: "Error: " + err.message, ok: false } }));
+    } finally {
+      setPriceSaveLoading(prev => ({ ...prev, [pr._id]: false }));
+    }
+  }
+
+  // ── Inline PO-number rename ──────────────────────────────────────────────
+  function startEditingPo(po, e) {
+    e.stopPropagation();
+    setEditingPoId(po._id);
+    setEditingValue(po.poNumber);
+    setRenameError("");
+  }
+
+  function cancelEditingPo(e) {
+    if (e) e.stopPropagation();
+    setEditingPoId(null);
+    setEditingValue("");
+    setRenameError("");
+  }
+
+  async function saveEditingPo(po, e) {
+    if (e) e.stopPropagation();
+    const trimmed = editingValue.trim();
+    if (!trimmed) { setRenameError("PO number can't be empty."); return; }
+    if (trimmed === po.poNumber) { cancelEditingPo(); return; }
+
+    setRenameLoading(true);
+    setRenameError("");
+    try {
+      await renamePurchaseOrderNumber(po._id, trimmed);
+      setEditingPoId(null);
+      setEditingValue("");
+      await load();
+    } catch (err) {
+      setRenameError(err.message);
+    } finally {
+      setRenameLoading(false);
+    }
+  }
+
+  function handleEditKeyDown(po, e) {
+    e.stopPropagation();
+    if (e.key === "Enter") saveEditingPo(po, e);
+    if (e.key === "Escape") cancelEditingPo(e);
   }
 
   // ── Form PR change ────────────────────────────────────────────────────────
@@ -134,7 +224,7 @@ export default function PurchaseOrders() {
           name: it.name, code: it.code || '', category: it.category || '',
           uom: it.uom || '', remarks: it.remarks || '',
           projectName: it.projectName || pr.projectName || '',
-          orderedQty: String(remaining), price: '',
+          orderedQty: String(remaining), price: it.price ? String(it.price) : '',
           maxQty: remaining, prQty: it.qty, alreadyOrdered: already,
         });
       }
@@ -542,6 +632,7 @@ export default function PurchaseOrders() {
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Already Ordered</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Remaining</th>
                                       <th style={{ ...thStyle, textAlign: 'right' }}>Current Stock</th>
+                                      <th style={{ ...thStyle, textAlign: 'right' }}>Price</th>
                                     </tr>
                                   </thead>
                                   <tbody>
@@ -570,11 +661,37 @@ export default function PurchaseOrders() {
                                               : <strong style={{ color: stockColor }}>{Number(stock).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
                                             }
                                           </td>
+                                          <td style={{ ...tdStyle, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                                            <input
+                                              type="number" min="0" step="any"
+                                              value={it.price}
+                                              onChange={e => updatePrItemPrice(pr._id, i, e.target.value)}
+                                              placeholder="0.00"
+                                              style={{ width: 90, textAlign: 'right' }}
+                                            />
+                                          </td>
                                         </tr>
                                       );
                                     })}
                                   </tbody>
                                 </table>
+                              </div>
+                            )}
+                            {!prItemsLoading[pr._id] && (prItemsMap[pr._id] || []).length > 0 && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-in btn-sm"
+                                  disabled={priceSaveLoading[pr._id]}
+                                  onClick={e => { e.stopPropagation(); savePrPrices(pr); }}
+                                >
+                                  {priceSaveLoading[pr._id] ? 'Saving…' : 'Save Prices'}
+                                </button>
+                                {priceSaveMsg[pr._id]?.text && (
+                                  <span style={{ fontSize: 12.5, color: priceSaveMsg[pr._id].ok ? '#2a9d8f' : 'var(--red)' }}>
+                                    {priceSaveMsg[pr._id].text}
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>
@@ -613,20 +730,59 @@ export default function PurchaseOrders() {
                 const totalValue = (po.items || []).reduce((s, i) => s + i.orderedQty * (i.price || 0), 0);
                 const pr = prMap[po.prNumber];
                 const isOpen = expandedPo === po._id;
+                const isEditing = editingPoId === po._id;
                 return (
                   <React.Fragment key={po._id}>
                     <tr
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => togglePoRow(po._id)}
+                      style={{ cursor: isEditing ? 'default' : 'pointer' }}
+                      onClick={() => !isEditing && togglePoRow(po._id)}
                     >
                       <td className="mono" style={{ fontWeight: 700 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{
-                            display: 'inline-block', transition: 'transform 150ms',
-                            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: 10, color: 'var(--text-3)',
-                          }}>▶</span>
-                          {po.poNumber}
-                        </span>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingValue}
+                              onChange={e => setEditingValue(e.target.value)}
+                              onKeyDown={e => handleEditKeyDown(po, e)}
+                              disabled={renameLoading}
+                              style={{ width: 130, fontWeight: 700 }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-in btn-sm"
+                              disabled={renameLoading}
+                              onClick={e => saveEditingPo(po, e)}
+                              title="Save"
+                            >✓</button>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={renameLoading}
+                              onClick={cancelEditingPo}
+                              title="Cancel"
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              display: 'inline-block', transition: 'transform 150ms',
+                              transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', fontSize: 10, color: 'var(--text-3)',
+                            }}>▶</span>
+                            {po.poNumber}
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              style={{ padding: '2px 6px', fontSize: 11 }}
+                              onClick={e => startEditingPo(po, e)}
+                              title="Rename PO number"
+                            >✎</button>
+                          </span>
+                        )}
+                        {isEditing && renameError && (
+                          <p style={{ fontSize: 11.5, color: 'var(--red)', margin: '4px 0 0' }}>{renameError}</p>
+                        )}
                       </td>
                       <td>{toDDMMYYYY(po.poDate)}</td>
                       <td>{po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>

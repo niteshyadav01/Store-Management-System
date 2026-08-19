@@ -188,4 +188,35 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
   }
 });
 
+// PATCH /api/purchase-orders/:id/number — rename an existing PO's number
+router.patch('/:id/number', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const newNumber = String(req.body.poNumber || '').trim();
+    if (!newNumber) return res.status(400).json({ error: 'New PO number is required.' });
+
+    const po = await PurchaseOrder.findById(req.params.id);
+    if (!po) return res.status(404).json({ error: 'PO not found.' });
+
+    const oldNumber = po.poNumber;
+    if (newNumber === oldNumber) return res.json(po); // no-op
+
+    const clash = await PurchaseOrder.findOne({ poNumber: newNumber, _id: { $ne: po._id } }).lean();
+    if (clash) return res.status(409).json({ error: `PO number "${newNumber}" already exists.` });
+
+    po.poNumber = newNumber;
+    await po.save();
+
+    // Cascade: update any Inward entries logged against the old PO number
+    await Inward.updateMany({ po: oldNumber }, { $set: { po: newNumber } });
+
+    // Cascade: update the PR's poNumber reference if it pointed to this PO
+    await PurchaseRequest.updateOne({ poNumber: oldNumber }, { $set: { poNumber: newNumber } });
+
+    res.json(po);
+  } catch (err) {
+    if (err.code === 11000) return res.status(409).json({ error: 'PO number collision — please retry.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

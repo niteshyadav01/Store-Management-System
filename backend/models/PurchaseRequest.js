@@ -7,6 +7,7 @@ const itemSchema = new mongoose.Schema({
   category: { type: String, default: '' },
   uom:      { type: String, default: '' },
   qty:      { type: Number, required: true, min: 0.0001 },
+  price:    { type: Number, default: 0 },
   expectedDeliveryDate: { type: String, default: '' }, // stored as "YYYY-MM-DD"
   projectName: { type: String, default: '' },
   remarks:  { type: String, default: '' },

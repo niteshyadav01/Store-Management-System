@@ -7,6 +7,8 @@ const { authMiddleware, requireRole } = require('../middleware/auth');
 const CREATOR_ROLES = ['admin', 'store', 'store_manager', 'viewer'];
 // Roles that can approve / reject / progress a Purchase Request
 const APPROVER_ROLES = ['admin', 'store_manager'];
+// Roles that can set/edit reference pricing on a PR's items
+const PRICING_ROLES = ['admin', 'purchase'];
 
 // Valid lifecycle transitions
 const TRANSITIONS = {
@@ -105,6 +107,42 @@ router.put('/:id', authMiddleware, requireRole(...CREATOR_ROLES), async (req, re
     pr.projectName = req.body.projectName || '';
     pr.requestFrom = req.body.requestFrom || '';
     if (req.body.date) pr.date = req.body.date;
+    await pr.save();
+    res.json(pr);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/purchase-requests/:id/item-prices — save reference prices against this
+// PR's items, keyed by item name. Does not touch qty/status/anything else.
+// Body: { items: [{ name, price }, ...] }
+router.patch('/:id/item-prices', authMiddleware, requireRole(...PRICING_ROLES), async (req, res) => {
+  try {
+    const incoming = Array.isArray(req.body.items) ? req.body.items : null;
+    if (!incoming || !incoming.length)
+      return res.status(400).json({ error: 'items[] with { name, price } is required.' });
+
+    const pr = await PurchaseRequest.findById(req.params.id);
+    if (!pr) return res.status(404).json({ error: 'Not found' });
+
+    const priceByName = {};
+    for (const it of incoming) {
+      const name = String(it?.name || '').trim();
+      if (!name) continue;
+      const price = parseFloat(it.price);
+      priceByName[name] = isNaN(price) || price < 0 ? 0 : price;
+    }
+
+    let touched = 0;
+    pr.items.forEach(it => {
+      if (Object.prototype.hasOwnProperty.call(priceByName, it.name)) {
+        it.price = priceByName[it.name];
+        touched++;
+      }
+    });
+
+    if (!touched)
+      return res.status(400).json({ error: 'None of the given item names matched this PR.' });
+
     await pr.save();
     res.json(pr);
   } catch (err) { res.status(500).json({ error: err.message }); }
