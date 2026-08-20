@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': {
           target: backendTarget,
-          changeOrigin: true,
+          // changeOrigin: true,
           secure: false,
           configure: (proxy) => {
             proxy.on('error', (err) => {

@@ -3,7 +3,9 @@ import { useAuth } from "../context/AuthContext";
 import { todayStr } from "../utils/helpers";
 
 // ── API helpers (add these to your api.js too) ────────────────────────────────
-const API = "/api";
+const API = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, "")}/api`
+  : "/api";
 async function apiGet(path) {
   const token = localStorage.getItem("sy_token");
   const res = await fetch(`${API}${path}`, {
@@ -1824,12 +1826,11 @@ export default function JobOrder() {
         ],
       });
       setMsg({ text: `✓ Job order ${srNo} created successfully.`, ok: true });
-      resetFields();
-      load();
-      setTimeout(() => {
-        setMsg({ text: "", ok: true });
-        setShowForm(false);
-      }, 2500);
+resetFields();
+load();
+setTimeout(() => {
+  setMsg({ text: "", ok: true });
+}, 2500);
     } catch (err) {
       console.error("[JobOrder] create failed", err);
       setMsg({ text: "Error: " + err.message, ok: false });
