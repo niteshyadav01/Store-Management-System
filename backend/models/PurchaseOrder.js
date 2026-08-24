@@ -10,16 +10,33 @@ const poItemSchema = new mongoose.Schema({
   remarks:    { type: String, default: '' },
 }, { _id: false });
 
+const changeEntrySchema = new mongoose.Schema({
+  field: { type: String, required: true },
+  from:  { type: String, default: '' },
+  to:    { type: String, default: '' },
+}, { _id: false });
+
+const activitySchema = new mongoose.Schema({
+  action:          { type: String, required: true }, // 'created' | 'updated'
+  description:     { type: String, default: '' },     // used for 'created' summary only
+  changes:         { type: [changeEntrySchema], default: [] }, // structured field-level diff for 'updated'
+  performedByName: { type: String, default: '' },
+  performedByRole: { type: String, default: '' },
+  timestamp:       { type: Date, default: Date.now },
+}, { _id: false });
+
 const purchaseOrderSchema = new mongoose.Schema({
-  poNumber:   { type: String, required: true, unique: true },
+  poNumber:   { type: String, required: true, trim: true  },
   prNumber:   { type: String, required: true },
   prId:       { type: mongoose.Schema.Types.ObjectId, ref: 'PurchaseRequest', required: true },
   vendorName: { type: String, required: true, trim: true },
+  projectName:      { type: String, default: '' },
   poDate:           { type: String, required: true },
   poExpectedDate:   { type: String, default: '' },
   items:      { type: [poItemSchema], validate: v => Array.isArray(v) && v.length > 0 },
   createdByName:     { type: String, default: '' },
   createdByUsername: { type: String, default: '' },
+  activity:   { type: [activitySchema], default: [] },
 }, { timestamps: true });
 
 purchaseOrderSchema.index({ prId: 1 });

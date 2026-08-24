@@ -9,7 +9,6 @@ const ALLOWED_ROLES = ['admin', 'purchase'];
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
-// Sum ordered qty per item name across all POs linked to a PR
 async function orderedQtyMap(prId) {
   const pos = await PurchaseOrder.find({ prId }).lean();
   const map = {};
@@ -19,7 +18,6 @@ async function orderedQtyMap(prId) {
   return map;
 }
 
-// Sum inwarded qty per `${poNumber}||${itemName}` key for a set of PO numbers
 async function inwardedQtyMap(poNumbers) {
   if (!poNumbers.length) return {};
   const docs = await Inward.find({ po: { $in: poNumbers } }).lean();
@@ -32,11 +30,88 @@ async function inwardedQtyMap(poNumbers) {
   return map;
 }
 
+async function syncPrStatus(prId, { note, byName, byUsername } = {}) {
+  const pr = await PurchaseRequest.findById(prId);
+  if (!pr) return null;
+
+  const updatedOrdered = await orderedQtyMap(prId);
+  const fullyCovered = pr.items.every(it => (updatedOrdered[it.name] ?? 0) >= it.qty - 0.00001);
+  const anyOrdered   = pr.items.some(it => (updatedOrdered[it.name] ?? 0) > 0.00001);
+
+  pr.status = fullyCovered ? 'ordered' : anyOrdered ? 'partial' : 'approved';
+  if (note) {
+    pr.history.push({
+      status: pr.status, byName: byName || '', byUsername: byUsername || '', note, at: new Date(),
+    });
+  }
+  await pr.save();
+  return pr;
+}
+
+// Build a human-readable list of exactly what changed between the old PO
+// and the incoming edit — used for the activity log description.
+// ── Change-diff helper ────────────────────────────────────────────────────────
+
+const FIELD_LABELS = {
+  poNumber: 'PO Number',
+  vendorName: 'Vendor',
+  projectName: 'Project',
+  poDate: 'PO Date',
+  poExpectedDate: 'Expected Date',
+};
+
+const DATE_FIELDS = new Set(['poDate', 'poExpectedDate']);
+
+// Stored as 'YYYY-MM-DD' → display as 'DD/MM/YYYY'
+function fmtDate(d) {
+  if (!d) return '—';
+  const [y, m, day] = String(d).split('-');
+  if (!y || !m || !day) return String(d);
+  return `${day}/${m}/${y}`;
+}
+
+function diffPOChanges(oldPo, newFields, newItems) {
+  const changes = [];
+
+  for (const [key, label] of Object.entries(FIELD_LABELS)) {
+    const oldRaw = String(oldPo[key] ?? '').trim();
+    const newRaw = String(newFields[key] ?? '').trim();
+    if (oldRaw !== newRaw) {
+      changes.push({
+        field: label,
+        from: DATE_FIELDS.has(key) ? fmtDate(oldRaw) : (oldRaw || '—'),
+        to:   DATE_FIELDS.has(key) ? fmtDate(newRaw) : (newRaw || '—'),
+      });
+    }
+  }
+
+  const oldItemsByName = Object.fromEntries((oldPo.items || []).map(it => [it.name, it]));
+  const newNames = new Set(newItems.map(it => it.name));
+
+  for (const it of newItems) {
+    const old = oldItemsByName[it.name];
+    if (!old) {
+      changes.push({ field: 'Item added', from: '—', to: `${it.name} (qty ${it.orderedQty}, price ${it.price})` });
+      continue;
+    }
+    if (Number(old.orderedQty) !== Number(it.orderedQty))
+      changes.push({ field: `${it.name} — Qty`, from: String(old.orderedQty), to: String(it.orderedQty) });
+    if (Number(old.price || 0) !== Number(it.price || 0))
+      changes.push({ field: `${it.name} — Price`, from: String(old.price || 0), to: String(it.price || 0) });
+    if ((old.remarks || '') !== (it.remarks || ''))
+      changes.push({ field: `${it.name} — Remarks`, from: old.remarks || '—', to: it.remarks || '—' });
+    if ((old.projectName || '') !== (it.projectName || ''))
+      changes.push({ field: `${it.name} — Project`, from: old.projectName || '—', to: it.projectName || '—' });
+  }
+
+  for (const old of (oldPo.items || [])) {
+    if (!newNames.has(old.name)) changes.push({ field: 'Item removed', from: old.name, to: '—' });
+  }
+
+  return changes;
+}
 // ── Routes ────────────────────────────────────────────────────────────────────
 
-// GET /api/purchase-orders/next-number
-// Still available as a *suggestion* for the UI (e.g. to pre-fill the input),
-// but it is no longer used to force-generate the PO number on save.
 router.get('/next-number', authMiddleware, async (req, res) => {
   try {
     const counter    = await Counter.findOne({ _id: 'purchaseOrder' });
@@ -45,7 +120,6 @@ router.get('/next-number', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/purchase-orders/by-number/:poNumber
 router.get('/by-number/:poNumber', authMiddleware, async (req, res) => {
   try {
     const po = await PurchaseOrder.findOne({ poNumber: req.params.poNumber }).lean();
@@ -54,8 +128,6 @@ router.get('/by-number/:poNumber', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/purchase-orders/po-matching
-// All POs with per-item ordered vs received breakdown.
 router.get('/po-matching', authMiddleware, async (req, res) => {
   try {
     const allPos   = await PurchaseOrder.find().sort({ createdAt: -1 }).lean();
@@ -81,8 +153,6 @@ router.get('/po-matching', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/purchase-orders/pending-inward
-// POs with at least one item not yet fully received (for Inward Entry dropdown).
 router.get('/pending-inward', authMiddleware, async (req, res) => {
   try {
     const allPos   = await PurchaseOrder.find().sort({ createdAt: -1 }).lean();
@@ -102,7 +172,6 @@ router.get('/pending-inward', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// GET /api/purchase-orders
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const filter = req.query.prId ? { prId: req.query.prId } : {};
@@ -111,10 +180,22 @@ router.get('/', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// GET /api/purchase-orders/:id/activity — newest first
+router.get('/:id/activity', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id).lean();
+    if (!po) return res.status(404).json({ error: 'PO not found.' });
+    const list = [...(po.activity || [])].sort(
+      (a, b) => new Date(b.timestamp) - new Date(a.timestamp)
+    );
+    res.json(list);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // POST /api/purchase-orders — create a new PO
 router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
   try {
-    const { poNumber, prNumber, prId, vendorName, poDate, poExpectedDate, items } = req.body;
+    const { poNumber, prNumber, prId, vendorName, projectName, poDate, poExpectedDate, items } = req.body;
 
     const cleanPoNumber = String(poNumber || '').trim();
 
@@ -126,10 +207,9 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     if (!Array.isArray(items) || !items.length)
       return res.status(400).json({ error: 'At least one item is required.' });
 
-    // Make sure the user-entered PO number isn't already taken.
-    const existing = await PurchaseOrder.findOne({ poNumber: cleanPoNumber }).lean();
-    if (existing)
-      return res.status(409).json({ error: `PO number "${cleanPoNumber}" already exists.` });
+    // const existing = await PurchaseOrder.findOne({ poNumber: cleanPoNumber }).lean();
+    // if (existing)
+    //   return res.status(409).json({ error: `PO number "${cleanPoNumber}" already exists.` });
 
     const pr = await PurchaseRequest.findById(prId);
     if (!pr) return res.status(404).json({ error: 'Purchase request not found.' });
@@ -151,6 +231,7 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
 
       cleanItems.push({
         name, code: it.code || '', category: it.category || '', uom: it.uom || '',
+        projectName: it.projectName || projectName || '',
         orderedQty, price: parseFloat(it.price) || 0, remarks: it.remarks || '',
       });
     }
@@ -159,13 +240,20 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
 
     const po = await PurchaseOrder.create({
       poNumber: cleanPoNumber, prNumber, prId,
-      vendorName: vendorName.trim(), poDate,
+      vendorName: vendorName.trim(),
+      projectName: projectName || '',
+      poDate,
       poExpectedDate: poExpectedDate || '',
       items: cleanItems,
       createdByName: req.user.name, createdByUsername: req.user.username,
+      activity: [{
+        action: 'created',
+        description: `PO ${cleanPoNumber} created against PR ${prNumber}.`,
+        performedByName: req.user.name,
+        performedByRole: req.user.role,
+      }],
     });
 
-    // Advance PR status based on coverage
     const updatedOrdered = await orderedQtyMap(prId);
     const fullyCovered   = pr.items.every(it => (updatedOrdered[it.name] ?? 0) >= it.qty - 0.00001);
 
@@ -188,35 +276,118 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
   }
 });
 
-// PATCH /api/purchase-orders/:id/number — rename an existing PO's number
-router.patch('/:id/number', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+// PATCH /api/purchase-orders/:id — full edit (fields + items), logs exactly what changed
+// PATCH /api/purchase-orders/:id — full edit (fields + items), logs structured field-level diff
+// PATCH /api/purchase-orders/:id — full edit (fields + items), logs structured field-level diff
+router.patch('/:id', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
   try {
-    const newNumber = String(req.body.poNumber || '').trim();
-    if (!newNumber) return res.status(400).json({ error: 'New PO number is required.' });
-
     const po = await PurchaseOrder.findById(req.params.id);
     if (!po) return res.status(404).json({ error: 'PO not found.' });
 
+    const { poNumber, vendorName, projectName, poDate, poExpectedDate, items } = req.body;
+    const cleanPoNumber = String(poNumber || '').trim();
+
+    if (!cleanPoNumber)  return res.status(400).json({ error: 'PO number is required.' });
+    if (!vendorName)     return res.status(400).json({ error: 'Vendor name is required.' });
+    if (!poDate)         return res.status(400).json({ error: 'PO date is required.' });
+    if (!Array.isArray(items) || !items.length)
+      return res.status(400).json({ error: 'At least one item is required.' });
+
+    // if (cleanPoNumber !== po.poNumber) {
+    //   const clash = await PurchaseOrder.findOne({ poNumber: cleanPoNumber, _id: { $ne: po._id } }).lean();
+    //   if (clash) return res.status(409).json({ error: `PO number "${cleanPoNumber}" already exists.` });
+    // }
+
+    const inwarded = await inwardedQtyMap([po.poNumber]);
+    const cleanItems = [];
+    for (const it of items) {
+      const name       = String(it.name || '').trim();
+      const orderedQty = parseFloat(it.orderedQty);
+      const price      = parseFloat(it.price);
+
+      if (!name)                          return res.status(400).json({ error: 'Item name is required.' });
+      if (!orderedQty || orderedQty <= 0) return res.status(400).json({ error: `"${name}": qty must be > 0.` });
+      if (!price || price <= 0)           return res.status(400).json({ error: `"${name}": unit price must be > 0.` });
+
+      const received = inwarded[`${po.poNumber}||${name}`] || 0;
+      if (orderedQty < received - 0.00001)
+        return res.status(400).json({
+          error: `"${name}": ordered qty (${orderedQty}) can't be less than already-received qty (${received}).`,
+        });
+
+      cleanItems.push({
+        name, code: it.code || '', category: it.category || '', uom: it.uom || '',
+        projectName: it.projectName || projectName || '',
+        orderedQty, price, remarks: it.remarks || '',
+      });
+    }
+
+    const oldPoSnapshot = po.toObject();
+    const newFields = {
+      poNumber: cleanPoNumber, vendorName: vendorName.trim(),
+      projectName: projectName || '', poDate, poExpectedDate: poExpectedDate || '',
+    };
+    const changes = diffPOChanges(oldPoSnapshot, newFields, cleanItems);
+
     const oldNumber = po.poNumber;
-    if (newNumber === oldNumber) return res.json(po); // no-op
-
-    const clash = await PurchaseOrder.findOne({ poNumber: newNumber, _id: { $ne: po._id } }).lean();
-    if (clash) return res.status(409).json({ error: `PO number "${newNumber}" already exists.` });
-
-    po.poNumber = newNumber;
+    po.poNumber       = cleanPoNumber;
+    po.vendorName     = vendorName.trim();
+    po.projectName    = projectName || '';
+    po.poDate          = poDate;
+    po.poExpectedDate = poExpectedDate || '';
+    po.items           = cleanItems;
+    po.activity.push({
+      action: 'updated',
+      description: changes.length ? `${changes.length} field(s) changed` : 'No changes detected.',
+      changes,
+      performedByName: req.user.name,
+      performedByRole: req.user.role,
+    });
     await po.save();
 
-    // Cascade: update any Inward entries logged against the old PO number
-    await Inward.updateMany({ po: oldNumber }, { $set: { po: newNumber } });
+    if (cleanPoNumber !== oldNumber) {
+      await Inward.updateMany({ po: oldNumber }, { $set: { po: cleanPoNumber } });
+      await PurchaseRequest.updateOne({ poNumber: oldNumber }, { $set: { poNumber: cleanPoNumber } });
+    }
 
-    // Cascade: update the PR's poNumber reference if it pointed to this PO
-    await PurchaseRequest.updateOne({ poNumber: oldNumber }, { $set: { poNumber: newNumber } });
+    await syncPrStatus(po.prId, {
+      note: `PO updated: ${cleanPoNumber}`,
+      byName: req.user.name,
+      byUsername: req.user.username,
+    });
 
     res.json(po);
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ error: 'PO number collision — please retry.' });
     res.status(500).json({ error: err.message });
   }
+});
+
+// DELETE /api/purchase-orders/:id — admin only
+router.delete('/:id', authMiddleware, requireRole('admin'), async (req, res) => {
+  try {
+    const po = await PurchaseOrder.findById(req.params.id);
+    if (!po) return res.status(404).json({ error: 'PO not found.' });
+
+    const inwarded = await inwardedQtyMap([po.poNumber]);
+    const hasReceipts = Object.keys(inwarded).some(
+      k => k.startsWith(`${po.poNumber}||`) && inwarded[k] > 0
+    );
+    if (hasReceipts)
+      return res.status(400).json({ error: 'Cannot delete a PO that already has inward receipts against it.' });
+
+    const prId = po.prId;
+    const poNumber = po.poNumber;
+    await PurchaseOrder.deleteOne({ _id: po._id });
+
+    await syncPrStatus(prId, {
+      note: `PO deleted: ${poNumber}`,
+      byName: req.user.name,
+      byUsername: req.user.username,
+    });
+
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 module.exports = router;
