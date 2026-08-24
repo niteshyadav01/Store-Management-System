@@ -177,6 +177,10 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
       setErr("Please select a material.");
       return;
     }
+    if (!form.po.trim()) {
+      setErr("PO number is required.");
+      return;
+    }
     if (!form.qty || parseFloat(form.qty) <= 0) {
       setErr("Enter a valid quantity.");
       return;
@@ -326,13 +330,18 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
                 />
               </div>
               <div className="field">
-                <label>PO no</label>
+                <label>
+                  PO no <span style={{ color: "var(--red)" }}>*</span>
+                </label>
                 <input
                   value={form.po}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, po: e.target.value }))
                   }
                   placeholder="e.g. PO-4456"
+                  style={{
+                    borderColor: !form.po.trim() ? "var(--red)" : undefined,
+                  }}
                 />
               </div>
               <div className="field full">
@@ -786,9 +795,9 @@ export default function InwardEntry() {
       setMsg({ text: "Please enter who received the material.", ok: false });
       return;
     }
-    if (!form.po.trim() && !form.challan.trim()) {
+    if (!form.po.trim()) {
       setMsg({
-        text: "Enter either a PO number or a Challan / Invoice no.",
+        text: "Please select or enter a PO number.",
         ok: false,
       });
       return;
@@ -1032,10 +1041,10 @@ export default function InwardEntry() {
           skips.push({ ...skipInfo, reason: "Location is blank" });
           continue;
         }
-        if (!po && !challan) {
+        if (!po) {
           skips.push({
             ...skipInfo,
-            reason: "Both PO No and Challan No are blank (need at least one)",
+            reason: "PO No is blank (PO No is compulsory)",
           });
           continue;
         }
@@ -1331,9 +1340,9 @@ export default function InwardEntry() {
           <div className="hint">
             Required:{" "}
             <strong>
-              Material Name, Qty, Vendor Name, Received By, Location
+              Material Name, Qty, Vendor Name, Received By, Location, PO No
             </strong>
-            , plus <strong>either</strong> PO No <strong>or</strong> Challan No
+            &nbsp;(Challan No is optional).
             <br />
             Date format dd/mm/yyyy. The file is checked first — nothing is saved
             until you confirm.{" "}
@@ -1554,9 +1563,7 @@ export default function InwardEntry() {
         <p
           style={{ fontSize: 12, color: "var(--text-3)", margin: "-6px 0 12px" }}
         >
-          <span style={{ color: "var(--red)" }}>*</span> required &nbsp;·&nbsp;
-          <span style={{ color: "var(--red)" }}>*†</span> at least one of these
-          two is required
+          <span style={{ color: "var(--red)" }}>*</span> required
         </p>
         <form onSubmit={handleSubmit}>
           <div className="section-label">Document details</div>
@@ -1591,25 +1598,23 @@ export default function InwardEntry() {
               )}
             </div>
             <div className="field">
-              <label>
-                Challan / Invoice no{" "}
-                <span style={{ color: "var(--red)" }}>*†</span>
-              </label>
+              <label>Challan / Invoice no</label>
               <input
                 value={form.challan}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, challan: e.target.value }))
                 }
-                placeholder="e.g. INV-1023"
+                placeholder="e.g. INV-1023 (optional)"
               />
             </div>
             <div className="field">
               <label>
-                PO Number <span style={{ color: "var(--red)" }}>*†</span>
+                PO Number <span style={{ color: "var(--red)" }}>*</span>
               </label>
               {poManual ? (
                 <div style={{ display: "flex", gap: 6 }}>
                   <input
+                    required
                     value={form.po}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, po: e.target.value }))
@@ -1633,6 +1638,7 @@ export default function InwardEntry() {
                 </div>
               ) : (
                 <select
+                  required
                   value={form.po}
                   onChange={(e) => {
                     if (e.target.value === "__manual__") {
@@ -1642,7 +1648,7 @@ export default function InwardEntry() {
                     } else handlePoSelect(e.target.value);
                   }}
                 >
-                  <option value="">— Select PO (optional) —</option>
+                  <option value="">— Select PO —</option>
                   {poList.map((po) => (
                     <option key={po._id} value={po.poNumber}>
                       {po.poNumber} — {po.vendorName} (
