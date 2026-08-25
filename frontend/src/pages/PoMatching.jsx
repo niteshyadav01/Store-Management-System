@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getPoMatching } from '../api/api';
 import {toDDMMYYYY} from '../utils/helpers';
 
@@ -6,6 +7,7 @@ const STATUS_LABEL = { received: 'Fully Received', partial: 'Partially Received'
 const STATUS_COLOR = { received: '#2a9d8f', partial: '#e9a44e', pending: '#c0392b' };
 
 export default function PoMatching() {
+  const navigate = useNavigate();
   const [rows,        setRows]        = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [err,         setErr]         = useState('');
@@ -23,6 +25,19 @@ export default function PoMatching() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Same hand-off shape the Purchase Request page uses when it sends
+  // someone to Inward to receive against a PO: `presetPo` preselects the
+  // PO dropdown there, `prNumber`/`prPoNumbers` drive the small banner.
+  function goToInward(po) {
+    navigate('/inward', {
+      state: {
+        presetPo: po.poNumber,
+        prNumber: po.prNumber || undefined,
+        prPoNumbers: [po.poNumber],
+      },
+    });
+  }
 
   const counts = rows.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
 
@@ -94,6 +109,7 @@ export default function PoMatching() {
                 <th className="num">Received Qty</th>
                 <th className="num">Pending Qty</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -130,12 +146,22 @@ export default function PoMatching() {
                           {STATUS_LABEL[po.status]}
                         </span>
                       </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        {po.status !== 'received' && (
+                          <button
+                            className="btn btn-sm btn-in"
+                            onClick={() => goToInward(po)}
+                          >
+                            Receive items
+                          </button>
+                        )}
+                      </td>
                     </tr>
 
                     {/* Expanded item breakdown */}
                     {isOpen && (
                       <tr>
-                        <td colSpan={10} style={{ background: 'var(--paper-dim)', padding: 0 }}>
+                        <td colSpan={11} style={{ background: 'var(--paper-dim)', padding: 0 }}>
                           <div style={{ padding: '14px 24px 18px' }}>
                             <div style={{ fontWeight: 600, fontSize: 12.5, marginBottom: 10, color: 'var(--text-2)' }}>
                               Item breakdown — {po.poNumber} / {po.vendorName}

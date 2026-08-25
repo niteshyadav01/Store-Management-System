@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   getMaster,
   getInward,
@@ -514,6 +515,8 @@ const tdS = { padding: "7px 10px", verticalAlign: "middle" };
 /* ── Main component ──────────────────────────────────────────────────── */
 export default function InwardEntry() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const canSeePrice = user?.role === "admin" || user?.role === "purchase";
   const canEditDelete = user?.role === "admin"|| user?.role === "store" || user?.role === "store_manager";
 
@@ -530,6 +533,14 @@ export default function InwardEntry() {
   const [poRows, setPoRows] = useState([]);
   const [poLoading, setPoLoading] = useState(false);
   const [manualRows, setManualRows] = useState([emptyManualRow()]);
+
+  // ── PR → Inward hand-off ───────────────────────────────────────────────
+  // The Purchase Request page's "Receive items" button navigates here with
+  // `state: { presetPo, prNumber, prPoNumbers }`. We wait until poList has
+  // loaded (so the preset PO actually exists as a <select> option), apply
+  // it once, show a small banner, then clear the navigation state.
+  const prefillAppliedRef = useRef(false);
+  const [prBanner, setPrBanner] = useState(null); // { prNumber, poNumbers }
 
   // ── Entries table filters ─────────────────────────────────────────────
   const [searchText, setSearchText] = useState("");
@@ -562,6 +573,26 @@ export default function InwardEntry() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Consume the PR hand-off once the PO dropdown data is available.
+  useEffect(() => {
+    const st = location.state;
+    if (!st || (!st.presetPo && !st.prNumber) || prefillAppliedRef.current) return;
+    if (st.presetPo && !poList.length) return; // wait for PO dropdown data to load
+
+    prefillAppliedRef.current = true;
+
+    if (st.presetPo) {
+      handlePoSelect(st.presetPo);
+    }
+    if (st.prNumber) {
+      setPrBanner({ prNumber: st.prNumber, poNumbers: st.prPoNumbers || [] });
+    }
+
+    // Clear the router state so it isn't reapplied on refresh/back-nav.
+    navigate(location.pathname, { replace: true, state: {} });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state, poList, navigate, location.pathname]);
 
   const filteredEntries = entries.filter((entry) => {
     return (
@@ -1268,6 +1299,28 @@ export default function InwardEntry() {
         .compact-form .actionrow { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); align-items:center; }
         .compact-form .doc-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px 16px; margin-bottom:14px; }
 
+        .pr-inward-banner {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          background: var(--teal-light);
+          color: var(--teal-dark);
+          border-radius: 8px;
+          padding: 9px 14px;
+          font-size: 12.5px;
+          margin-bottom: 14px;
+        }
+        .pr-inward-banner button {
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: var(--teal-dark);
+          font-size: 13px;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+
         .stage-box { border:1.5px solid var(--line); border-radius:10px; overflow:hidden; margin-top:14px; text-align:left; }
         .stage-head { background:var(--paper-dim); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; border-bottom:1px solid var(--line); }
         .stage-stat { display:inline-flex; flex-direction:column; gap:2px; margin-right:18px; }
@@ -1565,6 +1618,23 @@ export default function InwardEntry() {
         >
           <span style={{ color: "var(--red)" }}>*</span> required
         </p>
+
+        {prBanner && (
+          <div className="pr-inward-banner">
+            <span>
+              Receiving against <strong>{prBanner.prNumber}</strong>
+              {prBanner.poNumbers.length > 1
+                ? ` — select the PO to receive: ${prBanner.poNumbers.join(", ")}`
+                : prBanner.poNumbers.length === 1
+                  ? ` — PO ${prBanner.poNumbers[0]} selected below`
+                  : ""}
+            </span>
+            <button type="button" onClick={() => setPrBanner(null)} title="Dismiss">
+              ✕
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className="section-label">Document details</div>
           <div className="doc-row">

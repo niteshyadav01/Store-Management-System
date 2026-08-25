@@ -173,6 +173,11 @@ export default function PurchaseRequest() {
 
   const [stockMap, setStockMap] = useState({});
 
+  // Raw inward entries — kept around (not just folded into stockMap) so we
+  // can work out, per PR, how much of each item has actually been received
+  // against the PO(s) tied to that PR.
+  const [inwardEntries, setInwardEntries] = useState([]);
+
   // Banner shown when this page was opened with items handed off from
   // Live Stock's "Create PR" flow (single item or several selected together).
   const [prefillBanner, setPrefillBanner] = useState(false);
@@ -183,6 +188,10 @@ export default function PurchaseRequest() {
   const [poDataByPr, setPoDataByPr] = useState({});
   const [poDataLoading, setPoDataLoading] = useState({});
 
+  // Guards against re-firing the auto "mark as received" status update
+  // while a previous call for the same PR is still in flight.
+  const receivedFlipInFlight = useRef(new Set());
+
   const load = useCallback(async () => {
     const [m, r, inw, out] = await Promise.all([
       getMaster(), getPurchaseRequests(), getInward(), getOutward(),
@@ -190,8 +199,10 @@ export default function PurchaseRequest() {
     setMaster(m);
     setRequests(r);
     // Build balance map: inward - outward per material
+    const inwardArr = Array.isArray(inw) ? inw : (inw?.entries ?? []);
+    setInwardEntries(inwardArr);
     const inTotals = {}, outTotals = {};
-    (Array.isArray(inw) ? inw : (inw?.entries ?? [])).forEach(e => {
+    inwardArr.forEach(e => {
       inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
     });
     (Array.isArray(out) ? out : (out?.entries ?? [])).forEach(e => {
@@ -365,12 +376,26 @@ export default function PurchaseRequest() {
     } catch (err) { alert(err.message); }
   }
 
-  async function handleReceive(pr) {
-    if (!window.confirm(`Mark ${pr.prNumber} as received?`)) return;
+  // ── Receive flow ────────────────────────────────────────────────────────
+  // "Mark received" no longer flips the status directly. Instead it sends
+  // the user to the Inward page with the relevant PO preselected (when the
+  // PR maps to exactly one PO). Status only flips to "received" once every
+  // item on the PR has been fully covered by actual inward entries — see
+  // the isFullyReceived()/auto-flip effect below.
+  async function goToInward(pr) {
     try {
-      await setPurchaseRequestStatus(pr._id, { status: "received" });
-      load();
-    } catch (err) { alert(err.message); }
+      const pos = await getPurchaseOrdersByPR(pr._id);
+      const poNumbers = [...new Set((pos || []).map((po) => po.poNumber).filter(Boolean))];
+      navigate("/inward", {
+        state: {
+          presetPo: poNumbers.length === 1 ? poNumbers[0] : undefined,
+          prNumber: pr.prNumber,
+          prPoNumbers: poNumbers,
+        },
+      });
+    } catch (err) {
+      alert("Could not load PO info for this request: " + err.message);
+    }
   }
 
   async function loadPoDataForPr(pr) {
@@ -397,6 +422,57 @@ export default function PurchaseRequest() {
       setPoDataLoading((prev) => ({ ...prev, [pr._id]: false }));
     }
   }
+
+  // Auto-load PO data for every "ordered" PR (not just the expanded one) so
+  // the fully-received check below has what it needs, even for rows the
+  // user hasn't opened.
+  useEffect(() => {
+    requests
+      .filter((pr) => pr.status === "ordered" && !poDataByPr[pr._id] && !poDataLoading[pr._id])
+      .forEach((pr) => loadPoDataForPr(pr));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requests]);
+
+  // Given a PR, sum actual inward entries per material name, restricted to
+  // the PO number(s) linked to that PR (via poDataByPr), so inward entries
+  // for the same material against unrelated POs are never counted.
+  function getReceivedByName(pr) {
+    const poInfo = poDataByPr[pr._id];
+    if (!poInfo) return {};
+    const poNumbers = new Set();
+    Object.values(poInfo.byName).forEach((v) => (v.poNumbers || []).forEach((n) => poNumbers.add(n)));
+    const received = {};
+    inwardEntries.forEach((e) => {
+      if (!poNumbers.has(e.po)) return;
+      received[e.name] = (received[e.name] || 0) + (parseFloat(e.qty) || 0);
+    });
+    return received;
+  }
+
+  function isFullyReceived(pr) {
+    if (!poDataByPr[pr._id]) return false; // PO data not loaded yet — don't assume
+    const received = getReceivedByName(pr);
+    return pr.items.every((it) => (received[it.name] || 0) >= (parseFloat(it.qty) || 0));
+  }
+
+  // Once every item on an "ordered" PR has been fully inward-received,
+  // auto-flip its status to "received" — this is what makes the
+  // "Mark received"/"Receive items" button disappear on its own.
+  useEffect(() => {
+    requests
+      .filter((pr) => pr.status === "ordered")
+      .forEach((pr) => {
+        if (receivedFlipInFlight.current.has(pr._id)) return;
+        if (isFullyReceived(pr)) {
+          receivedFlipInFlight.current.add(pr._id);
+          setPurchaseRequestStatus(pr._id, { status: "received" })
+            .then(load)
+            .catch(() => {})
+            .finally(() => receivedFlipInFlight.current.delete(pr._id));
+        }
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poDataByPr, inwardEntries, requests]);
 
   function toggleExpanded(pr) {
     const next = expanded === pr._id ? null : pr._id;
@@ -792,6 +868,7 @@ export default function PurchaseRequest() {
                 const isOwner = pr.requestedByUsername === user?.username;
                 const canEditThis = isOwner || user?.role === "admin" || user?.role === "store_manager";
                 const isPartial = pr.status === "partial";
+                const receivedByName = getReceivedByName(pr);
                 return (
                   <React.Fragment key={pr._id}>
                     <tr
@@ -826,7 +903,7 @@ export default function PurchaseRequest() {
                             <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Create PO</button>
                           )}
                           {canReview && pr.status === "ordered" && (
-                            <button className="btn btn-sm btn-in" onClick={() => handleReceive(pr)}>Mark received</button>
+                            <button className="btn btn-sm btn-in" onClick={() => goToInward(pr)}>Receive items</button>
                           )}
                         </div>
                       </td>
@@ -858,6 +935,8 @@ export default function PurchaseRequest() {
                                         <th className="num">Ordered Qty</th>
                                         <th className="num">Balance</th>
                                         <th>Expected Delivery (PO)</th>
+                                        <th className="num">Received Qty</th>
+                                        <th className="num">Pending Receipt</th>
                                       </>
                                     )}
                                   </tr>
@@ -873,6 +952,8 @@ export default function PurchaseRequest() {
                                     const itemPartial = showOrderTracking && orderedQty > 0 && balance > 0;
                                     const poExpectedDates = poInfo?.expectedDates || [];
                                     const poLoading = !!poDataLoading[pr._id];
+                                    const receivedQty = receivedByName[it.name] || 0;
+                                    const pendingReceipt = Math.max(0, (parseFloat(it.qty) || 0) - receivedQty);
                                     return (
                                       <tr key={i} style={itemPartial ? { background: 'rgba(217,119,6,0.08)' } : undefined}>
                                         <td>
@@ -917,6 +998,18 @@ export default function PurchaseRequest() {
                                                 formatDDMMYYYY(poExpectedDates[0])
                                               ) : (
                                                 poExpectedDates.map(formatDDMMYYYY).join(', ')
+                                              )}
+                                            </td>
+                                            <td className="num">
+                                              {poLoading ? <span style={{ color: 'var(--text-3)' }}>…</span> : formatNum(receivedQty)}
+                                            </td>
+                                            <td className="num">
+                                              {poLoading ? (
+                                                <span style={{ color: 'var(--text-3)' }}>…</span>
+                                              ) : pendingReceipt > 0 ? (
+                                                <strong style={{ color: 'var(--amber, #b45309)' }}>{formatNum(pendingReceipt)}</strong>
+                                              ) : (
+                                                <span style={{ color: 'var(--teal-dark)' }}>0</span>
                                               )}
                                             </td>
                                           </>
