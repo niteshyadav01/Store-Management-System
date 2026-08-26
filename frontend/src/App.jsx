@@ -28,7 +28,7 @@ const ROLE_ACCESS = {
   purchaseRequests: ["admin", "store", "store_manager", "viewer"],
   purchaseOrders: ["admin", "purchase"],
   poMatching: ["admin", "purchase", "store_manager"],
-  jobOrders: ['admin', 'store_manager', 'store'],
+  jobOrders: ['admin', 'store_manager', 'store', 'viewer'],
 };
 
 function getDefaultPath(role) {
