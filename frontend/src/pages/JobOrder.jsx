@@ -80,6 +80,8 @@ const emptyItem = () => ({
   remark: "",
 });
 
+const CREATE_ROLES = ["admin", "store_manager", "store", "purchase"];
+
 const LOCATIONS = ["Factory", "Site"];
 const UNITS = ["NOS", "MTR", "KG", "SET", "PKT", "BOX", "LTR"];
 const FINISH_OPTIONS = ["Powder Coating", "Galvanized", "Hot-Dip"];
@@ -159,15 +161,7 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// Chrome does not reliably honor `size` on NAMED @page rules (@page foo {...}
-// + page: foo on an element) — it mostly falls back to the browser/OS default
-// (Portrait) regardless of what's declared. The one thing Chrome does honor
-// consistently is a single UNNAMED `@page { size: ...; }` rule present in the
-// document at the moment window.print() runs. So instead of two permanent
-// named @page blocks (which can also silently conflict with each other when
-// both print templates happen to be mounted at once, e.g. inside ViewModal),
-// we inject/update one shared <style> tag with the correct orientation right
-// before each print call.
+
 function setPrintPageSize(orientation) {
   const id = "job-order-page-size-style";
   let styleEl = document.getElementById(id);
@@ -1670,6 +1664,7 @@ function ReceiveModal({ order, onSave, onClose }) {
 export default function JobOrder() {
   const { user } = useAuth();
 
+  const canCreate = CREATE_ROLES.includes(user?.role);
   const [orders, setOrders] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
@@ -1767,6 +1762,10 @@ export default function JobOrder() {
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ text: "", ok: true });
+      if (!canCreate) {
+     setMsg({ text: "You don't have permission to create job orders.", ok: false });
+    return;
+    }
     if (!srNo.trim()) {
       setMsg({ text: "SR No is required.", ok: false });
       return;
@@ -1937,16 +1936,16 @@ setTimeout(() => {
           </p>
         </div>
         <div className="no-print">
-          {!showForm && (
+         {!showForm && canCreate && (
             <button className="btn btn-in" onClick={() => setShowForm(true)}>
               + New Job Order
             </button>
           )}
-        </div>
+      </div>
       </div>
 
       {/* ── Create form ── */}
-      {showForm && (
+      {showForm && canCreate && (
         <div className="card no-print">
           <div
             style={{
@@ -2372,7 +2371,7 @@ setTimeout(() => {
                           >
                             👁 View
                           </button>
-                          {hasPending && (
+                          {hasPending && canCreate && (
                             <button
                               className="btn btn-sm btn-in"
                               onClick={() => setReceiveOrder(order)}

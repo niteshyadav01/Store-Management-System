@@ -3,7 +3,7 @@ const JobOrder = require('../models/JobOrder');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Matches ROLE_ACCESS.jobOrders in App.jsx
-const ALLOWED_ROLES = ['admin', 'store_manager', 'store'];
+const ALLOWED_ROLES = ['admin', 'store_manager', 'store','purchase'];
 
 // Coerce possibly-string numeric fields safely.
 const num = v => {

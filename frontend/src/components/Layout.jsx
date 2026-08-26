@@ -153,7 +153,7 @@ const TOP_LINKS = [
   {
         label: "Job Orders",
         path: "/job-orders",
-        roles: ["admin", "store_manager", "store", "viewer"],
+        roles: ["admin", "store_manager", "store", "viewer", "purchase"],
       },
 ];
 export default function Layout() {
