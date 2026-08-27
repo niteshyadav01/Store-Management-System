@@ -3,13 +3,34 @@ const JobOrder = require('../models/JobOrder');
 const { authMiddleware, requireRole } = require('../middleware/auth');
 
 // Matches ROLE_ACCESS.jobOrders in App.jsx
-const ALLOWED_ROLES = ['admin', 'store_manager', 'store','purchase'];
+const ALLOWED_ROLES = ['admin', 'store_manager', 'store', 'purchase'];
 
-// Coerce possibly-string numeric fields safely.
+// Coerce possibly-string numeric fields safely for general math (defaults to 0
+// when unusable). Used only where a "no value" and "zero" both mean "skip".
 const num = v => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+// Coerce a possibly-string numeric field, but preserve "not entered" as null
+// instead of collapsing it to 0. Used for anything we persist/display, so a
+// genuine 0 stays distinguishable from a blank field.
+const toNumOrNull = v => {
+  if (v === '' || v === undefined || v === null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Area/nos (Sq inch) = Perimeter (mm) × Length (mm) ÷ 645.2
+// Computed here — authoritatively, server-side — from perimeter/length.
+// Any area value sent by the client is a live-preview-only figure and is
+// never trusted or persisted as-is.
+const AREA_DIVISOR = 645.2;
+function calcArea(perimeter, length) {
+  if (perimeter == null || length == null) return null;
+  if (!perimeter || !length) return null;
+  return (perimeter * length) / AREA_DIVISOR;
+}
 
 // ── GET /api/job-orders ───────────────────────────────────────────────────────
 router.get('/', authMiddleware, async (req, res) => {
@@ -46,18 +67,44 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
       return res.status(400).json({ error: 'At least one item is required.' });
 
     const cleanItems = [];
+    const skipped = []; // descriptions of rows dropped for missing required fields, for a clearer error message
     for (const it of items) {
       const description = String(it.description || '').trim();
       const projectName = String(it.projectName || '').trim();
       const qty = parseFloat(it.qty);
-      if (!description || !qty || qty <= 0 || !projectName) continue;
+
+      if (!description || !qty || qty <= 0 || !projectName) {
+        if (description || projectName || it.qty) skipped.push(description || '(unnamed item)');
+        continue;
+      }
+
+      const weightPerPc = toNumOrNull(it.weightPerPc);
+      const perimeter   = toNumOrNull(it.perimeter);
+      const length      = toNumOrNull(it.length);
+      const area        = calcArea(perimeter, length);
+
       cleanItems.push({
-        description, size: it.size || '', qty,
-        unit: it.unit || 'NOS', projectName, ralCode: it.ralCode || '', remark: it.remark || '',
+        description,
+        weightPerPc,
+        perimeter,
+        length,
+        area,
+        qty,
+        unit: it.unit || 'NOS',
+        process: String(it.process || '').trim(),
+        projectName,
+        ralCode: it.ralCode || '',
+        remark: it.remark || '',
       });
     }
+
     if (!cleanItems.length)
       return res.status(400).json({ error: 'At least one valid item with description, qty, and project name is required.' });
+
+    if (skipped.length)
+      return res.status(400).json({
+        error: `These items are missing description, qty, or project name and were not saved: ${skipped.join(', ')}. Fix them and resubmit.`,
+      });
 
     const existing = await JobOrder.findOne({ srNo: String(srNo).trim() }).lean();
     if (existing) return res.status(409).json({ error: `SR No "${srNo}" already exists.` });
@@ -80,6 +127,109 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     res.status(201).json(order);
   } catch (err) {
     console.error('[job-orders POST /] ', err);
+    if (err.code === 11000) return res.status(409).json({ error: 'SR No collision — please retry.' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PATCH /api/job-orders/:id — edit ──────────────────────────────────────────
+// Header fields (srNo, date, vendorName, vehicleNo, issuedBy, deliveryAddress,
+// remarks) can always be edited.
+//
+// The item list itself can only be replaced while the order is still fully
+// 'issued' (nothing received yet). Once any receiving has happened, each
+// item's receivedQty/receipts are tied to that item's position in the array
+// — adding, removing, or reordering items at that point would silently
+// corrupt the qty-tracking for whatever was already received. So once status
+// is 'partial' or 'received', an `items` payload is rejected; the client can
+// still PATCH header fields alone by omitting `items` from the body.
+router.patch('/:id', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const order = await JobOrder.findById(req.params.id);
+    if (!order) return res.status(404).json({ error: 'Job order not found.' });
+
+    const { srNo, date, vendorName, vehicleNo, issuedBy, deliveryAddress, remarks, items } = req.body;
+
+    if (srNo !== undefined) {
+      const trimmed = String(srNo).trim();
+      if (!trimmed) return res.status(400).json({ error: 'SR No is required.' });
+      if (trimmed !== order.srNo) {
+        const dup = await JobOrder.findOne({ srNo: trimmed, _id: { $ne: order._id } }).lean();
+        if (dup) return res.status(409).json({ error: `SR No "${trimmed}" already exists.` });
+      }
+      order.srNo = trimmed;
+    }
+    if (date !== undefined && date) order.date = date;
+    if (vendorName !== undefined) {
+      if (!vendorName.trim()) return res.status(400).json({ error: 'Vendor name is required.' });
+      order.vendorName = vendorName.trim();
+    }
+    if (vehicleNo !== undefined) order.vehicleNo = vehicleNo;
+    if (issuedBy !== undefined) {
+      if (!issuedBy.trim()) return res.status(400).json({ error: 'Issued By is required.' });
+      order.issuedBy = issuedBy.trim();
+    }
+    if (deliveryAddress !== undefined) order.deliveryAddress = deliveryAddress;
+    if (remarks !== undefined) order.remarks = remarks;
+
+    let itemsChanged = false;
+    if (items !== undefined) {
+      if (order.status !== 'issued') {
+        return res.status(400).json({
+          error: 'Items can no longer be edited — receiving has already started on this order. Header fields (vendor, vehicle no, delivery address, etc) can still be edited.',
+        });
+      }
+      if (!Array.isArray(items) || !items.length)
+        return res.status(400).json({ error: 'At least one item is required.' });
+
+      const cleanItems = [];
+      const skipped = [];
+      for (const it of items) {
+        const description = String(it.description || '').trim();
+        const projectName = String(it.projectName || '').trim();
+        const qty = parseFloat(it.qty);
+        if (!description || !qty || qty <= 0 || !projectName) {
+          if (description || projectName || it.qty) skipped.push(description || '(unnamed item)');
+          continue;
+        }
+        const weightPerPc = toNumOrNull(it.weightPerPc);
+        const perimeter   = toNumOrNull(it.perimeter);
+        const length      = toNumOrNull(it.length);
+        const area        = calcArea(perimeter, length);
+        cleanItems.push({
+          description, weightPerPc, perimeter, length, area, qty,
+          unit: it.unit || 'NOS',
+          process: String(it.process || '').trim(),
+          projectName, ralCode: it.ralCode || '', remark: it.remark || '',
+          receivedQty: 0, receipts: [],
+        });
+      }
+      if (!cleanItems.length)
+        return res.status(400).json({ error: 'At least one valid item with description, qty, and project name is required.' });
+      if (skipped.length)
+        return res.status(400).json({
+          error: `These items are missing description, qty, or project name and were not saved: ${skipped.join(', ')}. Fix them and resubmit.`,
+        });
+
+      order.items = cleanItems;
+      itemsChanged = true;
+    }
+
+    order.history.push({
+      action: 'edited',
+      by: req.user.name || req.user.username,
+      note: itemsChanged ? 'Order details and items updated.' : 'Order details updated.',
+      at: new Date(),
+    });
+
+    // Same safety net as the receive route — guarantees the items array is
+    // persisted even if Mongoose's automatic dirty-tracking misses a change.
+    order.markModified('items');
+    await order.save();
+
+    res.json(order);
+  } catch (err) {
+    console.error('[job-orders PATCH /:id] ', err);
     if (err.code === 11000) return res.status(409).json({ error: 'SR No collision — please retry.' });
     res.status(500).json({ error: err.message });
   }

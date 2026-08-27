@@ -67,16 +67,21 @@ async function apiPatch(path, body) {
   return res.json();
 }
 
+// Item shape:
+//   description, weightPerPc, perimeter, length, area (auto), qty, unit,
+//   process (dropdown, was "finish"), processOther, ralCode, projectName, remark
 const emptyItem = () => ({
   _key: Math.random().toString(36).slice(2),
   description: "",
-  size: "",
+  weightPerPc: "",
+  perimeter: "",
+  length: "",
   qty: "",
   unit: "NOS",
-  projectName: "",
+  process: "",
+  processOther: "", // typed value when process === OTHER_PROCESS
   ralCode: "",
-  finish: "",
-  finishOther: "", // typed value when finish === OTHER_FINISH
+  projectName: "",
   remark: "",
 });
 
@@ -84,8 +89,8 @@ const CREATE_ROLES = ["admin", "store_manager", "store", "purchase"];
 
 const LOCATIONS = ["Factory", "Site"];
 const UNITS = ["NOS", "MTR", "KG", "SET", "PKT", "BOX", "LTR"];
-const FINISH_OPTIONS = ["Powder Coating", "Galvanized", "Hot-Dip"];
-const OTHER_FINISH = "__other_finish__";
+const PROCESS_OPTIONS = ["Powder Coating", "Galvanized", "Hot-Dip"];
+const OTHER_PROCESS = "__other_process__";
 
 const VENDORS = [
   {
@@ -156,12 +161,48 @@ function formatDateTime(d) {
 }
 
 // Coerce possibly-string numeric fields (e.g. from lean() JSON) safely.
+// Used for arithmetic only (pending qty, area preview, etc) — NOT for
+// display, since it collapses null/blank down to 0.
 const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
+// Display helper: renders a numeric value that may legitimately be 0,
+// distinguishing that from "not entered" (null/undefined/""). Do NOT use
+// `it.field || "—"` for numeric display fields — that treats 0 as falsy
+// and always prints "—" even when 0 was genuinely saved.
+const showNum = (v) => (v === null || v === undefined || v === "" ? "—" : v);
 
+// Area/nos (Sq inch) = Perimeter (mm) × Length (mm) ÷ 645.2
+// This is a LIVE PREVIEW only — the backend recomputes this authoritatively
+// from perimeter/length on save, so a tampered/stale client value can never
+// be trusted or persisted as-is.
+const AREA_DIVISOR = 645.2;
+function calcArea(perimeter, length) {
+  const p = num(perimeter);
+  const l = num(length);
+  if (!p || !l) return 0;
+  return (p * l) / AREA_DIVISOR;
+}
+
+// "RAL Code/Finish" column — shows the RAL code only. Process now has its
+// own dedicated column, so this used to fall back to repeating the process
+// name whenever ralCode was blank, which just duplicated the Process column
+// (e.g. "Powder Coating" shown twice in adjacent cells). Simple lookup now.
+function ralFinishLabel(it) {
+  return it.ralCode && String(it.ralCode).trim() ? it.ralCode : "—";
+}
+
+// Chrome does not reliably honor `size` on NAMED @page rules (@page foo {...}
+// + page: foo on an element) — it mostly falls back to the browser/OS default
+// (Portrait) regardless of what's declared. The one thing Chrome does honor
+// consistently is a single UNNAMED `@page { size: ...; }` rule present in the
+// document at the moment window.print() runs. So instead of two permanent
+// named @page blocks (which can also silently conflict with each other when
+// both print templates happen to be mounted at once, e.g. inside ViewModal),
+// we inject/update one shared <style> tag with the correct orientation right
+// before each print call.
 function setPrintPageSize(orientation) {
   const id = "job-order-page-size-style";
   let styleEl = document.getElementById(id);
@@ -170,7 +211,7 @@ function setPrintPageSize(orientation) {
     styleEl.id = id;
     document.head.appendChild(styleEl);
   }
-  const margin = orientation === "landscape" ? "12mm" : "10mm";
+  const margin = orientation === "landscape" ? "12mm" : "6mm";
   styleEl.textContent = `@page { size: A4 ${orientation}; margin: ${margin}; }`;
 }
 
@@ -197,14 +238,30 @@ function PrintChallan({ order }) {
           color: "#1a1a1a",
           lineHeight: 1.45,
           background: "#fff",
-          padding: 24,
-          maxWidth: 800,
-          margin: "0 auto",
+          padding: 16,
+          width: "100%",
+          boxSizing: "border-box",
         }}
       >
         {/* Header */}
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <tbody>
+            <tr>
+              <td
+                colSpan={2}
+                style={{
+                  border: "1px solid #000",
+                  background: "#f3f1ec",
+                  textAlign: "center",
+                  padding: "9px 6px",
+                  fontWeight: 700,
+                  fontSize: 16,
+                  letterSpacing: 3,
+                }}
+              >
+                DELIVERY CHALLAN
+              </td>
+            </tr>
             <tr>
               <td
                 style={{
@@ -234,15 +291,15 @@ function PrintChallan({ order }) {
                   borderLeft: "none",
                   padding: "10px 14px",
                   verticalAlign: "top",
-                  fontSize: 11,
-                  lineHeight: 1.6,
+                  fontSize: 14  ,
+                  
                 }}
               >
-                <strong>Principal Place of Business:</strong>
+                <strong>Profile Data Center Solution Pvt. Ltd. - Head Office address</strong>
                 <br />
                 {COMPANY_ADDRESS_SHORT}
-                <div style={{ height: 8 }} />
-                <strong>Additional Places of Business: Factory</strong>
+                <div style={{ height: 10 }} />
+                <strong>Profile Data Center Solution Pvt. Ltd. - Factory address</strong>
                 <br />
                 Profile Data Centre Solutions Pvt. Ltd. Kutal, Dist. Palghar,
                 4014
@@ -258,22 +315,7 @@ function PrintChallan({ order }) {
           style={{ width: "100%", borderCollapse: "collapse", marginTop: -1 }}
         >
           <tbody>
-            <tr>
-              <td
-                colSpan={2}
-                style={{
-                  border: "1px solid #000",
-                  background: "#f3f1ec",
-                  textAlign: "center",
-                  padding: "9px 6px",
-                  fontWeight: 700,
-                  fontSize: 16,
-                  letterSpacing: 3,
-                }}
-              >
-                DELIVERY CHALLAN
-              </td>
-            </tr>
+            
             <tr>
               <td
                 style={{
@@ -290,11 +332,11 @@ function PrintChallan({ order }) {
                     fontWeight: 700,
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
-                    color: "#555",
+                    color: "#000",
                     marginBottom: 5,
                   }}
                 >
-                  Address Of Delivery
+                  Address Of Delivery :
                 </div>
                 {order.vendorName && (
                   <div
@@ -359,33 +401,66 @@ function PrintChallan({ order }) {
           </tbody>
         </table>
 
-        {/* Items table */}
+        {/* Items table — colgroup + table-layout:fixed keeps all 12 columns
+            (including RAL Code/Finish, Project Name, Remark which used to run
+            off the right edge of the printed/PDF page because unconstrained
+            <td>s size themselves to free-text content like Description and
+            Remark) inside the A4 portrait printable width. whiteSpace:'normal'
+            + wordBreak on every cell makes long text wrap inside its own
+            column instead of forcing overflow — same technique already used
+            in PrintItemsTable below, just missing here previously. */}
         <table
-          style={{ width: "100%", borderCollapse: "collapse", marginTop: -1 }}
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            marginTop: -1,
+            tableLayout: "fixed",
+          }}
         >
+          <colgroup>
+            <col style={{ width: "4%" }} />   {/* Sr No */}
+            <col style={{ width: "16%" }} />  {/* Item Description */}
+            <col style={{ width: "9%" }} />   {/* Weight/Pcs */}
+            <col style={{ width: "9%" }} />   {/* Perimeter */}
+            <col style={{ width: "7%" }} />   {/* Length */}
+            <col style={{ width: "8%" }} />   {/* Area/nos */}
+            <col style={{ width: "5%" }} />   {/* Qty */}
+            <col style={{ width: "6%" }} />   {/* UOM */}
+            <col style={{ width: "10%" }} />  {/* Process */}
+            <col style={{ width: "10%" }} />  {/* RAL Code/Finish */}
+            <col style={{ width: "9%" }} />   {/* Project Name */}
+            <col style={{ width: "7%" }} />   {/* Remark */}
+          </colgroup>
           <thead>
             <tr style={{ background: "#f3f1ec" }}>
               {[
                 "Sr No.",
-                "Material Name",
-                "Size",
+                "Item Description",
+                "Weight/Pcs (Kg)",
+                "Perimeter (mm)",
+                "Length (mm)",
+                "Area/nos (Sq in)",
                 "Qty",
-                "Unit",
+                "UOM",
+                "Process",
+                "RAL Code/Finish",
                 "Project Name",
-                "RAL Code",
-                "Finish",
                 "Remark",
               ].map((h) => (
                 <th
                   key={h}
                   style={{
                     border: "1px solid #000",
-                    padding: "8px 8px",
+                    padding: "6px 4px",
                     textAlign: "center",
-                    fontSize: 10.5,
+                    fontSize: 8.5,
                     fontWeight: 700,
-                    letterSpacing: "0.03em",
+                    letterSpacing: "0.01em",
                     textTransform: "uppercase",
+                    whiteSpace: "normal",
+                    wordBreak: "break-word",
+                    lineHeight: 1.2,
+                    verticalAlign: "middle",
                   }}
                 >
                   {h}
@@ -394,110 +469,64 @@ function PrintChallan({ order }) {
             </tr>
           </thead>
           <tbody>
-            {items.map((it, i) => (
-              <tr key={i}>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                    width: 40,
-                  }}
-                >
-                  {i + 1}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                  }}
-                >
-                  {it.description}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.size || "—"}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.qty}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.unit}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.projectName || "—"}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.ralCode || "—"}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                    textAlign: "center",
-                  }}
-                >
-                  {it.finish || "—"}
-                </td>
-                <td
-                  style={{
-                    border: "1px solid #000",
-                    borderTop: "none",
-                    padding: "6px 8px",
-                  }}
-                >
-                  {it.remark || "—"}
-                </td>
-              </tr>
-            ))}
+            {items.map((it, i) => {
+              const cellBase = {
+                border: "1px solid #000",
+                borderTop: "none",
+                padding: "6px 5px",
+                whiteSpace: "normal",
+                wordBreak: "break-word",
+                lineHeight: 1.3,
+                verticalAlign: "top",
+              };
+              return (
+                <tr key={i}>
+                  <td style={{ ...cellBase, textAlign: "center" }}>{i + 1}</td>
+                  <td style={cellBase}>{it.description}</td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {showNum(it.weightPerPc)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {showNum(it.perimeter)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {showNum(it.length)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.area !== null && it.area !== undefined
+                      ? Number(it.area).toFixed(2)
+                      : "—"}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.qty}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.unit}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.process || "—"}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {ralFinishLabel(it)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.projectName || "—"}
+                  </td>
+                  <td style={cellBase}>{it.remark || "—"}</td>
+                </tr>
+              );
+            })}
             {/* Empty rows for spacing */}
             {Array.from({ length: Math.max(0, 5 - items.length) }).map(
               (_, i) => (
                 <tr key={`empty-${i}`}>
-                  {Array.from({ length: 9 }).map((_, j) => (
+                  {Array.from({ length: 12 }).map((_, j) => (
                     <td
                       key={j}
                       style={{
                         border: "1px solid #000",
                         borderTop: "none",
-                        padding: "13px 8px",
+                        padding: "13px 6px",
                       }}
                     >
                       &nbsp;
@@ -524,15 +553,17 @@ function PrintChallan({ order }) {
                   verticalAlign: "top",
                 }}
               >
+                {/* Prepared By is auto-filled from the order's "Issued By"
+                    field. Checked By is intentionally left blank — it's
+                    filled in by hand after printing, not derived from any
+                    stored field. */}
                 <div style={{ marginBottom: 10 }}>
-                  <strong>Received Person Name :</strong>{" "}
-                  {order.receivedBy || " ___________________"}
-                </div>
-                <div style={{ marginBottom: 10 }}>
-                  <strong>Received Person Sign :</strong> ___________________
+                  <strong>Prepared By Name &amp; Signature :</strong>{" "}
+                  {order.issuedBy || " ___________________"}
                 </div>
                 <div>
-                  <strong>Mobile No :</strong> ___________________
+                  <strong>Checked By Name &amp; Signature :</strong>{" "}
+                  ___________________
                 </div>
               </td>
               <td
@@ -618,21 +649,15 @@ const PRINT_STYLE = `
       width: 100% !important;
       background: #fff !important;
       z-index: 99999 !important;
-      padding: 20px !important;
+      padding: 10px !important;
     }
   }
 `;
 
 // ── Receiving Receipt / Items-only Print Style ────────────────────────────────
 // #job-order-items-print is the RECEIVING RECEIPT (PrintItemsTable below) —
-// landscape, since it's an 11-column wide table (Sr, Description, Size,
-// Outward, Received (where), Pending, Unit, Project Name, RAL Code, Finish,
-// Remark) that needs the extra horizontal room.
-// ── Receiving Receipt / Items-only Print Style ────────────────────────────────
-// #job-order-items-print is the RECEIVING RECEIPT (PrintItemsTable below) —
-// landscape, since it's an 11-column wide table (Sr, Description, Size,
-// Outward, Received (where), Pending, Unit, Project Name, RAL Code, Finish,
-// Remark) that needs the extra horizontal room.
+// landscape, since it's a wide, many-column table that needs the extra
+// horizontal room.
 // Orientation set dynamically by setPrintPageSize('landscape') — see note above.
 const ITEMS_PRINT_STYLE = `
   @media print {
@@ -864,31 +889,37 @@ function PrintItemsTable({ order }) {
           }}
         >
           <colgroup>
-            <col style={{ width: "3.5%" }} />
-            <col style={{ width: "15%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "13%" }} />
-            <col style={{ width: "7%" }} />
-            <col style={{ width: "6%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "14.5%" }} />
+            <col style={{ width: "2.5%" }} />  {/* Sr */}
+            <col style={{ width: "12%" }} />   {/* Item Description */}
+            <col style={{ width: "6%" }} />    {/* Weight/Pcs */}
+            <col style={{ width: "6%" }} />    {/* Perimeter */}
+            <col style={{ width: "6%" }} />    {/* Length */}
+            <col style={{ width: "7%" }} />    {/* Area/nos */}
+            <col style={{ width: "5.5%" }} />  {/* Outward */}
+            <col style={{ width: "11%" }} />   {/* Received (where) */}
+            <col style={{ width: "5.5%" }} />  {/* Pending */}
+            <col style={{ width: "5.5%" }} />  {/* UOM */}
+            <col style={{ width: "7%" }} />    {/* Process */}
+            <col style={{ width: "9.5%" }} />  {/* RAL Code/Finish */}
+            <col style={{ width: "8%" }} />    {/* Project Name */}
+            <col style={{ width: "8.5%" }} />  {/* Remark */}
           </colgroup>
           <thead>
             <tr style={{ background: "#f3f1ec" }}>
               {[
                 "Sr",
-                "Material Name",
-                "Size",
+                "Item Description",
+                "Wt/Pcs (Kg)",
+                "Perimeter (mm)",
+                "Length (mm)",
+                "Area/nos (Sq in)",
                 "Outward",
                 "Received (where)",
                 "Pending",
-                "Unit",
+                "UOM",
+                "Process",
+                "RAL Code/Finish",
                 "Project Name",
-                "RAL Code",
-                "Finish",
                 "Remark",
               ].map((h) => (
                 <th
@@ -897,7 +928,7 @@ function PrintItemsTable({ order }) {
                     border: "1px solid #000",
                     padding: "6px 4px",
                     textAlign: "center",
-                    fontSize: 8.5,
+                    fontSize: 8,
                     fontWeight: 700,
                     textTransform: "uppercase",
                     letterSpacing: 0,
@@ -933,7 +964,18 @@ function PrintItemsTable({ order }) {
                   <td style={{ ...cellBase, textAlign: "center" }}>{i + 1}</td>
                   <td style={cellBase}>{it.description}</td>
                   <td style={{ ...cellBase, textAlign: "center" }}>
-                    {it.size || "—"}
+                    {showNum(it.weightPerPc)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {showNum(it.perimeter)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {showNum(it.length)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.area !== null && it.area !== undefined
+                      ? Number(it.area).toFixed(2)
+                      : "—"}
                   </td>
                   <td style={{ ...cellBase, textAlign: "center" }}>{it.qty}</td>
                   <td style={{ ...cellBase, fontSize: 9 }}>{receivedWhere}</td>
@@ -950,13 +992,13 @@ function PrintItemsTable({ order }) {
                     {it.unit}
                   </td>
                   <td style={{ ...cellBase, textAlign: "center" }}>
+                    {it.process || "—"}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center", fontSize: 9 }}>
+                    {ralFinishLabel(it)}
+                  </td>
+                  <td style={{ ...cellBase, textAlign: "center" }}>
                     {it.projectName || "—"}
-                  </td>
-                  <td style={{ ...cellBase, textAlign: "center" }}>
-                    {it.ralCode || "—"}
-                  </td>
-                  <td style={{ ...cellBase, textAlign: "center" }}>
-                    {it.finish || "—"}
                   </td>
                   <td style={cellBase}>{it.remark || "—"}</td>
                 </tr>
@@ -983,8 +1025,165 @@ function PrintItemsTable({ order }) {
   );
 }
 
+// Given a saved process string, figures out how to prefill the edit form's
+// process <select> + "other" text field: exact match against the presets ->
+// select it; any other non-empty value -> select "Other" and preload the
+// typed field with it; blank -> nothing selected.
+function deriveProcessFields(savedProcess) {
+  const val = String(savedProcess || "").trim();
+  if (!val) return { process: "", processOther: "" };
+  if (PROCESS_OPTIONS.includes(val)) return { process: val, processOther: "" };
+  return { process: OTHER_PROCESS, processOther: val };
+}
+
+// ── Shared item-row field renderer ─────────────────────────────────────────
+// Used by both the create form and EditModal so the mobile fix (stacked,
+// individually-labelled fields) only has to live in one place. Every field
+// gets its own <label> — hidden via CSS on desktop (where the shared
+// .jo-item-header row above the rows already provides column labels) and
+// shown on mobile (where that header row is hidden and rows stack to a
+// single column, so each input needs its own label to stay legible).
+function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disableRemove }) {
+  const area = calcArea(it.perimeter, it.length);
+  return (
+    <div className="jo-item-row">
+      <div className="field">
+        <label>Item Description</label>
+        <input
+          value={it.description}
+          onChange={(e) => updateItem(it._key, { description: e.target.value })}
+          placeholder={`Item ${idx + 1} description`}
+        />
+      </div>
+      <div className="field">
+        <label>Weight/Pcs (Kg)</label>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={it.weightPerPc}
+          onChange={(e) => updateItem(it._key, { weightPerPc: e.target.value })}
+          placeholder="0.00"
+        />
+      </div>
+      <div className="field">
+        <label>Perimeter (mm)</label>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={it.perimeter}
+          onChange={(e) => updateItem(it._key, { perimeter: e.target.value })}
+          placeholder="0"
+        />
+      </div>
+      <div className="field">
+        <label>Length (mm)</label>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={it.length}
+          onChange={(e) => updateItem(it._key, { length: e.target.value })}
+          placeholder="0"
+        />
+      </div>
+      <div className="field">
+        <label>Area/nos (Sq in)</label>
+        <input
+          value={area ? area.toFixed(2) : ""}
+          disabled
+          placeholder="Auto"
+          title="Perimeter × Length ÷ 645.2 — calculated automatically"
+        />
+      </div>
+      <div className="field">
+        <label>Qty</label>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={it.qty}
+          onChange={(e) => updateItem(it._key, { qty: e.target.value })}
+          placeholder="0"
+        />
+      </div>
+      <div className="field">
+        <label>UOM</label>
+        <select
+          value={it.unit}
+          onChange={(e) => updateItem(it._key, { unit: e.target.value })}
+        >
+          {UNITS.map((u) => (
+            <option key={u} value={u}>
+              {u}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label>Process</label>
+        <select
+          value={it.process}
+          onChange={(e) => handleProcessSelect(it._key, e.target.value)}
+        >
+          <option value="">Select process…</option>
+          {PROCESS_OPTIONS.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+          <option value={OTHER_PROCESS}>Other (type your own)</option>
+        </select>
+        {it.process === OTHER_PROCESS && (
+          <input
+            className="field-other-input"
+            value={it.processOther}
+            onChange={(e) => updateItem(it._key, { processOther: e.target.value })}
+            placeholder="Enter process"
+          />
+        )}
+      </div>
+      <div className="field">
+        <label>RAL Code/Finish</label>
+        <input
+          value={it.ralCode}
+          onChange={(e) => updateItem(it._key, { ralCode: e.target.value })}
+          placeholder="e.g. RAL 9010"
+        />
+      </div>
+      <div className="field">
+        <label>
+          Project Name <span style={{ color: "var(--red)" }}>*</span>
+        </label>
+        <input
+          value={it.projectName}
+          onChange={(e) => updateItem(it._key, { projectName: e.target.value })}
+          placeholder="Project name"
+        />
+      </div>
+      <div className="field">
+        <label>Remark</label>
+        <input
+          value={it.remark}
+          onChange={(e) => updateItem(it._key, { remark: e.target.value })}
+          placeholder="NTT, NAV DC-3…"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => removeItem(it._key)}
+        disabled={disableRemove}
+        className="jo-item-remove"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 // ── View Details Modal ────────────────────────────────────────────────────────
-function ViewModal({ order, onClose }) {
+function ViewModal({ order, onClose, onEdit }) {
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1038,7 +1237,7 @@ function ViewModal({ order, onClose }) {
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
           width: "100%",
-          maxWidth: 900,
+          maxWidth: 980,
           maxHeight: "95vh",
           display: "flex",
           flexDirection: "column",
@@ -1066,19 +1265,33 @@ function ViewModal({ order, onClose }) {
               {order.vehicleNo || "—"}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 20,
-              color: "#8a8270",
-              padding: "4px 8px",
-            }}
+          <div
+            className="no-print"
+            style={{ display: "flex", alignItems: "center", gap: 8 }}
           >
-            ✕
-          </button>
+            {onEdit && (
+              <button
+                onClick={onEdit}
+                className="btn btn-ghost btn-sm"
+                style={{ whiteSpace: "nowrap" }}
+              >
+                ✎ Edit
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 20,
+                color: "#8a8270",
+                padding: "4px 8px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Modal body */}
@@ -1185,15 +1398,18 @@ function ViewModal({ order, onClose }) {
               <thead>
                 <tr>
                   <th>Sr No</th>
-                  <th>Material Name</th>
-                  <th>Size</th>
+                  <th>Item Description</th>
+                  <th className="num">Wt/Pcs (Kg)</th>
+                  <th className="num">Perimeter (mm)</th>
+                  <th className="num">Length (mm)</th>
+                  <th className="num">Area/nos (Sq in)</th>
                   <th className="num">Outward</th>
                   <th>Received (where)</th>
                   <th className="num">Pending</th>
-                  <th>Unit</th>
+                  <th>UOM</th>
+                  <th>Process</th>
+                  <th>RAL Code/Finish</th>
                   <th>Project Name</th>
-                  <th>RAL Code</th>
-                  <th>Finish</th>
                   <th>Remark</th>
                 </tr>
               </thead>
@@ -1206,7 +1422,14 @@ function ViewModal({ order, onClose }) {
                     <tr key={i}>
                       <td>{i + 1}</td>
                       <td style={{ fontWeight: 500 }}>{it.description}</td>
-                      <td>{it.size || "—"}</td>
+                      <td className="num">{showNum(it.weightPerPc)}</td>
+                      <td className="num">{showNum(it.perimeter)}</td>
+                      <td className="num">{showNum(it.length)}</td>
+                      <td className="num">
+                        {it.area !== null && it.area !== undefined
+                          ? Number(it.area).toFixed(2)
+                          : "—"}
+                      </td>
                       <td className="num">{it.qty}</td>
                       <td style={{ fontSize: 12 }}>
                         {receipts.length ? (
@@ -1243,9 +1466,9 @@ function ViewModal({ order, onClose }) {
                         {pending}
                       </td>
                       <td>{it.unit}</td>
+                      <td>{it.process || "—"}</td>
+                      <td>{ralFinishLabel(it)}</td>
                       <td>{it.projectName || "—"}</td>
-                      <td>{it.ralCode || "—"}</td>
-                      <td>{it.finish || "—"}</td>
                       <td>{it.remark || "—"}</td>
                     </tr>
                   );
@@ -1538,25 +1761,16 @@ function ReceiveModal({ order, onSave, onClose }) {
                 const remaining = Math.max(0, num(it.qty) - already);
                 const receiving = num(qtyInputs[i]);
                 return (
-                  <div
-                    key={i}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "2fr 0.7fr 0.7fr 0.7fr 1fr",
-                      gap: 8,
-                      alignItems: "center",
-                      padding: "8px 10px",
-                      border: "1px solid var(--line)",
-                      borderRadius: 8,
-                    }}
-                  >
+                  <div key={i} className="jo-receive-row">
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 13 }}>
                         {it.description}
                       </div>
                       <div style={{ fontSize: 11, color: "#8a8270" }}>
-                        Outward {it.qty} {it.unit}{" "}
-                        {it.size ? `· ${it.size}` : ""}
+                        Outward {it.qty} {it.unit}
+                        {it.perimeter != null && it.length != null
+                          ? ` · ${it.perimeter}×${it.length}mm`
+                          : ""}
                       </div>
                     </div>
                     <div style={{ fontSize: 12, color: "#8a8270" }}>
@@ -1577,6 +1791,7 @@ function ReceiveModal({ order, onSave, onClose }) {
                       </strong>
                     </div>
                     <div className="field" style={{ margin: 0 }}>
+                      <label className="jo-mobile-only-label">Qty received</label>
                       <input
                         type="number"
                         min="0"
@@ -1589,6 +1804,7 @@ function ReceiveModal({ order, onSave, onClose }) {
                       />
                     </div>
                     <div className="field" style={{ margin: 0 }}>
+                      <label className="jo-mobile-only-label">Location</label>
                       <select
                         value={locationInputs[i]}
                         onChange={(e) => setItemLocation(i, e.target.value)}
@@ -1659,8 +1875,440 @@ function ReceiveModal({ order, onSave, onClose }) {
   );
 }
 
+// ── Edit Modal ──────────────────────────────────────────────────────────────
+// Header fields are always editable. Items are only editable while the order
+// is still 'issued' — once receiving has started, receivedQty/receipts are
+// tied to each item's position in the array, so structural item edits (add,
+// remove, reorder) would corrupt that tracking. The backend enforces this
+// too (see PATCH /:id); this UI just avoids offering something that will be
+// rejected.
+function EditModal({ order, onSave, onClose }) {
+  const itemsLocked = order.status !== "issued";
+
+  const [srNo, setSrNo] = useState(order.srNo || "");
+  const [date, setDate] = useState((order.date || "").slice(0, 10) || todayStr());
+  const [vendorName, setVendorName] = useState(order.vendorName || "");
+  const [vendorCustom, setVendorCustom] = useState(
+    () => !!order.vendorName && !VENDORS.some((v) => v.name === order.vendorName),
+  );
+  const [vehicleNo, setVehicleNo] = useState(order.vehicleNo || "");
+  const [issuedBy, setIssuedBy] = useState(order.issuedBy || "");
+  const [deliveryAddress, setDeliveryAddress] = useState(order.deliveryAddress || "");
+
+  const [items, setItems] = useState(() =>
+    (order.items || []).map((it) => {
+      const { process, processOther } = deriveProcessFields(it.process);
+      return {
+        _key: Math.random().toString(36).slice(2),
+        description: it.description || "",
+        weightPerPc: it.weightPerPc != null ? String(it.weightPerPc) : "",
+        perimeter: it.perimeter != null ? String(it.perimeter) : "",
+        length: it.length != null ? String(it.length) : "",
+        qty: it.qty != null ? String(it.qty) : "",
+        unit: it.unit || "NOS",
+        process,
+        processOther,
+        ralCode: it.ralCode || "",
+        projectName: it.projectName || "",
+        remark: it.remark || "",
+      };
+    }),
+  );
+
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  function updateItem(key, patch) {
+    setItems((list) =>
+      list.map((it) => (it._key === key ? { ...it, ...patch } : it)),
+    );
+  }
+  function addItem() {
+    setItems((list) => [...list, emptyItem()]);
+  }
+  function removeItem(key) {
+    setItems((list) =>
+      list.length > 1 ? list.filter((it) => it._key !== key) : list,
+    );
+  }
+  function handleProcessSelect(key, val) {
+    if (val === OTHER_PROCESS) updateItem(key, { process: OTHER_PROCESS });
+    else updateItem(key, { process: val, processOther: "" });
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setErr("");
+
+    if (!srNo.trim()) return setErr("SR No is required.");
+    if (!vendorName.trim()) return setErr("Vendor name is required.");
+    if (!issuedBy.trim()) return setErr("Issued By is required.");
+
+    const payload = {
+      srNo,
+      date,
+      vendorName,
+      vehicleNo,
+      issuedBy,
+      deliveryAddress,
+    };
+
+    if (!itemsLocked) {
+      const touchedItems = items.filter(
+        (it) =>
+          it.description.trim() ||
+          it.qty ||
+          it.projectName.trim() ||
+          it.weightPerPc ||
+          it.perimeter ||
+          it.length ||
+          it.process ||
+          it.ralCode.trim() ||
+          it.remark.trim(),
+      );
+      if (!touchedItems.length)
+        return setErr("Add at least one item with description, qty, and project name.");
+
+      const invalidItem = touchedItems.find(
+        (it) => !it.description.trim() || !it.qty || !it.projectName.trim(),
+      );
+      if (invalidItem) {
+        const missing = [];
+        if (!invalidItem.description.trim()) missing.push("description");
+        if (!invalidItem.qty) missing.push("qty");
+        if (!invalidItem.projectName.trim()) missing.push("project name");
+        return setErr(
+          `"${invalidItem.description || "An item"}" is missing ${missing.join(", ")}. Fill it in or remove the row before saving.`,
+        );
+      }
+
+      const missingCustomProcess = touchedItems.find(
+        (it) => it.process === OTHER_PROCESS && !it.processOther.trim(),
+      );
+      if (missingCustomProcess)
+        return setErr(
+          `Enter a custom process for "${missingCustomProcess.description}", or pick a preset.`,
+        );
+
+      payload.items = touchedItems.map(({ processOther, ...it }) => ({
+        description: it.description,
+        weightPerPc: it.weightPerPc === "" ? null : parseFloat(it.weightPerPc),
+        perimeter: it.perimeter === "" ? null : parseFloat(it.perimeter),
+        length: it.length === "" ? null : parseFloat(it.length),
+        qty: parseFloat(it.qty) || 0,
+        unit: it.unit,
+        process: it.process === OTHER_PROCESS ? processOther.trim() : it.process,
+        ralCode: it.ralCode,
+        projectName: it.projectName,
+        remark: it.remark,
+      }));
+    }
+
+    setSaving(true);
+    try {
+      await onSave(payload);
+    } catch (e) {
+      console.error("[EditModal] save failed", e);
+      setErr(e.message || "Something went wrong while saving.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(28,26,22,0.6)",
+        backdropFilter: "blur(4px)",
+        zIndex: 1100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 20,
+        overflowY: "auto",
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: "var(--card)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-lg)",
+          width: "100%",
+          maxWidth: 980,
+          maxHeight: "94vh",
+          display: "flex",
+          flexDirection: "column",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 24px",
+            borderBottom: "1px solid var(--line)",
+            flexShrink: 0,
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+            Edit Job Order — #{order.srNo}
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 18,
+              color: "#8a8270",
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <form
+          onSubmit={handleSave}
+          style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
+        >
+          <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+            {/* Header fields */}
+            <div className="formgrid" style={{ marginBottom: 20 }}>
+              <div className="field">
+                <label>
+                  SR No <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                <input value={srNo} onChange={(e) => setSrNo(e.target.value)} />
+              </div>
+              <div className="field">
+                <label>Date</label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>
+                  Vendor Name <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                {vendorCustom ? (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <input
+                      value={vendorName}
+                      onChange={(e) => setVendorName(e.target.value)}
+                      placeholder="Enter vendor name"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ whiteSpace: "nowrap" }}
+                      onClick={() => setVendorCustom(false)}
+                    >
+                      ← Back
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={vendorName}
+                    onChange={(e) => {
+                      if (e.target.value === "__custom__") {
+                        setVendorCustom(true);
+                        setVendorName("");
+                      } else {
+                        setVendorName(e.target.value);
+                        const found = VENDORS.find((v) => v.name === e.target.value);
+                        if (found) setDeliveryAddress(found.address);
+                      }
+                    }}
+                  >
+                    <option value="">— Select vendor —</option>
+                    {VENDORS.map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.name}
+                      </option>
+                    ))}
+                    <option value="__custom__">✎ Add own vendor…</option>
+                  </select>
+                )}
+              </div>
+              <div className="field full">
+                <label>Address of Delivery</label>
+                <input
+                  value={deliveryAddress}
+                  onChange={(e) => setDeliveryAddress(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>Vehicle No</label>
+                <input
+                  value={vehicleNo}
+                  onChange={(e) => setVehicleNo(e.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label>
+                  Issued By <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                <input
+                  value={issuedBy}
+                  onChange={(e) => setIssuedBy(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Items */}
+            <div
+              style={{
+                marginBottom: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <h4
+                style={{
+                  margin: 0,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "1px",
+                  color: "#8a8270",
+                }}
+              >
+                Items
+              </h4>
+              {itemsLocked && (
+                <span style={{ fontSize: 11, color: "var(--rust-dark)" }}>
+                  🔒 Locked — receiving has started on this order, so items
+                  can't be changed here.
+                </span>
+              )}
+            </div>
+
+            {itemsLocked ? (
+              <div className="tablewrap" style={{ marginBottom: 16 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Sr No</th>
+                      <th>Item Description</th>
+                      <th className="num">Qty</th>
+                      <th>UOM</th>
+                      <th>Process</th>
+                      <th>RAL Code</th>
+                      <th>Project Name</th>
+                      <th>Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(order.items || []).map((it, i) => (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td>{it.description}</td>
+                        <td className="num">{it.qty}</td>
+                        <td>{it.unit}</td>
+                        <td>{it.process || "—"}</td>
+                        <td>{it.ralCode || "—"}</td>
+                        <td>{it.projectName || "—"}</td>
+                        <td>{it.remark || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <>
+                {/* Column-header row — desktop only. On mobile the grid
+                    collapses to a single stacked column (see .jo-item-row
+                    media queries), so this shared header no longer lines up
+                    with anything and is hidden via .jo-item-header there;
+                    each field gets its own <label> inside ItemRow instead. */}
+                <div className="jo-item-header">
+                  <span>Item Description</span>
+                  <span>Weight/Pcs (Kg)</span>
+                  <span>Perimeter (mm)</span>
+                  <span>Length (mm)</span>
+                  <span>Area/nos (Sq in)</span>
+                  <span>Qty</span>
+                  <span>UOM</span>
+                  <span>Process</span>
+                  <span>RAL Code/Finish</span>
+                  <span>
+                    Project Name <span style={{ color: "var(--red)" }}>*</span>
+                  </span>
+                  <span>Remark</span>
+                  <span></span>
+                </div>
+
+                {items.map((it, idx) => (
+                  <ItemRow
+                    key={it._key}
+                    it={it}
+                    idx={idx}
+                    updateItem={updateItem}
+                    removeItem={removeItem}
+                    handleProcessSelect={handleProcessSelect}
+                    disableRemove={items.length === 1}
+                  />
+                ))}
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={addItem}
+                  style={{ marginBottom: 4 }}
+                >
+                  + Add item
+                </button>
+              </>
+            )}
+
+            {err && (
+              <div className="alert err" style={{ marginTop: 16 }}>
+                {err}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              justifyContent: "flex-end",
+              padding: "14px 24px",
+              borderTop: "1px solid var(--line)",
+              background: "var(--paper-dim)",
+              flexShrink: 0,
+            }}
+          >
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-in" disabled={saving}>
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
-// ── Main component ─────────────────────────────────────────────
 export default function JobOrder() {
   const { user } = useAuth();
 
@@ -1669,6 +2317,7 @@ export default function JobOrder() {
   const [showForm, setShowForm] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
   const [receiveOrder, setReceiveOrder] = useState(null);
+  const [editOrder, setEditOrder] = useState(null);
   const [printOrder, setPrintOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1686,7 +2335,6 @@ export default function JobOrder() {
 
   const [items, setItems] = useState([emptyItem()]);
 
-  // ... load(), print effect, etc. unchanged ...
   function resetFields() {
     setSrNo("");
     setDate(todayStr());
@@ -1750,21 +2398,24 @@ export default function JobOrder() {
     );
   }
 
-  // Called from the Finish <select> in each item row.
-  function handleFinishSelect(key, val) {
-    if (val === OTHER_FINISH) {
-      updateItem(key, { finish: OTHER_FINISH });
+  // Called from the Process <select> in each item row.
+  function handleProcessSelect(key, val) {
+    if (val === OTHER_PROCESS) {
+      updateItem(key, { process: OTHER_PROCESS });
     } else {
-      updateItem(key, { finish: val, finishOther: "" });
+      updateItem(key, { process: val, processOther: "" });
     }
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ text: "", ok: true });
-      if (!canCreate) {
-     setMsg({ text: "You don't have permission to create job orders.", ok: false });
-    return;
+    if (!canCreate) {
+      setMsg({
+        text: "You don't have permission to create job orders.",
+        ok: false,
+      });
+      return;
     }
     if (!srNo.trim()) {
       setMsg({ text: "SR No is required.", ok: false });
@@ -1778,22 +2429,56 @@ export default function JobOrder() {
       setMsg({ text: "Issued By is required.", ok: false });
       return;
     }
-    const validItems = items.filter(
-      (it) => it.description.trim() && it.qty && it.projectName.trim(),
+
+    // Any row the user actually started filling in — used to detect rows
+    // that were partially filled and would otherwise be silently dropped.
+    const touchedItems = items.filter(
+      (it) =>
+        it.description.trim() ||
+        it.qty ||
+        it.projectName.trim() ||
+        it.weightPerPc ||
+        it.perimeter ||
+        it.length ||
+        it.process ||
+        it.ralCode.trim() ||
+        it.remark.trim(),
     );
-    if (!validItems.length) {
+    if (!touchedItems.length) {
       setMsg({
         text: "Add at least one item with description, qty, and project name.",
         ok: false,
       });
       return;
     }
-    const missingCustomFinish = validItems.find(
-      (it) => it.finish === OTHER_FINISH && !it.finishOther.trim(),
+
+    // Every touched row MUST have description + qty + project name — instead
+    // of silently filtering incomplete rows out (which used to make items
+    // disappear without any warning), we now block submit and say exactly
+    // which row and field is missing.
+    const invalidItem = touchedItems.find(
+      (it) => !it.description.trim() || !it.qty || !it.projectName.trim(),
     );
-    if (missingCustomFinish) {
+    if (invalidItem) {
+      const missing = [];
+      if (!invalidItem.description.trim()) missing.push("description");
+      if (!invalidItem.qty) missing.push("qty");
+      if (!invalidItem.projectName.trim()) missing.push("project name");
       setMsg({
-        text: `Enter a custom finish for "${missingCustomFinish.description}", or pick a preset.`,
+        text: `"${invalidItem.description || "An item"}" is missing ${missing.join(", ")}. Fill it in or remove the row before saving.`,
+        ok: false,
+      });
+      return;
+    }
+
+    const validItems = touchedItems;
+
+    const missingCustomProcess = validItems.find(
+      (it) => it.process === OTHER_PROCESS && !it.processOther.trim(),
+    );
+    if (missingCustomProcess) {
+      setMsg({
+        text: `Enter a custom process for "${missingCustomProcess.description}", or pick a preset.`,
         ok: false,
       });
       return;
@@ -1808,11 +2493,19 @@ export default function JobOrder() {
         vehicleNo,
         issuedBy,
         deliveryAddress,
-
-        items: validItems.map(({ finishOther, ...it }) => ({
-          ...it,
+        items: validItems.map(({ processOther, ...it }) => ({
+          description: it.description,
+          // Blank stays blank ("" -> null) instead of being coerced to 0, so
+          // the backend/UI can tell "not entered" apart from "entered as 0".
+          weightPerPc: it.weightPerPc === "" ? null : parseFloat(it.weightPerPc),
+          perimeter: it.perimeter === "" ? null : parseFloat(it.perimeter),
+          length: it.length === "" ? null : parseFloat(it.length),
           qty: parseFloat(it.qty) || 0,
-          finish: it.finish === OTHER_FINISH ? finishOther.trim() : it.finish,
+          unit: it.unit,
+          process: it.process === OTHER_PROCESS ? processOther.trim() : it.process,
+          ralCode: it.ralCode,
+          projectName: it.projectName,
+          remark: it.remark,
         })),
         status: "issued",
         history: [
@@ -1825,11 +2518,11 @@ export default function JobOrder() {
         ],
       });
       setMsg({ text: `✓ Job order ${srNo} created successfully.`, ok: true });
-resetFields();
-load();
-setTimeout(() => {
-  setMsg({ text: "", ok: true });
-}, 2500);
+      resetFields();
+      load();
+      setTimeout(() => {
+        setMsg({ text: "", ok: true });
+      }, 2500);
     } catch (err) {
       console.error("[JobOrder] create failed", err);
       setMsg({ text: "Error: " + err.message, ok: false });
@@ -1863,6 +2556,19 @@ setTimeout(() => {
     load();
   }
 
+  // Sends only the changed header fields (and items, if items were
+  // editable) to the backend, then refreshes the list. The backend re-runs
+  // full validation and re-derives area server-side same as create.
+  async function handleEditSave(payload) {
+    const order = editOrder;
+    if (!order?._id) {
+      throw new Error("No order selected — please close and reopen the edit dialog.");
+    }
+    await apiPatch(`/job-orders/${order._id}`, payload);
+    setEditOrder(null);
+    load();
+  }
+
   const STATUS_COLORS = {
     issued: { bg: "#e6f2f0", color: "var(--teal-dark)" },
     received: { bg: "#eef2ff", color: "#3730a3" },
@@ -1878,16 +2584,56 @@ setTimeout(() => {
     <>
       <style>{`
         @media print { .no-print { display: none !important; } }
-        .jo-item-row { display: grid; grid-template-columns: 2fr 0.8fr 0.7fr 0.7fr 1fr 0.8fr 0.9fr 1fr auto; gap: 8px; align-items: start; padding: 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; }
-        @media (max-width: 900px) { .jo-item-row { grid-template-columns: 1fr 1fr 0.8fr 0.8fr; } }
-        @media (max-width: 600px) { .jo-item-row { grid-template-columns: 1fr 1fr; } }
-        .jo-item-row .field label { font-size: 11px; margin-bottom: 3px; display: block; color: var(--text-3); font-weight: 600; }
+
+        /* ── Item row grid (create form + EditModal, via <ItemRow>) ───────── */
+        .jo-item-row {
+          display: grid;
+          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 0.85fr 1fr 1fr 1fr auto;
+          gap: 8px;
+          align-items: start;
+          padding: 10px;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+          margin-bottom: 8px;
+        }
+        /* Shared column-header row above the item rows — desktop only.
+           Mirrors .jo-item-row's non-mobile column layout (minus the trailing
+           delete-button column, which the header replaces with an empty span). */
+        .jo-item-header {
+          display: grid;
+          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 0.85fr 1fr 1fr 1fr 32px;
+          gap: 8px;
+          padding: 4px 10px;
+          font-size: 10px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #8a8270;
+        }
+
+        @media (max-width: 1200px) {
+          .jo-item-row { grid-template-columns: 1fr 1fr; }
+        }
+
+        /* Mobile: ONE field per row, full width — no more 2–3 fields
+           crammed side by side. The column-header row is hidden (it can't
+           line up with a single-column grid), so each field shows its own
+           label instead (see .jo-item-row .field label below). */
+        @media (max-width: 640px) {
+          .jo-item-row { grid-template-columns: 1fr; }
+          .jo-item-header { display: none; }
+        }
+
+        .jo-item-row .field label { font-size: 11px; margin-bottom: 3px; display: none; color: var(--text-3); font-weight: 600; }
         .jo-item-row .field { display: flex; flex-direction: column; }
         .jo-item-row .field input,
         .jo-item-row .field select {
           padding: 6px 8px; font-size: 13px; height: 32px; width: 100%; box-sizing: border-box;
           border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink);
           font-family: inherit;
+        }
+        .jo-item-row .field input:disabled {
+          background: var(--paper-dim); color: var(--text-3); cursor: not-allowed;
         }
         .jo-item-row .field select {
           appearance: none; -webkit-appearance: none; -moz-appearance: none;
@@ -1902,16 +2648,69 @@ setTimeout(() => {
         .jo-item-row .field input:disabled,
         .jo-item-row .field select:disabled { background: var(--paper-dim); cursor: not-allowed; }
         .jo-item-row .field-other-input { margin-top: 6px; }
+
+        /* Show per-field labels only once the header row above is gone
+           (i.e. on mobile) — on desktop the header row already labels
+           every column, so repeating labels per-row would be redundant. */
+        @media (max-width: 640px) {
+          .jo-item-row .field label { display: block; }
+        }
+
+        .jo-item-remove {
+          height: 32px; width: 32px; border-radius: 6px; border: 1px solid var(--line);
+          background: transparent; cursor: pointer; color: var(--red); font-size: 14px;
+          flex-shrink: 0; align-self: start;
+        }
+        .jo-item-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+        @media (max-width: 640px) {
+          .jo-item-remove { width: 100%; height: 36px; margin-top: 4px; }
+        }
+
+        /* ── Receive-modal per-item row (unrelated grid, same mobile fix) ── */
+        .jo-receive-row {
+          display: grid;
+          grid-template-columns: 2fr 0.7fr 0.7fr 0.7fr 1fr;
+          gap: 8px;
+          align-items: center;
+          padding: 8px 10px;
+          border: 1px solid var(--line);
+          border-radius: 8px;
+        }
+        @media (max-width: 640px) {
+          .jo-receive-row { grid-template-columns: 1fr; }
+        }
+        .jo-mobile-only-label { display: none; font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 3px; }
+        @media (max-width: 640px) {
+          .jo-mobile-only-label { display: block; }
+        }
       `}</style>
 
       {viewOrder && (
-        <ViewModal order={viewOrder} onClose={() => setViewOrder(null)} />
+        <ViewModal
+          order={viewOrder}
+          onClose={() => setViewOrder(null)}
+          onEdit={
+            canCreate
+              ? () => {
+                  setEditOrder(viewOrder);
+                  setViewOrder(null);
+                }
+              : undefined
+          }
+        />
       )}
       {receiveOrder && (
         <ReceiveModal
           order={receiveOrder}
           onSave={handleReceive}
           onClose={() => setReceiveOrder(null)}
+        />
+      )}
+      {editOrder && (
+        <EditModal
+          order={editOrder}
+          onSave={handleEditSave}
+          onClose={() => setEditOrder(null)}
         />
       )}
 
@@ -1936,12 +2735,12 @@ setTimeout(() => {
           </p>
         </div>
         <div className="no-print">
-         {!showForm && canCreate && (
+          {!showForm && canCreate && (
             <button className="btn btn-in" onClick={() => setShowForm(true)}>
               + New Job Order
             </button>
           )}
-      </div>
+        </div>
       </div>
 
       {/* ── Create form ── */}
@@ -2063,14 +2862,6 @@ setTimeout(() => {
                   placeholder="Your name"
                 />
               </div>
-              {/* <div className="field full">
-                <label>Address of Delivery</label>
-                <input
-                  value={deliveryAddress}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
-                  placeholder="e.g. C.K. Ceiling, Wada Site"
-                />
-              </div> */}
             </div>
 
             {/* Items */}
@@ -2096,154 +2887,36 @@ setTimeout(() => {
               </h4>
             </div>
 
-            {/* Item table header */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "2fr 0.8fr 0.7fr 0.7fr 1fr 0.8fr 0.9fr 1fr 32px",
-                gap: 8,
-                padding: "4px 10px",
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "#8a8270",
-              }}
-            >
-              <span>Material Name</span>
-              <span>Size</span>
+            {/* Column-header row — desktop only (hidden on mobile via
+                .jo-item-header media query, since the rows below collapse to
+                a single stacked column there and per-field labels take over). */}
+            <div className="jo-item-header">
+              <span>Item Description</span>
+              <span>Weight/Pcs (Kg)</span>
+              <span>Perimeter (mm)</span>
+              <span>Length (mm)</span>
+              <span>Area/nos (Sq in)</span>
               <span>Qty</span>
-              <span>Unit</span>
+              <span>UOM</span>
+              <span>Process</span>
+              <span>RAL Code/Finish</span>
               <span>
                 Project Name <span style={{ color: "var(--red)" }}>*</span>
               </span>
-              <span>RAL Code</span>
-              <span>Finish</span>
               <span>Remark</span>
               <span></span>
             </div>
 
             {items.map((it, idx) => (
-              <div key={it._key} className="jo-item-row">
-                <div className="field">
-                  <input
-                    value={it.description}
-                    onChange={(e) =>
-                      updateItem(it._key, { description: e.target.value })
-                    }
-                    placeholder={`Item ${idx + 1} material name`}
-                  />
-                </div>
-                <div className="field">
-                  <input
-                    value={it.size}
-                    onChange={(e) =>
-                      updateItem(it._key, { size: e.target.value })
-                    }
-                    placeholder="e.g. 4000"
-                  />
-                </div>
-                <div className="field">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={it.qty}
-                    onChange={(e) =>
-                      updateItem(it._key, { qty: e.target.value })
-                    }
-                    placeholder="0"
-                  />
-                </div>
-                <div className="field">
-                  <select
-                    value={it.unit}
-                    onChange={(e) =>
-                      updateItem(it._key, { unit: e.target.value })
-                    }
-                  >
-                    {UNITS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <input
-                    value={it.projectName}
-                    onChange={(e) =>
-                      updateItem(it._key, { projectName: e.target.value })
-                    }
-                    placeholder="Project name"
-                  />
-                </div>
-                <div className="field">
-                  <input
-                    value={it.ralCode}
-                    onChange={(e) =>
-                      updateItem(it._key, { ralCode: e.target.value })
-                    }
-                    placeholder="e.g. RAL 9010"
-                  />
-                </div>
-                <div className="field">
-                  <select
-                    value={it.finish}
-                    onChange={(e) =>
-                      handleFinishSelect(it._key, e.target.value)
-                    }
-                  >
-                    <option value="">Select finish…</option>
-                    {FINISH_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                    <option value={OTHER_FINISH}>Other (type your own)</option>
-                  </select>
-                  {it.finish === OTHER_FINISH && (
-                    <input
-                      className="field-other-input"
-                      value={it.finishOther}
-                      onChange={(e) =>
-                        updateItem(it._key, { finishOther: e.target.value })
-                      }
-                      placeholder="Enter finish"
-                    />
-                  )}
-                </div>
-                <div className="field">
-                  <input
-                    value={it.remark}
-                    onChange={(e) =>
-                      updateItem(it._key, { remark: e.target.value })
-                    }
-                    placeholder="NTT, NAV DC-3…"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeItem(it._key)}
-                  disabled={items.length === 1}
-                  style={{
-                    height: 32,
-                    width: 32,
-                    borderRadius: 6,
-                    border: "1px solid var(--line)",
-                    background: "transparent",
-                    cursor: "pointer",
-                    color: "var(--red)",
-                    fontSize: 14,
-                    flexShrink: 0,
-                    alignSelf: "start",
-                    marginTop: 0,
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
+              <ItemRow
+                key={it._key}
+                it={it}
+                idx={idx}
+                updateItem={updateItem}
+                removeItem={removeItem}
+                handleProcessSelect={handleProcessSelect}
+                disableRemove={items.length === 1}
+              />
             ))}
 
             <button
@@ -2371,6 +3044,14 @@ setTimeout(() => {
                           >
                             👁 View
                           </button>
+                          {canCreate && (
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => setEditOrder(order)}
+                            >
+                              ✎ Edit
+                            </button>
+                          )}
                           {hasPending && canCreate && (
                             <button
                               className="btn btn-sm btn-in"
