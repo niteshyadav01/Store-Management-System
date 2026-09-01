@@ -22,6 +22,29 @@ async function apiGet(path) {
   }
   return res.json();
 }
+async function apiDelete(path) {
+  const token = localStorage.getItem("sy_token");
+  const res = await fetch(`${API}${path}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let errMsg = res.statusText;
+    try {
+      errMsg = (await res.json()).error || errMsg;
+    } catch {
+      /* non-JSON error body */
+    }
+    console.error(`[apiDelete] ${path} -> ${res.status}`, errMsg);
+    throw new Error(errMsg);
+  }
+  // DELETE responses often have no body
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 async function apiPost(path, body) {
   const token = localStorage.getItem("sy_token");
   const res = await fetch(`${API}${path}`, {
@@ -86,6 +109,7 @@ const emptyItem = () => ({
 });
 
 const CREATE_ROLES = ["admin", "store_manager", "store", "purchase"];
+
 
 const LOCATIONS = ["Factory", "Site"];
 const UNITS = ["NOS", "MTR", "KG", "SET", "PKT", "BOX", "LTR"];
@@ -363,7 +387,7 @@ function PrintChallan({ order }) {
                   <tbody>
                     <tr>
                       <td style={{ paddingBottom: 6 }}>
-                        <strong>SR. No :</strong>
+                        <strong>Challan No. :</strong>
                       </td>
                       <td
                         style={{
@@ -771,7 +795,7 @@ function PrintItemsTable({ order }) {
                   width: "10%",
                 }}
               >
-                SR No
+                Challan No
               </td>
               <td
                 style={{
@@ -845,7 +869,7 @@ function PrintItemsTable({ order }) {
                   background: "#f3f1ec",
                 }}
               >
-                Challan No
+                Receving Challan No 
               </td>
               <td style={{ border: "1px solid #000", padding: "5px 10px" }}>
                 {order.challanNo || "—"}
@@ -1306,7 +1330,7 @@ function ViewModal({ order, onClose, onEdit }) {
             }}
           >
             {[
-              { label: "SR No", value: order.srNo },
+              { label: "challan No", value: order.srNo },
               { label: "Date", value: formatDate(order.date) },
               { label: "Vendor Name", value: order.vendorName },
               { label: "Vehicle No", value: order.vehicleNo || "—" },
@@ -1835,7 +1859,7 @@ function ReceiveModal({ order, onSave, onClose }) {
               </div>
               <div className="field full">
                 <label>
-                  Challan No <span style={{ color: "red" }}>*</span>
+                  Receving Challan No <span style={{ color: "red" }}>*</span>
                 </label>
                 <input
                   value={challanNo}
@@ -2088,7 +2112,7 @@ function EditModal({ order, onSave, onClose }) {
             <div className="formgrid" style={{ marginBottom: 20 }}>
               <div className="field">
                 <label>
-                  SR No <span style={{ color: "var(--red)" }}>*</span>
+                  challan No. <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 <input value={srNo} onChange={(e) => setSrNo(e.target.value)} />
               </div>
@@ -2313,6 +2337,7 @@ export default function JobOrder() {
   const { user } = useAuth();
 
   const canCreate = CREATE_ROLES.includes(user?.role);
+  const isAdmin = user?.role === "admin";
   const [orders, setOrders] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [viewOrder, setViewOrder] = useState(null);
@@ -2569,6 +2594,22 @@ export default function JobOrder() {
     load();
   }
 
+  async function handleDelete(order) {
+  if (
+    !window.confirm(
+      `Delete job order #${order.srNo}? This cannot be undone.`,
+    )
+  )
+    return;
+  try {
+    await apiDelete(`/job-orders/${order._id}`);
+    load();
+  } catch (err) {
+    console.error("[JobOrder] delete failed", err);
+    alert("Failed to delete: " + err.message);
+  }
+}
+
   const STATUS_COLORS = {
     issued: { bg: "#e6f2f0", color: "var(--teal-dark)" },
     received: { bg: "#eef2ff", color: "#3730a3" },
@@ -2765,7 +2806,7 @@ export default function JobOrder() {
             <div className="formgrid" style={{ marginBottom: 20 }}>
               <div className="field">
                 <label>
-                  SR No <span style={{ color: "var(--red)" }}>*</span>
+                  Challan No  <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 <input
                   value={srNo}
@@ -2985,7 +3026,7 @@ export default function JobOrder() {
             <table>
               <thead>
                 <tr>
-                  <th>SR No</th>
+                  <th>Challan No</th>
                   <th>Date</th>
                   <th>Vendor Name</th>
                   <th>Vehicle No</th>
@@ -3052,6 +3093,15 @@ export default function JobOrder() {
                               ✎ Edit
                             </button>
                           )}
+                          {isAdmin && (
+  <button
+    className="btn btn-ghost btn-sm"
+    style={{ color: "var(--red)" }}
+    onClick={() => handleDelete(order)}
+  >
+    🗑 Delete
+  </button>
+)}
                           {hasPending && canCreate && (
                             <button
                               className="btn btn-sm btn-in"

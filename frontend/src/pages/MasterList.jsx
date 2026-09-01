@@ -46,12 +46,19 @@ export default function MasterList() {
       (m.code || "").toLowerCase().includes(search.toLowerCase()),
   );
 
-  // Coerce possibly-missing/undefined/null minStock to 0 safely. Plain
-  // Number(undefined) is NaN, and NaN !== 0 is true — which was wrongly
-  // locking any older record that never had minStock saved (treating
-  // "unset" as if it were a real non-zero value already in place). `|| 0`
-  // collapses NaN/0/null/undefined all down to 0, which is what "unset"
-  // should mean for this rule.
+function dedupeCategories(items) {
+  const map = new Map(); // key: lowercase, value: original casing to display
+  items.forEach((c) => {
+    const raw = (c || "").trim();
+    if (!raw) return;
+    const key = raw.toLowerCase();
+    if (!map.has(key)) map.set(key, raw); // keeps first-seen casing
+  });
+  return [...map.values()].sort((a, b) => a.localeCompare(b));
+}
+
+const categoryOptions = dedupeCategories(list.map((m) => m.category));
+ 
   const numMinStock = (v) => Number(v) || 0;
 
   // The material currently being edited (if any), looked up fresh from `list`
@@ -297,15 +304,22 @@ export default function MasterList() {
                   />
                 </div>
                 <div className="field">
-                  <label>Category</label>
-                  <input
-                    value={form.category}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, category: e.target.value }))
-                    }
-                    placeholder="e.g. Pipes"
-                  />
-                </div>
+  <label>Category</label>
+  <input
+    value={form.category}
+    onChange={(e) =>
+      setForm((f) => ({ ...f, category: e.target.value }))
+    }
+    placeholder="e.g. Pipes"
+    list="category-suggestions"
+    autoComplete="off"
+  />
+</div>
+<datalist id="category-suggestions">
+  {categoryOptions.map((c) => (
+    <option key={c} value={c} />
+  ))}
+</datalist>
                 <div className="field">
                   <label>UOM</label>
                   <input
