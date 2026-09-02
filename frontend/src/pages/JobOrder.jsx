@@ -3253,7 +3253,7 @@ export default function JobOrder() {
                   <th>Issued By</th>
                   <th>Items</th>
                   <th>Received At</th>
-                  <th>Received By</th>
+                  <th>Send From Name</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -3279,7 +3279,7 @@ export default function JobOrder() {
                       <td>{order.issuedBy || "—"}</td>
                       <td>{order.items?.length || 0}</td>
                       <td>{order.receivedAt || "—"}</td>
-                      <td>{order.receivedBy || "—"}</td>
+                      <td>{order.sendFromName || "—"}</td>
                       <td>
                         <span
                           style={{
