@@ -65,6 +65,8 @@ router.post(
       const {
         srNo,
         date,
+        sendFromName,
+        sendFromAddress,
         vendorName,
         vehicleNo,
         issuedBy,
@@ -141,6 +143,8 @@ router.post(
       const order = await JobOrder.create({
         srNo: String(srNo).trim(),
         date: date || new Date().toISOString().slice(0, 10),
+        sendFromName: String(sendFromName ?? "").trim(),
+        sendFromAddress: String(sendFromAddress ?? "").trim(),
         vendorName: vendorName.trim(),
         vehicleNo: vehicleNo || "",
         issuedBy: issuedBy.trim(),
@@ -160,7 +164,7 @@ router.post(
         createdByUsername: req.user.username,
       });
 
-      res.status(201).json(order);
+      res.status(201).json(order.toObject());
     } catch (err) {
       console.error("[job-orders POST /] ", err);
       if (err.code === 11000)
@@ -196,6 +200,8 @@ router.patch(
       const {
         srNo,
         date,
+        sendFromName,
+        sendFromAddress,
         vendorName,
         vehicleNo,
         issuedBy,
@@ -221,6 +227,12 @@ router.patch(
         order.srNo = trimmed;
       }
       if (date !== undefined && date) order.date = date;
+      if (sendFromName !== undefined) {
+        order.sendFromName = String(sendFromName ?? "").trim();
+      }
+      if (sendFromAddress !== undefined) {
+        order.sendFromAddress = String(sendFromAddress ?? "").trim();
+      }
       if (vendorName !== undefined) {
         if (!vendorName.trim())
           return res.status(400).json({ error: "Vendor name is required." });
@@ -310,7 +322,8 @@ router.patch(
       order.markModified("items");
       await order.save();
 
-      res.json(order);
+      const saved = await JobOrder.findById(order._id).lean();
+      res.json(saved);
     } catch (err) {
       console.error("[job-orders PATCH /:id] ", err);
       if (err.code === 11000)

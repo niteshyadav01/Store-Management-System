@@ -41,6 +41,8 @@ const historySchema = new mongoose.Schema({
 const jobOrderSchema = new mongoose.Schema({
   srNo:            { type: String, required: true, trim: true },
   date:            { type: String, required: true },
+  sendFromName:    { type: String, default: '' },
+  sendFromAddress: { type: String, default: '' },
   vendorName:      { type: String, required: true, trim: true },
   vehicleNo:       { type: String, default: '' },
   issuedBy:        { type: String, required: true, trim: true },

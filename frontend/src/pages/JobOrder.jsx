@@ -155,9 +155,17 @@ const OTHER_VENDOR = "__other__";
 
 const COMPANY_LOGO_URL =
   "https://www.profile-solution.com/wp-content/uploads/PS-Logo-1-e1771321686738.png";
+const COMPANY_STAMP_URL = "/profile-stamp.png?v=2";
 const COMPANY_NAME = "PROFILE DATA CENTER SOLUTIONS PVT. LTD.";
 const COMPANY_ADDRESS_SHORT =
   "Office No. 1701, Friends Business Bay, LT Road, Near Veer Savarkar Garden, Borivali (W), Mumbai : 400092";
+
+function sendFromFields(order) {
+  return {
+    name: String(order?.sendFromName ?? "").trim() || "—",
+    address: String(order?.sendFromAddress ?? "").trim() || "—",
+  };
+}
 
 // Display-only date formatting — dd/mm/yyyy. Accepts a plain 'YYYY-MM-DD'
 // string (from the date input) or a full ISO datetime string.
@@ -191,6 +199,21 @@ const num = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+function receivePercent(order) {
+  const items = order?.items || [];
+  const totalQty = items.reduce((sum, it) => sum + num(it.qty), 0);
+  if (totalQty <= 0) return 0;
+  const receivedQty = items.reduce((sum, it) => sum + num(it.receivedQty), 0);
+  return Math.min(100, Math.round((receivedQty / totalQty) * 100));
+}
+
+function statusLabel(order) {
+  const status = order?.status || "issued";
+  const pct = receivePercent(order);
+  const label = status.charAt(0).toUpperCase() + status.slice(1);
+  return `${label} (${pct}%)`;
+}
 
 // Display helper: renders a numeric value that may legitimately be 0,
 // distinguishing that from "not entered" (null/undefined/""). Do NOT use
@@ -242,6 +265,7 @@ function setPrintPageSize(orientation) {
 // ── Delivery Challan Print Template ───────────────────────────────────────────
 function PrintChallan({ order }) {
   const ref = useRef();
+  const sendFrom = sendFromFields(order);
 
   function handlePrint() {
     setPrintPageSize("portrait");
@@ -350,6 +374,26 @@ function PrintChallan({ order }) {
                   verticalAlign: "top",
                 }}
               >
+                <div
+                  style={{
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "#000",
+                    marginBottom: 5,
+                  }}
+                >
+                  Send From :
+                </div>
+                <div
+                  style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}
+                >
+                  {sendFrom.name}
+                </div>
+                <div style={{ minHeight: 24, color: "#333", marginBottom: 12 }}>
+                  {sendFrom.address}
+                </div>
                 <div
                   style={{
                     fontSize: 10,
@@ -581,7 +625,7 @@ function PrintChallan({ order }) {
                     field. Checked By is intentionally left blank — it's
                     filled in by hand after printing, not derived from any
                     stored field. */}
-                <div style={{ marginBottom: 10 }}>
+                <div style={{ marginBottom: 50 }}>
                   <strong>Prepared By Name &amp; Signature :</strong>{" "}
                   {order.issuedBy || " ___________________"}
                 </div>
@@ -595,7 +639,7 @@ function PrintChallan({ order }) {
                   border: "1px solid #000",
                   borderTop: "none",
                   borderLeft: "none",
-                  padding: "12px 14px",
+                  padding: "5px 15px",
                   textAlign: "center",
                   verticalAlign: "bottom",
                 }}
@@ -603,12 +647,23 @@ function PrintChallan({ order }) {
                 <div
                   style={{
                     fontWeight: 700,
-                    marginBottom: 34,
+                    marginBottom: 8,
                     letterSpacing: "0.02em",
                   }}
                 >
                   FOR PROFILE SOLUTION
                 </div>
+                <img
+                  src={COMPANY_STAMP_URL}
+                  alt="Profile Data Center Solutions stamp"
+                  style={{
+                    display: "block",
+                    margin: "0 auto 0px",
+                    width: 90,
+                    height: 90,
+                    objectFit: "contain",
+                  }}
+                />
                 <div
                   style={{
                     borderTop: "1px solid #000",
@@ -891,7 +946,7 @@ function PrintItemsTable({ order }) {
                   textTransform: "capitalize",
                 }}
               >
-                {order.status || "issued"}
+                {statusLabel(order)}
               </td>
             </tr>
           </tbody>
@@ -1208,6 +1263,25 @@ function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disable
 
 // ── View Details Modal ────────────────────────────────────────────────────────
 function ViewModal({ order, onClose, onEdit }) {
+  const [detail, setDetail] = useState(order);
+
+  useEffect(() => {
+    setDetail(order);
+    if (!order?._id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const full = await apiGet(`/job-orders/${order._id}`);
+        if (!cancelled) setDetail(full);
+      } catch (err) {
+        console.error("[ViewModal] failed to load order details", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [order]);
+
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -1238,61 +1312,26 @@ function ViewModal({ order, onClose, onEdit }) {
     setTimeout(() => window.print(), 100);
   }
 
+  const sendFrom = sendFromFields(detail);
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(28,26,22,0.6)",
-        backdropFilter: "blur(4px)",
-        zIndex: 1000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        overflowY: "auto",
-      }}
-      onClick={onClose}
-    >
+    <div className="jo-modal-overlay" onClick={onClose}>
       <div
-        style={{
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          width: "100%",
-          maxWidth: 980,
-          maxHeight: "95vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
+        className="jo-modal-panel jo-modal-panel--lg"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal header */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 24px",
-            borderBottom: "1px solid var(--line)",
-            flexShrink: 0,
-          }}
-        >
-          <div>
+        <div className="jo-modal-header">
+          <div className="jo-modal-header-text">
             <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-              Job Order #{order.srNo}
+              Job Order #{detail.srNo}
             </h2>
             <p style={{ margin: "2px 0 0", fontSize: 12, color: "#8a8270" }}>
-              {formatDate(order.date)} · {order.vendorName} ·{" "}
-              {order.vehicleNo || "—"}
+              {formatDate(detail.date)} · {detail.vendorName} ·{" "}
+              {detail.vehicleNo || "—"}
             </p>
           </div>
-          <div
-            className="no-print"
-            style={{ display: "flex", alignItems: "center", gap: 8 }}
-          >
+          <div className="jo-modal-actions no-print">
             {onEdit && (
               <button
                 onClick={onEdit}
@@ -1303,15 +1342,9 @@ function ViewModal({ order, onClose, onEdit }) {
               </button>
             )}
             <button
+              type="button"
+              className="jo-modal-close"
               onClick={onClose}
-              style={{
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                fontSize: 20,
-                color: "#8a8270",
-                padding: "4px 8px",
-              }}
             >
               ✕
             </button>
@@ -1319,30 +1352,25 @@ function ViewModal({ order, onClose, onEdit }) {
         </div>
 
         {/* Modal body */}
-        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px" }}>
+        <div className="jo-modal-body">
           {/* Meta info */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-              marginBottom: 20,
-            }}
-          >
+          <div className="jo-meta-grid">
             {[
-              { label: "challan No", value: order.srNo },
-              { label: "Date", value: formatDate(order.date) },
-              { label: "Vendor Name", value: order.vendorName },
-              { label: "Vehicle No", value: order.vehicleNo || "—" },
-              { label: "Issued By", value: order.issuedBy || "—" },
+              { label: "challan No", value: detail.srNo },
+              { label: "Date", value: formatDate(detail.date) },
+              { label: "Send From Name", value: sendFrom.name },
+              { label: "Send From Address", value: sendFrom.address },
+              { label: "Vendor Name", value: detail.vendorName },
+              { label: "Vehicle No", value: detail.vehicleNo || "—" },
+              { label: "Issued By", value: detail.issuedBy || "—" },
               {
                 label: "Delivery Address",
-                value: order.deliveryAddress || "—",
+                value: detail.deliveryAddress || "—",
               },
-              { label: "Status", value: order.status || "issued" },
-              { label: "Challan No", value: order.challanNo || "—" },
-              { label: "Received At", value: order.receivedAt || "—" },
-              { label: "Received By", value: order.receivedBy || "—" },
+              { label: "Challan No", value: detail.challanNo || "—" },
+              { label: "Received At", value: detail.receivedAt || "—" },
+              { label: "Received By", value: detail.receivedBy || "—" },
+              { label: "Status", value: statusLabel(detail) },
             ].map((f) => (
               <div
                 key={f.label}
@@ -1374,14 +1402,7 @@ function ViewModal({ order, onClose, onEdit }) {
           </div>
 
           {/* Items table */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 10,
-            }}
-          >
+          <div className="jo-items-toolbar">
             <h3
               style={{
                 fontSize: 12,
@@ -1415,7 +1436,7 @@ function ViewModal({ order, onClose, onEdit }) {
           <div
             style={{ position: "fixed", top: -99999, left: -99999, zIndex: -1 }}
           >
-            <PrintItemsTable order={order} />
+            <PrintItemsTable order={detail} />
           </div>
           <div className="tablewrap" style={{ marginBottom: 20 }}>
             <table>
@@ -1438,7 +1459,7 @@ function ViewModal({ order, onClose, onEdit }) {
                 </tr>
               </thead>
               <tbody>
-                {(order.items || []).map((it, i) => {
+                {(detail.items || []).map((it, i) => {
                   const received = num(it.receivedQty);
                   const pending = Math.max(0, num(it.qty) - received);
                   const receipts = it.receipts || [];
@@ -1502,7 +1523,7 @@ function ViewModal({ order, onClose, onEdit }) {
           </div>
 
           {/* Transaction history */}
-          {order.history?.length > 0 && (
+          {detail.history?.length > 0 && (
             <>
               <h3
                 style={{
@@ -1524,7 +1545,7 @@ function ViewModal({ order, onClose, onEdit }) {
                   marginBottom: 20,
                 }}
               >
-                {order.history.map((h, i) => (
+                {detail.history.map((h, i) => (
                   <div
                     key={i}
                     style={{
@@ -1583,7 +1604,7 @@ function ViewModal({ order, onClose, onEdit }) {
           >
             Delivery Challan
           </h3>
-          <PrintChallan order={order} />
+          <PrintChallan order={detail} />
         </div>
       </div>
     </div>
@@ -1695,80 +1716,31 @@ function ReceiveModal({ order, onSave, onClose }) {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(28,26,22,0.6)",
-        backdropFilter: "blur(4px)",
-        zIndex: 1100,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        overflowY: "auto",
-      }}
-      onClick={onClose}
-    >
+    <div className="jo-modal-overlay jo-modal-overlay--high" onClick={onClose}>
       <div
-        style={{
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          width: "100%",
-          maxWidth: 720,
-          maxHeight: "92vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className="jo-modal-panel jo-modal-panel--md"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 24px",
-            borderBottom: "1px solid var(--line)",
-            flexShrink: 0,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
-            Mark as Received — #{order.srNo}
-          </h2>
+        <div className="jo-modal-header">
+          <div className="jo-modal-header-text">
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+              Mark as Received — #{order.srNo}
+            </h2>
+          </div>
           <button
+            type="button"
+            className="jo-modal-close"
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 18,
-              color: "#8a8270",
-            }}
           >
             ✕
           </button>
         </div>
         <form
           onSubmit={handleSave}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
+          className="jo-modal-form"
         >
-          <div style={{ padding: "20px 24px", overflowY: "auto" }}>
-            <div
-              style={{
-                marginBottom: 8,
-                fontSize: 11,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                color: "#8a8270",
-              }}
-            >
+          <div className="jo-modal-body">
+            <div className="jo-receive-hint">
               Items — enter qty received now, and where. Leave less than the
               full amount to receive the rest later.
             </div>
@@ -1911,6 +1883,8 @@ function EditModal({ order, onSave, onClose }) {
 
   const [srNo, setSrNo] = useState(order.srNo || "");
   const [date, setDate] = useState((order.date || "").slice(0, 10) || todayStr());
+  const [sendFromName, setSendFromName] = useState(order.sendFromName || "");
+  const [sendFromAddress, setSendFromAddress] = useState(order.sendFromAddress || "");
   const [vendorName, setVendorName] = useState(order.vendorName || "");
   const [vendorCustom, setVendorCustom] = useState(
     () => !!order.vendorName && !VENDORS.some((v) => v.name === order.vendorName),
@@ -1941,6 +1915,20 @@ function EditModal({ order, onSave, onClose }) {
 
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    setSrNo(order.srNo || "");
+    setDate((order.date || "").slice(0, 10) || todayStr());
+    setSendFromName(order.sendFromName || "");
+    setSendFromAddress(order.sendFromAddress || "");
+    setVendorName(order.vendorName || "");
+    setVendorCustom(
+      !!order.vendorName && !VENDORS.some((v) => v.name === order.vendorName),
+    );
+    setVehicleNo(order.vehicleNo || "");
+    setIssuedBy(order.issuedBy || "");
+    setDeliveryAddress(order.deliveryAddress || "");
+  }, [order]);
 
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -1977,11 +1965,13 @@ function EditModal({ order, onSave, onClose }) {
     if (!issuedBy.trim()) return setErr("Issued By is required.");
 
     const payload = {
-      srNo,
+      srNo: srNo.trim(),
       date,
-      vendorName,
+      sendFromName: sendFromName.trim(),
+      sendFromAddress: sendFromAddress.trim(),
+      vendorName: vendorName.trim(),
       vehicleNo,
-      issuedBy,
+      issuedBy: issuedBy.trim(),
       deliveryAddress,
     };
 
@@ -2047,67 +2037,28 @@ function EditModal({ order, onSave, onClose }) {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(28,26,22,0.6)",
-        backdropFilter: "blur(4px)",
-        zIndex: 1100,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-        overflowY: "auto",
-      }}
-      onClick={onClose}
-    >
+    <div className="jo-modal-overlay jo-modal-overlay--high" onClick={onClose}>
       <div
-        style={{
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          width: "100%",
-          maxWidth: 980,
-          maxHeight: "94vh",
-          display: "flex",
-          flexDirection: "column",
-        }}
+        className="jo-modal-panel jo-modal-panel--lg"
         onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            padding: "16px 24px",
-            borderBottom: "1px solid var(--line)",
-            flexShrink: 0,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
-            Edit Job Order — #{order.srNo}
-          </h2>
+        <div className="jo-modal-header">
+          <div className="jo-modal-header-text">
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+              Edit Job Order — #{order.srNo}
+            </h2>
+          </div>
           <button
+            type="button"
+            className="jo-modal-close"
             onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              fontSize: 18,
-              color: "#8a8270",
-            }}
           >
             ✕
           </button>
         </div>
 
-        <form
-          onSubmit={handleSave}
-          style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}
-        >
-          <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+        <form onSubmit={handleSave} className="jo-modal-form">
+          <div className="jo-modal-body">
             {/* Header fields */}
             <div className="formgrid" style={{ marginBottom: 20 }}>
               <div className="field">
@@ -2125,11 +2076,27 @@ function EditModal({ order, onSave, onClose }) {
                 />
               </div>
               <div className="field">
+                <label>Send From Name</label>
+                <input
+                  value={sendFromName}
+                  onChange={(e) => setSendFromName(e.target.value)}
+                  placeholder="Enter sender name"
+                />
+              </div>
+              <div className="field">
+                <label>Send From Address</label>
+                <input
+                  value={sendFromAddress}
+                  onChange={(e) => setSendFromAddress(e.target.value)}
+                  placeholder="Enter sender address"
+                />
+              </div>
+              <div className="field">
                 <label>
                   Vendor Name <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 {vendorCustom ? (
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className="jo-vendor-custom-row">
                     <input
                       value={vendorName}
                       onChange={(e) => setVendorName(e.target.value)}
@@ -2169,7 +2136,7 @@ function EditModal({ order, onSave, onClose }) {
                   </select>
                 )}
               </div>
-              <div className="field full">
+              <div className="field">
                 <label>Address of Delivery</label>
                 <input
                   value={deliveryAddress}
@@ -2352,6 +2319,8 @@ export default function JobOrder() {
   // Form state
   const [srNo, setSrNo] = useState("");
   const [date, setDate] = useState(todayStr());
+  const [sendFromName, setSendFromName] = useState("");
+  const [sendFromAddress, setSendFromAddress] = useState("");
   const [vendorName, setVendorName] = useState("");
   const [vendorCustom, setVendorCustom] = useState(false);
   const [vehicleNo, setVehicleNo] = useState("");
@@ -2363,6 +2332,8 @@ export default function JobOrder() {
   function resetFields() {
     setSrNo("");
     setDate(todayStr());
+    setSendFromName("");
+    setSendFromAddress("");
     setVendorName("");
     setVendorCustom(false);
     setVehicleNo("");
@@ -2512,9 +2483,11 @@ export default function JobOrder() {
     setSaving(true);
     try {
       await apiPost("/job-orders", {
-        srNo,
+        srNo: srNo.trim(),
         date,
-        vendorName,
+        sendFromName: sendFromName.trim(),
+        sendFromAddress: sendFromAddress.trim(),
+        vendorName: vendorName.trim(),
         vehicleNo,
         issuedBy,
         deliveryAddress,
@@ -2589,9 +2562,28 @@ export default function JobOrder() {
     if (!order?._id) {
       throw new Error("No order selected — please close and reopen the edit dialog.");
     }
-    await apiPatch(`/job-orders/${order._id}`, payload);
+    const updated = await apiPatch(`/job-orders/${order._id}`, payload);
+    const updatedId = String(updated._id);
+    setOrders((prev) =>
+      prev.map((o) =>
+        String(o._id) === updatedId ? { ...o, ...updated } : o,
+      ),
+    );
+    if (viewOrder && String(viewOrder._id) === updatedId) {
+      setViewOrder({ ...viewOrder, ...updated });
+    }
     setEditOrder(null);
-    load();
+    await load();
+  }
+
+  async function handlePrintPdf(order) {
+    try {
+      const full = await apiGet(`/job-orders/${order._id}`);
+      setPrintOrder(full);
+    } catch (err) {
+      console.error("[JobOrder] failed to load order for print", err);
+      setPrintOrder(order);
+    }
   }
 
   async function handleDelete(order) {
@@ -2620,6 +2612,53 @@ export default function JobOrder() {
     statusFilter === "all"
       ? orders
       : orders.filter((o) => o.status === statusFilter);
+
+  function OrderActionButtons({ order, hasPending }) {
+    return (
+      <div className="jo-order-actions">
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setViewOrder(order)}
+        >
+          👁 View
+        </button>
+        {canCreate && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setEditOrder(order)}
+          >
+            ✎ Edit
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ color: "var(--red)" }}
+            onClick={() => handleDelete(order)}
+          >
+            🗑 Delete
+          </button>
+        )}
+        {hasPending && canCreate && (
+          <button
+            className="btn btn-sm btn-in"
+            onClick={() => setReceiveOrder(order)}
+          >
+            ✓{" "}
+            {order.status === "partial"
+              ? "Continue receiving"
+              : "Received"}
+          </button>
+        )}
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => handlePrintPdf(order)}
+        >
+          ⬇ PDF
+        </button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -2654,15 +2693,13 @@ export default function JobOrder() {
 
         @media (max-width: 1200px) {
           .jo-item-row { grid-template-columns: 1fr 1fr; }
+          .jo-item-header { display: none; }
+          .jo-item-row .field label { display: block; }
         }
 
-        /* Mobile: ONE field per row, full width — no more 2–3 fields
-           crammed side by side. The column-header row is hidden (it can't
-           line up with a single-column grid), so each field shows its own
-           label instead (see .jo-item-row .field label below). */
+        /* Mobile: ONE field per row, full width */
         @media (max-width: 640px) {
           .jo-item-row { grid-template-columns: 1fr; }
-          .jo-item-header { display: none; }
         }
 
         .jo-item-row .field label { font-size: 11px; margin-bottom: 3px; display: none; color: var(--text-3); font-weight: 600; }
@@ -2723,6 +2760,189 @@ export default function JobOrder() {
         .jo-mobile-only-label { display: none; font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 3px; }
         @media (max-width: 640px) {
           .jo-mobile-only-label { display: block; }
+        }
+
+        /* ── Page layout ─────────────────────────────────────────────────── */
+        .jo-form-card-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        .jo-list-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-bottom: 16px;
+        }
+        .jo-status-filters {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .jo-vendor-custom-row {
+          display: flex;
+          gap: 6px;
+          align-items: center;
+        }
+        .jo-vendor-custom-row input { flex: 1; min-width: 0; }
+
+        /* ── Orders table (horizontal scroll on narrow screens) ──────────── */
+        .jo-orders-wrap {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+        .jo-orders-table { min-width: 900px; width: 100%; }
+        .jo-order-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+
+        /* ── Modals ─────────────────────────────────────────────────────── */
+        .jo-modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(28, 26, 22, 0.6);
+          backdrop-filter: blur(4px);
+          z-index: 1000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 20px;
+          overflow-y: auto;
+        }
+        .jo-modal-overlay--high { z-index: 1100; }
+        .jo-modal-panel {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: var(--radius-lg);
+          box-shadow: var(--shadow-lg);
+          width: 100%;
+          max-height: 95vh;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .jo-modal-panel--lg { max-width: 980px; }
+        .jo-modal-panel--md { max-width: 720px; }
+        .jo-modal-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 16px 24px;
+          border-bottom: 1px solid var(--line);
+          flex-shrink: 0;
+        }
+        .jo-modal-header-text {
+          min-width: 0;
+          flex: 1;
+        }
+        .jo-modal-header-text h2,
+        .jo-modal-header-text p {
+          word-break: break-word;
+          overflow-wrap: anywhere;
+        }
+        .jo-modal-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .jo-modal-close {
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 20px;
+          color: #8a8270;
+          padding: 4px 8px;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+        .jo-modal-form {
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          flex: 1;
+          min-height: 0;
+        }
+        .jo-modal-body {
+          padding: 20px 24px;
+          overflow-y: auto;
+          flex: 1;
+          min-height: 0;
+        }
+        .jo-meta-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          gap: 12px;
+          margin-bottom: 20px;
+        }
+        .jo-items-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+          flex-wrap: wrap;
+        }
+        .jo-receive-hint {
+          margin-bottom: 12px;
+          font-size: 11px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #8a8270;
+          line-height: 1.4;
+        }
+
+        @media (max-width: 900px) {
+          .jo-status-filters { width: 100%; }
+          .jo-status-filters .btn {
+            flex: 1 1 calc(50% - 3px);
+            min-width: 0;
+            justify-content: center;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .jo-modal-overlay {
+            padding: 12px;
+            align-items: flex-start;
+          }
+          .jo-modal-panel {
+            max-height: calc(100vh - 24px);
+          }
+          .jo-modal-header { padding: 14px 16px; }
+          .jo-modal-body { padding: 14px 16px; }
+          .jo-meta-grid { grid-template-columns: 1fr 1fr; }
+          .jo-form-card-head { flex-wrap: wrap; }
+          .jo-form-card-head h3 { font-size: 15px; line-height: 1.3; }
+          .jo-vendor-custom-row {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .jo-vendor-custom-row .btn { width: 100%; }
+        }
+
+        @media (max-width: 480px) {
+          .jo-modal-overlay { padding: 0; }
+          .jo-modal-panel {
+            max-height: 100vh;
+            min-height: 100vh;
+            border-radius: 0;
+          }
+          .jo-meta-grid { grid-template-columns: 1fr; }
+          .jo-status-filters .btn { flex: 1 1 100%; }
+          .jo-items-toolbar {
+            flex-direction: column;
+            align-items: stretch;
+          }
+          .jo-items-toolbar button { width: 100%; justify-content: center; }
         }
       `}</style>
 
@@ -2787,14 +3007,7 @@ export default function JobOrder() {
       {/* ── Create form ── */}
       {showForm && canCreate && (
         <div className="card no-print">
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 20,
-            }}
-          >
+          <div className="jo-form-card-head">
             <h3 style={{ margin: 0 }}>New Job Order / Delivery Challan</h3>
             <button className="btn btn-ghost btn-sm" onClick={resetForm}>
               ✕ Cancel
@@ -2823,11 +3036,27 @@ export default function JobOrder() {
                 />
               </div>
               <div className="field">
+                <label>Send From Name</label>
+                <input
+                  value={sendFromName}
+                  onChange={(e) => setSendFromName(e.target.value)}
+                  placeholder="Enter sender name"
+                />
+              </div>
+              <div className="field">
+                <label>Send From Address</label>
+                <input
+                  value={sendFromAddress}
+                  onChange={(e) => setSendFromAddress(e.target.value)}
+                  placeholder="Enter sender address"
+                />
+              </div>
+              <div className="field">
                 <label>
                   Vendor Name <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 {vendorCustom ? (
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div className="jo-vendor-custom-row">
                     <input
                       value={vendorName}
                       onChange={(e) => setVendorName(e.target.value)}
@@ -2877,7 +3106,7 @@ export default function JobOrder() {
                 )}
               </div>
 
-              <div className="field full">
+              <div className="field">
                 <label>Address of Delivery</label>
                 <input
                   value={deliveryAddress}
@@ -2992,20 +3221,11 @@ export default function JobOrder() {
 
       {/* ── Orders list ── */}
       <div className="card no-print">
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
-            gap: 10,
-            marginBottom: 16,
-          }}
-        >
+        <div className="jo-list-head">
           <h3 style={{ margin: 0 }}>
             All Job Orders <span className="pill-count">{visible.length}</span>
           </h3>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div className="jo-status-filters">
             {["all", "issued", "partial", "received"].map((s) => (
               <button
                 key={s}
@@ -3022,8 +3242,8 @@ export default function JobOrder() {
         {loading ? (
           <p style={{ color: "var(--text-3)", fontSize: 13 }}>Loading…</p>
         ) : (
-          <div className="tablewrap">
-            <table>
+          <div className="tablewrap jo-orders-wrap">
+            <table className="jo-orders-table">
               <thead>
                 <tr>
                   <th>Challan No</th>
@@ -3032,9 +3252,9 @@ export default function JobOrder() {
                   <th>Vehicle No</th>
                   <th>Issued By</th>
                   <th>Items</th>
-                  <th>Status</th>
                   <th>Received At</th>
                   <th>Received By</th>
+                  <th>Status</th>
                   <th></th>
                 </tr>
               </thead>
@@ -3058,6 +3278,8 @@ export default function JobOrder() {
                       <td>{order.vehicleNo || "—"}</td>
                       <td>{order.issuedBy || "—"}</td>
                       <td>{order.items?.length || 0}</td>
+                      <td>{order.receivedAt || "—"}</td>
+                      <td>{order.receivedBy || "—"}</td>
                       <td>
                         <span
                           style={{
@@ -3070,56 +3292,14 @@ export default function JobOrder() {
                             textTransform: "capitalize",
                           }}
                         >
-                          {order.status || "issued"}
+                          {statusLabel(order)}
                         </span>
                       </td>
-                      <td>{order.receivedAt || "—"}</td>
-                      <td>{order.receivedBy || "—"}</td>
                       <td>
-                        <div
-                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-                        >
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setViewOrder(order)}
-                          >
-                            👁 View
-                          </button>
-                          {canCreate && (
-                            <button
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => setEditOrder(order)}
-                            >
-                              ✎ Edit
-                            </button>
-                          )}
-                          {isAdmin && (
-  <button
-    className="btn btn-ghost btn-sm"
-    style={{ color: "var(--red)" }}
-    onClick={() => handleDelete(order)}
-  >
-    🗑 Delete
-  </button>
-)}
-                          {hasPending && canCreate && (
-                            <button
-                              className="btn btn-sm btn-in"
-                              onClick={() => setReceiveOrder(order)}
-                            >
-                              ✓{" "}
-                              {order.status === "partial"
-                                ? "Continue receiving"
-                                : "Received"}
-                            </button>
-                          )}
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            onClick={() => setPrintOrder(order)}
-                          >
-                            ⬇ PDF
-                          </button>
-                        </div>
+                        <OrderActionButtons
+                          order={order}
+                          hasPending={hasPending}
+                        />
                       </td>
                     </tr>
                   );

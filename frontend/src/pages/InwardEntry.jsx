@@ -523,6 +523,8 @@ export default function InwardEntry() {
   const [master, setMaster] = useState([]);
   const [entries, setEntries] = useState([]);
   const [poList, setPoList] = useState([]);
+  const [poSearch, setPoSearch] = useState("");
+  const [poDropdownOpen, setPoDropdownOpen] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [bulkMsg, setBulkMsg] = useState({ text: "", ok: true });
@@ -537,7 +539,7 @@ export default function InwardEntry() {
   // ── PR → Inward hand-off ───────────────────────────────────────────────
   // The Purchase Request page's "Receive items" button navigates here with
   // `state: { presetPo, prNumber, prPoNumbers }`. We wait until poList has
-  // loaded (so the preset PO actually exists as a <select> option), apply
+  // loaded (so the preset PO actually exists as a searchable option), apply
   // it once, show a small banner, then clear the navigation state.
   const prefillAppliedRef = useRef(false);
   const [prBanner, setPrBanner] = useState(null); // { prNumber, poNumbers }
@@ -598,6 +600,16 @@ export default function InwardEntry() {
     return (
       isDateInRange(entry.date, fromDate, toDate) &&
       matchesSearchText(entry, searchText)
+    );
+  });
+
+  // ── PO search/filter for the searchable PO Number field ───────────────
+  const filteredPoList = poList.filter((po) => {
+    const q = poSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      po.poNumber?.toLowerCase().includes(q) ||
+      po.vendorName?.toLowerCase().includes(q)
     );
   });
 
@@ -744,6 +756,7 @@ export default function InwardEntry() {
   // ── PO logic ──────────────────────────────────────────────────────────
   async function handlePoSelect(poNumber) {
     setForm((f) => ({ ...f, po: poNumber, vendor: "" }));
+    setPoSearch(poNumber);
     setPoRows([]);
     setPoManual(false);
     if (!poNumber) return;
@@ -1297,7 +1310,7 @@ export default function InwardEntry() {
         .compact-form .section-label { display:flex; align-items:center; gap:10px; margin:22px 0 12px; font-size:11px; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:var(--text-3); }
         .compact-form .section-label::after { content:''; flex:1; height:1px; background:var(--line); }
         .compact-form .actionrow { margin-top:20px; padding-top:16px; border-top:1px solid var(--line); align-items:center; }
-        .compact-form .doc-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px 16px; margin-bottom:14px; }
+       .compact-form .doc-row { display:grid; grid-template-columns:repeat(5,1fr); gap:14px 16px; margin-bottom:14px; align-items: start; }
 
         .pr-inward-banner {
           display: flex;
@@ -1331,6 +1344,40 @@ export default function InwardEntry() {
         .entries-section .tablewrap { max-height: 82vh !important; overflow-x:auto; -webkit-overflow-scrolling: touch; }
         .entries-section table td, .entries-section table th { padding: 16px 14px; }
         .filterbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-bottom:12px; }
+
+        /* ── Searchable PO dropdown ── */
+    .po-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 50;
+  box-shadow: var(--shadow-lg, 0 4px 14px rgba(0,0,0,0.12));
+}
+        .po-dropdown-item {
+          padding: 9px 12px;
+          font-size: 13px;
+          cursor: pointer;
+          border-bottom: 1px solid var(--line);
+        }
+        .po-dropdown-item:last-child { border-bottom: none; }
+        .po-dropdown-item:hover { background: var(--paper-dim); }
+        .po-dropdown-empty {
+          padding: 8px 12px;
+          font-size: 12.5px;
+          color: var(--text-3);
+        }
+        .po-dropdown-manual {
+          color: var(--teal-dark);
+          font-weight: 600;
+        }
 
         /* ---------- Responsive breakpoints ---------- */
         @media (max-width:1100px) { .compact-form .doc-row { grid-template-columns:repeat(4,1fr); } }
@@ -1677,7 +1724,9 @@ export default function InwardEntry() {
                 placeholder="e.g. INV-1023 (optional)"
               />
             </div>
-            <div className="field">
+
+            {/* ── Searchable PO Number field ── */}
+            <div className="field" style={{ position: "relative" }}>
               <label>
                 PO Number <span style={{ color: "var(--red)" }}>*</span>
               </label>
@@ -1699,6 +1748,7 @@ export default function InwardEntry() {
                     style={{ whiteSpace: "nowrap" }}
                     onClick={() => {
                       setPoManual(false);
+                      setPoSearch("");
                       setForm((f) => ({ ...f, po: "" }));
                       setPoRows([]);
                     }}
@@ -1707,28 +1757,75 @@ export default function InwardEntry() {
                   </button>
                 </div>
               ) : (
-                <select
-                  required
-                  value={form.po}
-                  onChange={(e) => {
-                    if (e.target.value === "__manual__") {
-                      setPoManual(true);
-                      setForm((f) => ({ ...f, po: "" }));
-                      setPoRows([]);
-                    } else handlePoSelect(e.target.value);
-                  }}
-                >
-                  <option value="">— Select PO —</option>
-                  {poList.map((po) => (
-                    <option key={po._id} value={po.poNumber}>
-                      {po.poNumber} — {po.vendorName} (
-                      {po.remainingItems ?? po.items?.length ?? 0} items pending)
-                    </option>
-                  ))}
-                  <option value="__manual__">✎ Enter PO number manually…</option>
-                </select>
+                <>
+                  <input
+                    required
+                    value={poSearch}
+                    onChange={(e) => {
+                      setPoSearch(e.target.value);
+                      setPoDropdownOpen(true);
+                      if (form.po) {
+                        setForm((f) => ({ ...f, po: "" }));
+                        setPoRows([]);
+                      }
+                    }}
+                    onFocus={() => setPoDropdownOpen(true)}
+                    onBlur={() =>
+                      setTimeout(() => setPoDropdownOpen(false), 150)
+                    }
+                    placeholder="— Select PO — (type to search)"
+                    autoComplete="off"
+                  />
+                  {poDropdownOpen && (
+                    <div className="po-dropdown">
+                      <div
+                        className="po-dropdown-item"
+                        onMouseDown={() => {
+                          handlePoSelect("");
+                          setPoSearch("");
+                          setPoDropdownOpen(false);
+                        }}
+                        style={{ fontWeight: 600, color: "var(--text-3)" }}
+                      >
+                        — Select PO —
+                      </div>
+                      {filteredPoList.length === 0 && (
+                        <div className="po-dropdown-empty">
+                          No matching POs
+                        </div>
+                      )}
+                      {filteredPoList.map((po) => (
+                        <div
+                          key={po._id}
+                          className="po-dropdown-item"
+                          onMouseDown={() => {
+                            setPoDropdownOpen(false);
+                            handlePoSelect(po.poNumber);
+                          }}
+                        >
+                          {po.poNumber} — {po.vendorName} (
+                          {po.remainingItems ?? po.items?.length ?? 0} items
+                          pending)
+                        </div>
+                      ))}
+                      <div
+                        className="po-dropdown-item po-dropdown-manual"
+                        onMouseDown={() => {
+                          setPoManual(true);
+                          setPoSearch("");
+                          setForm((f) => ({ ...f, po: "" }));
+                          setPoRows([]);
+                          setPoDropdownOpen(false);
+                        }}
+                      >
+                        ✎ Enter PO number manually…
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
+
             <div className="field">
               <label>
                 Received by <span style={{ color: "var(--red)" }}>*</span>
@@ -2084,7 +2181,10 @@ export default function InwardEntry() {
               <button
                 type="button"
                 className="btn btn-ghost"
-                onClick={() => handlePoSelect("")}
+                onClick={() => {
+                  handlePoSelect("");
+                  setPoSearch("");
+                }}
               >
                 Clear PO
               </button>
