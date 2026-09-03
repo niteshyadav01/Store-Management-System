@@ -60,6 +60,7 @@ export default function PurchaseOrders() {
   const [msg, setMsg] = useState({ text: "", ok: true });
   const [stockMap, setStockMap] = useState({});
   const [exportLoading, setExportLoading] = useState(false);
+  const [poExportLoading, setPoExportLoading] = useState(false);
 
   // ── PO edit / delete state ───────────────────────────────────────────────
   const [editingPO, setEditingPO] = useState(null);
@@ -604,6 +605,106 @@ export default function PurchaseOrders() {
       alert("Export failed: " + err.message);
     } finally {
       setExportLoading(false);
+    }
+  }
+
+  // ── Export All Purchase Orders table (+ line items) to Excel ─────────────
+  function exportAllPOsToExcel() {
+    if (!poList.length) {
+      alert("No purchase orders to export.");
+      return;
+    }
+    setPoExportLoading(true);
+    try {
+      const prMapLocal = Object.fromEntries(
+        requests.map((r) => [r.prNumber, r]),
+      );
+
+      const poHeaders = [
+        "PO No",
+        "PO Date",
+        "Expected Date",
+        "PR No",
+        "Vendor",
+        "Project",
+        "Items",
+        "Total Value",
+        "Created by",
+      ];
+      const poRows = poList.map((po) => {
+        const totalValue = (po.items || []).reduce(
+          (s, i) => s + (i.orderedQty || 0) * (i.price || 0),
+          0,
+        );
+        const pr = prMapLocal[po.prNumber];
+        return [
+          po.poNumber || "",
+          toDDMMYYYY(po.poDate) || "",
+          po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : "",
+          po.prNumber || "",
+          po.vendorName || "",
+          po.projectName || pr?.projectName || "",
+          po.items?.length || 0,
+          totalValue > 0 ? Number(totalValue.toFixed(2)) : "",
+          po.createdByName || "",
+        ];
+      });
+
+      const itemHeaders = [
+        "PO No",
+        "PO Date",
+        "PR No",
+        "Vendor",
+        "Material",
+        "Code",
+        "Category",
+        "Project",
+        "UOM",
+        "Ordered Qty",
+        "Unit Price",
+        "Value",
+        "Remarks",
+      ];
+      const itemRows = [];
+      for (const po of poList) {
+        const pr = prMapLocal[po.prNumber];
+        for (const it of po.items || []) {
+          const qty = it.orderedQty || 0;
+          const price = it.price || 0;
+          itemRows.push([
+            po.poNumber || "",
+            toDDMMYYYY(po.poDate) || "",
+            po.prNumber || "",
+            po.vendorName || "",
+            it.name || "",
+            it.code || "",
+            it.category || "",
+            it.projectName || po.projectName || pr?.projectName || "",
+            it.uom || "",
+            qty,
+            price,
+            Number((qty * price).toFixed(2)),
+            it.remarks || "",
+          ]);
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([poHeaders, ...poRows]),
+        "Purchase Orders",
+      );
+      XLSX.utils.book_append_sheet(
+        wb,
+        XLSX.utils.aoa_to_sheet([itemHeaders, ...itemRows]),
+        "PO Line Items",
+      );
+      XLSX.writeFile(wb, `All_Purchase_Orders_${todayStr()}.xlsx`);
+    } catch (err) {
+      alert("Export failed: " + err.message);
+    } finally {
+      setPoExportLoading(false);
     }
   }
 
@@ -1373,10 +1474,29 @@ export default function PurchaseOrders() {
 
       {/* ── All POs list ──────────────────────────────────────────────────── */}
       <div className="card">
-        <h3>
-          All purchase orders{" "}
-          <span className="pill-count">{poList.length}</span>
-        </h3>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
+            marginBottom: 16,
+          }}
+        >
+          <h3 style={{ margin: 0 }}>
+            All purchase orders{" "}
+            <span className="pill-count">{poList.length}</span>
+          </h3>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={exportAllPOsToExcel}
+            disabled={poExportLoading || poList.length === 0}
+          >
+            {poExportLoading ? "Exporting…" : "⬇ Export Excel"}
+          </button>
+        </div>
         <div className="tablewrap">
           <table>
             <thead>

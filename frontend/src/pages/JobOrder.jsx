@@ -183,6 +183,38 @@ function sendFromFields(order) {
   };
 }
 
+// Soft-wrap long pasted addresses for print (keeps real newlines; splits
+// jammed "Head Office…Factory…GST" blobs onto separate lines).
+function formatPrintAddress(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw || raw === "—") return "—";
+  return raw
+    .replace(/\r\n/g, "\n")
+    .replace(/\s*[-–—]?\s*(Head Office(?:\s+address)?)\s*[:\-]?\s*/gi, "\n$1: ")
+    .replace(/\s*[-–—]?\s*(Factory(?:\s+address)?)\s*[:\-]?\s*/gi, "\n$1: ")
+    .replace(/\s*(\(?\s*GST\s*No\.?\s*[:\-]?\s*[^)\n]+\)?)/gi, "\n$1")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+const challanLabelStyle = {
+  fontSize: 10,
+  fontWeight: 700,
+  textTransform: "uppercase",
+  letterSpacing: "0.08em",
+  color: "#333",
+  marginBottom: 6,
+};
+
+const challanBodyText = {
+  fontSize: 12,
+  lineHeight: 1.45,
+  color: "#222",
+  whiteSpace: "pre-line",
+  wordBreak: "break-word",
+};
+
 // Display-only date formatting — dd/mm/yyyy. Accepts a plain 'YYYY-MM-DD'
 // string (from the date input) or a full ISO datetime string.
 function formatDate(d) {
@@ -313,7 +345,7 @@ function PrintChallan({ order }) {
           color: "#1a1a1a",
           lineHeight: 1.45,
           background: "#fff",
-          padding: 16,
+          padding: 12,
           width: "100%",
           boxSizing: "border-box",
         }}
@@ -328,10 +360,10 @@ function PrintChallan({ order }) {
                   border: "1px solid #000",
                   background: "#f3f1ec",
                   textAlign: "center",
-                  padding: "9px 6px",
+                  padding: "8px 6px",
                   fontWeight: 700,
-                  fontSize: 16,
-                  letterSpacing: 3,
+                  fontSize: 15,
+                  letterSpacing: 2.5,
                 }}
               >
                 DELIVERY CHALLAN
@@ -340,8 +372,9 @@ function PrintChallan({ order }) {
             <tr>
               <td
                 style={{
-                  width: "35%",
+                  width: "28%",
                   border: "1px solid #000",
+                  borderTop: "none",
                   padding: 10,
                   verticalAlign: "middle",
                   textAlign: "center",
@@ -352,96 +385,81 @@ function PrintChallan({ order }) {
                   alt="Profile Solution Logo"
                   style={{
                     width: "100%",
+                    maxWidth: 150,
                     height: "auto",
-                    maxHeight: 90,
+                    maxHeight: 70,
                     objectFit: "contain",
                     display: "block",
-                    margin: "0 auto",
+                    margin: 0,
                   }}
                 />
               </td>
               <td
                 style={{
                   border: "1px solid #000",
+                  borderTop: "none",
                   borderLeft: "none",
                   padding: "10px 14px",
-                  verticalAlign: "top",
-                  fontSize: 14  ,
-                  
+                  verticalAlign: "middle",
+                  fontSize: 11,
+                  lineHeight: 1.5,
                 }}
               >
-                <strong>Profile Data Center Solution Pvt. Ltd. - Head Office address</strong>
-                <br />
-                {COMPANY_ADDRESS_SHORT}
-                <div style={{ height: 10 }} />
-                <strong>Profile Data Center Solution Pvt. Ltd. - Factory address</strong>
-                <br />
-                Profile Data Centre Solutions Pvt. Ltd. Kutal, Dist. Palghar,
-                4014
-                <br />
-                (GST No. 27AALCP0046M1Z5)
+                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+                  {COMPANY_NAME}
+                </div>
+                <div style={{ color: "#333" }}>
+                  <strong>Head Office:</strong> {COMPANY_ADDRESS_SHORT}
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* Title */}
+        {/* Parties + document meta — Send From (left) | Delivery (right) */}
         <table
           style={{ width: "100%", borderCollapse: "collapse", marginTop: -1 }}
         >
           <tbody>
-            
             <tr>
               <td
                 style={{
                   border: "1px solid #000",
                   borderTop: "none",
-                  padding: "10px 14px",
+                  padding: "10px 12px",
                   width: "50%",
                   verticalAlign: "top",
+                  
                 }}
               >
+                <div style={{ ...challanLabelStyle, fontSize: 12, fontWeight: 700 }}
+                
+                >Send From</div>
                 <div
                   style={{
-                    fontSize: 10,
                     fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "#000",
-                    marginBottom: 5,
+                    fontSize: 13,
+                    marginBottom: 4,
+                    lineHeight: 1.35,
                   }}
-                >
-                  Send From :
-                </div>
-                <div
-                  style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}
                 >
                   {sendFrom.name}
                 </div>
-                <div style={{ minHeight: 24, color: "#333", marginBottom: 12 }}>
-                  {sendFrom.address}
+                <div style={{ ...challanBodyText, marginBottom: 10 }}>
+                  {formatPrintAddress(sendFrom.address)}
                 </div>
                 <div
                   style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "#000",
-                    marginBottom: 5,
+                    borderTop: "1px solid #000",
+                    marginTop: 4,
+                    paddingTop: 10,
+                    fontSize: 12,
                   }}
                 >
-                  Address Of Delivery :
-                </div>
-                {order.vendorName && (
-                  <div
-                    style={{ fontWeight: 700, fontSize: 13, marginBottom: 3 }}
-                  >
-                    {order.vendorName}
-                  </div>
-                )}
-                <div style={{ minHeight: 40, color: "#333" }}>
-                  {order.deliveryAddress || "—"}
+                  <strong>Issued By Name :</strong>{" "}
+                  {order.issuedBy
+                    ? order.issuedBy
+                    : "___________________"}
                 </div>
               </td>
               <td
@@ -449,61 +467,100 @@ function PrintChallan({ order }) {
                   border: "1px solid #000",
                   borderTop: "none",
                   borderLeft: "none",
-                  padding: "10px 14px",
+                  padding: "10px 12px",
+                  width: "50%",
                   verticalAlign: "top",
-                  fontSize: 12,
+               
                 }}
               >
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <div style={{ ...challanLabelStyle, fontSize: 12, fontWeight: 700 }}>
+                  Sent To
+                </div>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 13,
+                    marginBottom: 4,
+                    lineHeight: 1.35,
+                     fontSize: 12,
+                  }}
+                >
+                  {order.vendorName || "—"}
+                </div>
+                <div style={{ ...challanBodyText, marginBottom: 10 }}>
+                  {formatPrintAddress(order.deliveryAddress || "—")}
+                </div>
+
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    borderTop: "1px solid #000",
+                    marginTop: 4,
+                  }}
+                >
                   <tbody>
-                    <tr>
-                      <td style={{ paddingBottom: 6 }}>
-                        <strong>Challan No. :</strong>
-                      </td>
-                      <td
-                        style={{
-                          paddingBottom: 6,
-                          fontWeight: 700,
-                          fontSize: 16,
-                          textAlign: "right",
-                        }}
-                      >
-                        {order.srNo || "—"}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td style={{ paddingBottom: 6 }}>
-                        <strong>Date :</strong>
-                      </td>
-                      <td style={{ paddingBottom: 6, textAlign: "right" }}>
-                        {order.date
+                    {[
+                      {
+                        label: "Challan No.",
+                        value: order.srNo || "—",
+                      },
+                      {
+                        label: "Date",
+                        value: order.date
                           ? order.date.split("-").reverse().join("/")
-                          : "—"}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td>
-                        <strong>Vehicle No :</strong>
-                      </td>
-                      <td style={{ textAlign: "right" }}>
-                        {order.vehicleNo || "—"}
-                      </td>
-                    </tr>
+                          : "—",
+                      },
+                      {
+                        label: "Vehicle No.",
+                        value: order.vehicleNo || "—",
+                      },
+                    ].map((row) => (
+                      <tr key={row.label}>
+                        <td
+                          style={{
+                            padding: "5px 0 0",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#222",
+                            width: "42%",
+                            verticalAlign: "top",
+                          }}
+                        >
+                          {row.label}
+                        </td>
+                        <td
+                          style={{
+                            padding: "5px 0 0",
+                            fontSize: 12,
+                            fontWeight: 400,
+                            textAlign: "right",
+                            verticalAlign: "top",
+                          }}
+                        >
+                          {row.value}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
+
+                <div
+                  style={{
+                    borderTop: "1px solid #000",
+                    marginTop: 10,
+                    paddingTop: 10,
+                    fontSize: 10,
+                  }}
+                >
+                  <strong>Receive By :</strong> ___________________
+                </div>
               </td>
             </tr>
           </tbody>
         </table>
 
-        {/* Items table — colgroup + table-layout:fixed keeps all 12 columns
-            (including RAL Code/Finish, Project Name, Remark which used to run
-            off the right edge of the printed/PDF page because unconstrained
-            <td>s size themselves to free-text content like Description and
-            Remark) inside the A4 portrait printable width. whiteSpace:'normal'
-            + wordBreak on every cell makes long text wrap inside its own
-            column instead of forcing overflow — same technique already used
-            in PrintItemsTable below, just missing here previously. */}
+        {/* Items table */}
         <table
           style={{
             width: "100%",
@@ -513,23 +570,23 @@ function PrintChallan({ order }) {
           }}
         >
           <colgroup>
-            <col style={{ width: "4%" }} />   {/* Sr No */}
-            <col style={{ width: "16%" }} />  {/* Item Description */}
-            <col style={{ width: "9%" }} />   {/* Weight/Pcs */}
-            <col style={{ width: "9%" }} />   {/* Perimeter */}
-            <col style={{ width: "7%" }} />   {/* Length */}
-            <col style={{ width: "8%" }} />   {/* Area/nos */}
-            <col style={{ width: "5%" }} />   {/* Qty */}
-            <col style={{ width: "6%" }} />   {/* UOM */}
-            <col style={{ width: "10%" }} />  {/* Process */}
-            <col style={{ width: "10%" }} />  {/* RAL Code/Finish */}
-            <col style={{ width: "9%" }} />   {/* Project Name */}
-            <col style={{ width: "7%" }} />   {/* Remark */}
+            <col style={{ width: "4%" }} />
+            <col style={{ width: "21%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "7%" }} />
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "7%" }} />
           </colgroup>
           <thead>
             <tr style={{ background: "#f3f1ec" }}>
               {[
-                "Sr No.",
+                "Sr",
                 "Item Description",
                 "Weight/Pcs (Kg)",
                 "Perimeter (mm)",
@@ -538,7 +595,7 @@ function PrintChallan({ order }) {
                 "Qty",
                 "UOM",
                 "Process",
-                "RAL Code/Finish",
+                "RAL Code / Finish",
                 "Project Name",
                 "Remark",
               ].map((h) => (
@@ -546,16 +603,17 @@ function PrintChallan({ order }) {
                   key={h}
                   style={{
                     border: "1px solid #000",
-                    padding: "6px 4px",
+                    padding: "7px 3px",
                     textAlign: "center",
-                    fontSize: 8.5,
+                    fontSize: 8,
                     fontWeight: 700,
-                    letterSpacing: "0.01em",
+                    letterSpacing: "0.02em",
                     textTransform: "uppercase",
                     whiteSpace: "normal",
                     wordBreak: "break-word",
-                    lineHeight: 1.2,
+                    lineHeight: 1.25,
                     verticalAlign: "middle",
+                    color: "#222",
                   }}
                 >
                   {h}
@@ -568,11 +626,12 @@ function PrintChallan({ order }) {
               const cellBase = {
                 border: "1px solid #000",
                 borderTop: "none",
-                padding: "6px 5px",
+                padding: "6px 4px",
                 whiteSpace: "normal",
                 wordBreak: "break-word",
                 lineHeight: 1.3,
                 verticalAlign: "top",
+                fontSize: 11,
               };
               return (
                 <tr key={i}>
@@ -611,8 +670,7 @@ function PrintChallan({ order }) {
                 </tr>
               );
             })}
-            {/* Empty rows for spacing */}
-            {Array.from({ length: Math.max(0, 5 - items.length) }).map(
+            {Array.from({ length: Math.max(0, 4 - items.length) }).map(
               (_, i) => (
                 <tr key={`empty-${i}`}>
                   {Array.from({ length: 12 }).map((_, j) => (
@@ -621,7 +679,7 @@ function PrintChallan({ order }) {
                       style={{
                         border: "1px solid #000",
                         borderTop: "none",
-                        padding: "13px 6px",
+                        padding: "12px 6px",
                       }}
                     >
                       &nbsp;
@@ -651,15 +709,12 @@ function PrintChallan({ order }) {
                   border: "1px solid #000",
                   borderTop: "none",
                   padding: "12px 14px",
-                  width: "60%",
+                  width: "58%",
                   verticalAlign: "top",
+                  fontSize: 12,
                 }}
               >
-                {/* Prepared By is auto-filled from the order's "Issued By"
-                    field. Checked By is intentionally left blank — it's
-                    filled in by hand after printing, not derived from any
-                    stored field. */}
-                <div style={{ marginBottom: 50 }}>
+                <div style={{ marginBottom: 36 }}>
                   <strong>Prepared By Name &amp; Signature :</strong>{" "}
                   {order.issuedBy || " ___________________"}
                 </div>
@@ -673,7 +728,7 @@ function PrintChallan({ order }) {
                   border: "1px solid #000",
                   borderTop: "none",
                   borderLeft: "none",
-                  padding: "5px 15px",
+                  padding: "8px 12px 10px",
                   textAlign: "center",
                   verticalAlign: "bottom",
                 }}
@@ -681,8 +736,9 @@ function PrintChallan({ order }) {
                 <div
                   style={{
                     fontWeight: 700,
-                    marginBottom: 8,
-                    letterSpacing: "0.02em",
+                    marginBottom: 4,
+                    letterSpacing: "0.04em",
+                    fontSize: 11,
                   }}
                 >
                   FOR PROFILE SOLUTION
@@ -692,18 +748,19 @@ function PrintChallan({ order }) {
                   alt="Profile Data Center Solutions stamp"
                   style={{
                     display: "block",
-                    margin: "0 auto 0px",
-                    width: 90,
-                    height: 90,
+                    margin: "0 auto 4px",
+                    width: 86,
+                    height: 86,
                     objectFit: "contain",
                   }}
                 />
                 <div
                   style={{
                     borderTop: "1px solid #000",
-                    paddingTop: 6,
-                    fontSize: 11,
+                    paddingTop: 5,
+                    fontSize: 10,
                     color: "#444",
+                    letterSpacing: "0.04em",
                   }}
                 >
                   Authorized Signatory
