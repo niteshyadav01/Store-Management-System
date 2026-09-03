@@ -259,6 +259,25 @@ function setPrintPageSize(orientation) {
   styleEl.textContent = `@page { size: A4 ${orientation}; margin: ${margin}; }`;
 }
 
+// Chrome crops absolutely-positioned print content to page 1 unless the
+// document's printable height covers the full challan. Measure the node and
+// stretch <html>/<body> so every page is generated.
+function prepareDeliveryChallanPrint(printRootId = "job-order-print") {
+  const el = document.getElementById(printRootId);
+  document.body.classList.add("print-delivery-challan");
+  const height = el ? Math.ceil(el.scrollHeight) : 0;
+  if (height > 0) {
+    document.documentElement.style.setProperty(
+      "--jo-print-height",
+      `${height}px`,
+    );
+  }
+  return () => {
+    document.body.classList.remove("print-delivery-challan");
+    document.documentElement.style.removeProperty("--jo-print-height");
+  };
+}
+
 // ── Delivery Challan Print Template ───────────────────────────────────────────
 function PrintChallan({ order }) {
   const ref = useRef();
@@ -266,7 +285,18 @@ function PrintChallan({ order }) {
 
   function handlePrint() {
     setPrintPageSize("portrait");
-    window.print();
+    let cleanup = prepareDeliveryChallanPrint("job-order-print");
+    const onAfterPrint = () => {
+      cleanup();
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+    window.addEventListener("afterprint", onAfterPrint);
+    // Re-measure after layout settles (stamp/logo), then print.
+    requestAnimationFrame(() => {
+      cleanup();
+      cleanup = prepareDeliveryChallanPrint("job-order-print");
+      window.print();
+    });
   }
 
   const items = order.items || [];
@@ -603,9 +633,16 @@ function PrintChallan({ order }) {
           </tbody>
         </table>
 
-        {/* Footer */}
+        {/* Footer — keep signature/stamp block together across page breaks */}
         <table
-          style={{ width: "100%", borderCollapse: "collapse", marginTop: -1 }}
+          className="jo-print-footer"
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            marginTop: -1,
+            pageBreakInside: "avoid",
+            breakInside: "avoid",
+          }}
         >
           <tbody>
             <tr>
@@ -709,6 +746,17 @@ function PrintChallan({ order }) {
 // @page rules, so we don't declare one here (see setPrintPageSize above).
 const PRINT_STYLE = `
   @media print {
+    /* Multi-page fix: keep challan in normal flow, unclip ancestors, and
+       collapse non-print UI so Chrome doesn't crop to a single viewport page. */
+    html, body, #root {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+    }
+
     body * {
       visibility: hidden !important;
     }
@@ -719,26 +767,158 @@ const PRINT_STYLE = `
     }
 
     #job-order-print {
-      position: absolute !important;   /* was fixed — fixed clips to page 1 */
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      background: #fff !important;
+      z-index: 99999 !important;
+      padding: 8px !important;
+      margin: 0 !important;
+      box-shadow: none !important;
+      display: block !important;
+    }
+
+    /* Stretch printable document to the measured challan height so page 2+
+       are not dropped when #job-order-print is position:absolute. */
+    body.print-delivery-challan,
+    body.print-delivery-challan html,
+    html:has(body.print-delivery-challan) {
+      height: auto !important;
+      min-height: var(--jo-print-height, 100%) !important;
+      overflow: visible !important;
+    }
+    body.print-delivery-challan {
+      min-height: var(--jo-print-height, 100%) !important;
+    }
+
+    /* Critical: overflow:hidden / max-height on layout + modal was clipping
+       tall challans to one printed page. */
+    .shell,
+    .main,
+    .topbar,
+    .sidebar,
+    .nav,
+    .jo-print-mount,
+    .jo-modal-overlay,
+    .jo-modal-panel,
+    .jo-modal-body,
+    .jo-modal-form,
+    .jo-modal-header,
+    .card,
+    .tablewrap {
+      position: static !important;
+      inset: auto !important;
+      top: auto !important;
+      left: auto !important;
+      right: auto !important;
+      bottom: auto !important;
+      width: auto !important;
+      max-width: none !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    .jo-print-mount {
+      position: absolute !important;
       top: 0 !important;
       left: 0 !important;
       width: 100% !important;
-      background: #fff !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
       z-index: 99999 !important;
-      padding: 10px !important;
+      visibility: visible !important;
     }
 
-    /* Let the items table span multiple pages instead of forcing
-       everything onto one, and repeat the header row on each page */
+    .jo-print-mount #job-order-print {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+    }
+
+    .jo-modal-header,
+    .jo-modal-actions,
+    .no-print,
+    .pagehead,
+    .topbar,
+    .sidebar,
+    .nav,
+    .navlist,
+    .nav-overlay,
+    .brand {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+
     #job-order-print table {
       page-break-inside: auto !important;
+      break-inside: auto !important;
     }
     #job-order-print thead {
       display: table-header-group !important;
     }
+    #job-order-print tfoot {
+      display: table-footer-group !important;
+    }
     #job-order-print tr {
       page-break-inside: avoid !important;
+      break-inside: avoid !important;
       page-break-after: auto !important;
+    }
+    #job-order-print img {
+      max-width: 100% !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    #job-order-print .jo-print-footer {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+
+    /* When challan is printed from View modal (not off-screen mount), pin it
+       to the top of the print document and expand past the modal viewport. */
+    body.print-delivery-challan .jo-modal-overlay,
+    body.print-delivery-challan .jo-modal-panel,
+    body.print-delivery-challan .jo-modal-body,
+    body.print-delivery-challan .jo-modal-form {
+      position: static !important;
+      display: block !important;
+      overflow: visible !important;
+      max-height: none !important;
+      height: auto !important;
+      background: transparent !important;
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    body.print-delivery-challan .jo-modal-body > *:not(#job-order-print) {
+      display: none !important;
+      visibility: hidden !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    body.print-delivery-challan #job-order-print {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: auto !important;
+      overflow: visible !important;
     }
   }
 `;
@@ -750,38 +930,88 @@ const PRINT_STYLE = `
 // Orientation set dynamically by setPrintPageSize('landscape') — see note above.
 const ITEMS_PRINT_STYLE = `
   @media print {
+    body.print-items-only html,
+    body.print-items-only body,
+    body.print-items-only #root {
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff !important;
+    }
+
     body.print-items-only #job-order-print {
       display: none !important;
+      visibility: hidden !important;
     }
 
-    body.print-items-only #job-order-items-print {
-      visibility: visible !important;
-      position: absolute !important;   /* was fixed */
-      top: 0 !important;
-      left: 0 !important;
-      width: 100% !important;
-      background: #fff !important;
-      z-index: 99999 !important;
-      padding: 0 !important;
-    }
-
+    body.print-items-only #job-order-items-print,
     body.print-items-only #job-order-items-print * {
       visibility: visible !important;
     }
 
+    body.print-items-only #job-order-items-print {
+      position: relative !important;
+      top: auto !important;
+      left: auto !important;
+      width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      background: #fff !important;
+      z-index: 99999 !important;
+      padding: 8px !important;
+      margin: 0 !important;
+      display: block !important;
+    }
+
+    body.print-items-only .jo-print-mount {
+      position: absolute !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100% !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      z-index: 99999 !important;
+      visibility: visible !important;
+    }
+
+    body.print-items-only .shell,
+    body.print-items-only .main,
+    body.print-items-only .jo-modal-overlay,
+    body.print-items-only .jo-modal-panel,
+    body.print-items-only .jo-modal-body,
+    body.print-items-only .jo-modal-form {
+      position: static !important;
+      inset: auto !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+      transform: none !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      border: none !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      display: block !important;
+    }
+
     body.print-items-only #job-order-items-print table {
       page-break-inside: auto !important;
+      break-inside: auto !important;
     }
     body.print-items-only #job-order-items-print thead {
       display: table-header-group !important;
     }
     body.print-items-only #job-order-items-print tr {
       page-break-inside: avoid !important;
+      break-inside: avoid !important;
       page-break-after: auto !important;
     }
   }
 `;
-
 function PrintItemsTable({ order }) {
   const items = order.items || [];
   return (
@@ -1455,6 +1685,7 @@ function ViewModal({ order, onClose, onEdit }) {
           </div>
           {/* Off-screen mount feeding the items-only print/PDF (see ITEMS_PRINT_STYLE) */}
           <div
+            className="jo-print-mount"
             style={{ position: "fixed", top: -99999, left: -99999, zIndex: -1 }}
           >
             <PrintItemsTable order={detail} />
@@ -2389,14 +2620,27 @@ export default function JobOrder() {
     if (!printOrder) return;
 
     setPrintPageSize("portrait"); // this flow always prints the Delivery Challan
-    const t = setTimeout(() => window.print(), 150);
+    let cleanupPrint = () => {};
 
-    const handleAfterPrint = () => setPrintOrder(null);
+    const t = setTimeout(() => {
+      cleanupPrint = prepareDeliveryChallanPrint("job-order-print");
+      // Re-measure after layout — stamp/logo may still be loading.
+      requestAnimationFrame(() => {
+        cleanupPrint = prepareDeliveryChallanPrint("job-order-print");
+        window.print();
+      });
+    }, 200);
+
+    const handleAfterPrint = () => {
+      cleanupPrint();
+      setPrintOrder(null);
+    };
 
     window.addEventListener("afterprint", handleAfterPrint);
 
     return () => {
       clearTimeout(t);
+      cleanupPrint();
       window.removeEventListener("afterprint", handleAfterPrint);
     };
   }, [printOrder]);
@@ -2684,7 +2928,15 @@ export default function JobOrder() {
   return (
     <>
       <style>{`
-        @media print { .no-print { display: none !important; } }
+       @media print {
+  .no-print { display: none !important; }
+  .jo-print-mount {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    z-index: auto !important;
+  }
+}
 
         /* ── Item row grid (create form + EditModal, via <ItemRow>) ───────── */
         .jo-item-row {
@@ -3002,6 +3254,7 @@ export default function JobOrder() {
           page during printing, so this stays invisible the rest of the time. */}
       {printOrder && (
         <div
+         className="jo-print-mount"
           style={{ position: "fixed", top: -99999, left: -99999, zIndex: -1 }}
         >
           <PrintChallan order={printOrder} />
