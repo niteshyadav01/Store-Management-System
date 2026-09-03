@@ -150,6 +150,22 @@ const VENDORS = [
     address:
       "Gala No.09/10 Ground Floor, Indian Corporation Bldg No 200, Gundwawali Road, Bhiwandi, Thane - 421302",
   },
+  {
+    name: "RAPID INDUSTRIES",
+    address:
+      "F/5,Nand Jyot Indl. Estate, Safed Pool, Sakinaka, Andheri-East, Mumbai-400072",
+  },
+  {
+    name: "Om Darshan Speciality Surfaces Pvt Ltd.",
+    address:
+      "Plot no.13, Dewan & Sons Industrial Estate Palghar (W) 401404 Maharashtra",
+  },
+  {
+    name: "META COAT",
+    address:
+      "Ground Floor, H. No. 666/B, Dive Anjur Road Nr. Sricon RMC Plant, Dive Anjur Bhiwandi 421302 Maharashtra",
+  },
+
 ];
 const OTHER_VENDOR = "__other__";
 
