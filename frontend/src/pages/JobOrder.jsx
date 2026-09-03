@@ -231,16 +231,9 @@ function statusLabel(order) {
   return `${label} (${pct}%)`;
 }
 
-// Display helper: renders a numeric value that may legitimately be 0,
-// distinguishing that from "not entered" (null/undefined/""). Do NOT use
-// `it.field || "—"` for numeric display fields — that treats 0 as falsy
-// and always prints "—" even when 0 was genuinely saved.
 const showNum = (v) => (v === null || v === undefined || v === "" ? "—" : v);
 
-// Area/nos (Sq inch) = Perimeter (mm) × Length (mm) ÷ 645.2
-// This is a LIVE PREVIEW only — the backend recomputes this authoritatively
-// from perimeter/length on save, so a tampered/stale client value can never
-// be trusted or persisted as-is.
+
 const AREA_DIVISOR = 645.2;
 function calcArea(perimeter, length) {
   const p = num(perimeter);
@@ -249,23 +242,11 @@ function calcArea(perimeter, length) {
   return (p * l) / AREA_DIVISOR;
 }
 
-// "RAL Code/Finish" column — shows the RAL code only. Process now has its
-// own dedicated column, so this used to fall back to repeating the process
-// name whenever ralCode was blank, which just duplicated the Process column
-// (e.g. "Powder Coating" shown twice in adjacent cells). Simple lookup now.
 function ralFinishLabel(it) {
   return it.ralCode && String(it.ralCode).trim() ? it.ralCode : "—";
 }
 
-// Chrome does not reliably honor `size` on NAMED @page rules (@page foo {...}
-// + page: foo on an element) — it mostly falls back to the browser/OS default
-// (Portrait) regardless of what's declared. The one thing Chrome does honor
-// consistently is a single UNNAMED `@page { size: ...; }` rule present in the
-// document at the moment window.print() runs. So instead of two permanent
-// named @page blocks (which can also silently conflict with each other when
-// both print templates happen to be mounted at once, e.g. inside ViewModal),
-// we inject/update one shared <style> tag with the correct orientation right
-// before each print call.
+
 function setPrintPageSize(orientation) {
   const id = "job-order-page-size-style";
   let styleEl = document.getElementById(id);
@@ -738,13 +719,26 @@ const PRINT_STYLE = `
     }
 
     #job-order-print {
-      position: fixed !important;
+      position: absolute !important;   /* was fixed — fixed clips to page 1 */
       top: 0 !important;
       left: 0 !important;
       width: 100% !important;
       background: #fff !important;
       z-index: 99999 !important;
       padding: 10px !important;
+    }
+
+    /* Let the items table span multiple pages instead of forcing
+       everything onto one, and repeat the header row on each page */
+    #job-order-print table {
+      page-break-inside: auto !important;
+    }
+    #job-order-print thead {
+      display: table-header-group !important;
+    }
+    #job-order-print tr {
+      page-break-inside: avoid !important;
+      page-break-after: auto !important;
     }
   }
 `;
@@ -762,7 +756,7 @@ const ITEMS_PRINT_STYLE = `
 
     body.print-items-only #job-order-items-print {
       visibility: visible !important;
-      position: fixed !important;
+      position: absolute !important;   /* was fixed */
       top: 0 !important;
       left: 0 !important;
       width: 100% !important;
@@ -773,6 +767,17 @@ const ITEMS_PRINT_STYLE = `
 
     body.print-items-only #job-order-items-print * {
       visibility: visible !important;
+    }
+
+    body.print-items-only #job-order-items-print table {
+      page-break-inside: auto !important;
+    }
+    body.print-items-only #job-order-items-print thead {
+      display: table-header-group !important;
+    }
+    body.print-items-only #job-order-items-print tr {
+      page-break-inside: avoid !important;
+      page-break-after: auto !important;
     }
   }
 `;
