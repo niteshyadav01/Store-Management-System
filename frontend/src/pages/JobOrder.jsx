@@ -141,7 +141,7 @@ const PROCESS_SUBOPTIONS = {
     "PC-RAL-9016 SG",
     "PC-RAL-9002 SG",
   ],
-  Anodizing: ["Matt", "Glossy"],
+  Anodizing: ["Anodizing-Matt", "Anodizing-Glossy"],
 };
 const OTHER_PROCESS = "__other_process__";
 
@@ -152,13 +152,16 @@ const OTHER_PROCESS = "__other_process__";
 // prefixed onto it anymore (e.g. "PC-RAL-9003 Matt", not
 // "Powder Coating: PC-RAL-9003 Matt").
 // Change to (process name + RAL code):
+// Current (RAL code only):
 function finalizeProcess(it) {
   if (it.process === OTHER_PROCESS) return String(it.processOther || "").trim();
   if (PROCESS_SUBOPTIONS[it.process]) {
-    return it.processSub ? `${it.process}: ${it.processSub}` : it.process;
+    return it.processSub || it.process;
   }
   return it.process || "";
 }
+
+
 
 const VENDORS = [
   {
@@ -525,7 +528,7 @@ function PrintChallan({ order }) {
                 }}
               >
                 <div style={{ ...challanLabelStyle, fontSize: 12, fontWeight: 700 }}>
-                  Sent To
+                  Send To
                 </div>
                 <div
                   style={{
@@ -622,16 +625,16 @@ function PrintChallan({ order }) {
         >
           <colgroup>
             <col style={{ width: "4%" }} />
-            <col style={{ width: "21%" }} />
+            <col style={{ width: "28%" }} />
             <col style={{ width: "7%" }} />
             <col style={{ width: "7%" }} />
             <col style={{ width: "7%" }} />
             <col style={{ width: "7%" }} />
             <col style={{ width: "5%" }} />
             <col style={{ width: "5%" }} />
-            <col style={{ width: "20%" }} />
             <col style={{ width: "10%" }} />
-            <col style={{ width: "7%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "10%" }} />
           </colgroup>
           <thead>
             <tr style={{ background: "#f3f1ec" }}>
@@ -1493,6 +1496,89 @@ function deriveProcessFields(savedProcess) {
   return { process: OTHER_PROCESS, processSub: "", processOther: val };
 }
 
+// ── Hover-flyout Process / RAL Code / Finish picker ─────────────────────────
+// Replaces a plain <select> so the RAL/finish sub-options for Powder Coating
+// and Anodizing appear as a flyout the moment you hover the main process row
+// — no click required to reveal them. Falls back to tap-to-open on touch
+// devices (no hover there) via the `@media (hover: none)` rule in the CSS
+// block below.
+function ProcessPicker({ value, subValue, otherValue, onSelect }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const label =
+    value === OTHER_PROCESS
+      ? otherValue || "Other (type your own)"
+      : PROCESS_SUBOPTIONS[value]
+        ? subValue || `Select ${value === "Anodizing" ? "finish" : "RAL code"}…`
+        : value || "Select process…";
+
+  function pick(main, sub) {
+    onSelect(main, sub);
+    setOpen(false);
+  }
+
+  return (
+    <div className="jo-process-picker" ref={ref}>
+      <button
+        type="button"
+        className="jo-process-trigger"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="jo-process-trigger-label">{label}</span>
+        <span className="jo-process-caret">▾</span>
+      </button>
+
+      {open && (
+        <ul className="jo-process-menu">
+          {PROCESS_MAIN_OPTIONS.map((main) => {
+            const subs = PROCESS_SUBOPTIONS[main];
+            if (subs) {
+              return (
+                <li key={main} className="jo-process-menu-item has-sub" tabIndex={0}>
+                  <span className="jo-process-menu-label">
+                    {main} <span className="jo-process-menu-arrow">▸</span>
+                  </span>
+                  <ul className="jo-process-submenu">
+                    {subs.map((s) => (
+                      <li key={s} onClick={() => pick(main, s)}>
+                        {s}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            }
+            return (
+              <li
+                key={main}
+                className="jo-process-menu-item"
+                onClick={() => pick(main, "")}
+              >
+                {main}
+              </li>
+            );
+          })}
+          <li
+            className="jo-process-menu-item"
+            onClick={() => pick(OTHER_PROCESS, "")}
+          >
+            Other (type your own)
+          </li>
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── Shared item-row field renderer ─────────────────────────────────────────
 // Used by both the create form and EditModal so the mobile fix (stacked,
 // individually-labelled fields) only has to live in one place. Every field
@@ -1500,7 +1586,7 @@ function deriveProcessFields(savedProcess) {
 // .jo-item-header row above the rows already provides column labels) and
 // shown on mobile (where that header row is hidden and rows stack to a
 // single column, so each input needs its own label to stay legible).
-function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disableRemove }) {
+function ItemRow({ it, idx, updateItem, removeItem, disableRemove }) {
   const area = calcArea(it.perimeter, it.length);
   return (
     <div className="jo-item-row">
@@ -1580,34 +1666,26 @@ function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disable
       </div>
       <div className="field">
         <label>Process / RAL Code / Finish</label>
-        <select
+        <ProcessPicker
           value={it.process}
-          onChange={(e) => handleProcessSelect(it._key, e.target.value)}
-        >
-          <option value="">Select process…</option>
-          {PROCESS_MAIN_OPTIONS.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-          <option value={OTHER_PROCESS}>Other (type your own)</option>
-        </select>
-        {PROCESS_SUBOPTIONS[it.process] && (
-          <select
-            className="field-other-input"
-            value={it.processSub}
-            onChange={(e) => updateItem(it._key, { processSub: e.target.value })}
-          >
-            <option value="">
-              Select {it.process === "Anodizing" ? "finish" : "RAL code"}…
-            </option>
-            {PROCESS_SUBOPTIONS[it.process].map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        )}
+          subValue={it.processSub}
+          otherValue={it.processOther}
+          onSelect={(main, sub) => {
+            if (main === OTHER_PROCESS) {
+              updateItem(it._key, {
+                process: OTHER_PROCESS,
+                processSub: "",
+                processOther: it.processOther,
+              });
+            } else {
+              updateItem(it._key, {
+                process: main,
+                processSub: sub,
+                processOther: "",
+              });
+            }
+          }}
+        />
         {it.process === OTHER_PROCESS && (
           <input
             className="field-other-input"
@@ -2345,9 +2423,6 @@ function EditModal({ order, onSave, onClose }) {
       list.length > 1 ? list.filter((it) => it._key !== key) : list,
     );
   }
-  function handleProcessSelect(key, val) {
-    updateItem(key, { process: val, processSub: "", processOther: "" });
-  }
 
   async function handleSave(e) {
     e.preventDefault();
@@ -2535,7 +2610,7 @@ function EditModal({ order, onSave, onClose }) {
               </div>
               <div className="field">
                 <label>
-                  Vendor Name <span style={{ color: "var(--red)" }}>*</span>
+                  Send To Name <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 {vendorCustom ? (
                   <div className="jo-vendor-custom-row">
@@ -2579,7 +2654,7 @@ function EditModal({ order, onSave, onClose }) {
                 )}
               </div>
               <div className="field">
-                <label>Address of Delivery</label>
+                <label>Send To Address</label>
                 <input
                   value={deliveryAddress}
                   onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -2691,7 +2766,6 @@ function EditModal({ order, onSave, onClose }) {
                     idx={idx}
                     updateItem={updateItem}
                     removeItem={removeItem}
-                    handleProcessSelect={handleProcessSelect}
                     disableRemove={items.length === 1}
                   />
                 ))}
@@ -2846,11 +2920,6 @@ export default function JobOrder() {
     setItems((list) =>
       list.length > 1 ? list.filter((it) => it._key !== key) : list,
     );
-  }
-
-  // Called from the Process <select> in each item row.
-  function handleProcessSelect(key, val) {
-    updateItem(key, { process: val, processSub: "", processOther: "" });
   }
 
   async function handleSubmit(e) {
@@ -3209,6 +3278,61 @@ export default function JobOrder() {
         .jo-item-remove:disabled { opacity: 0.4; cursor: not-allowed; }
         @media (max-width: 640px) {
           .jo-item-remove { width: 100%; height: 36px; margin-top: 4px; }
+        }
+
+        /* ── Process / RAL Code / Finish hover-flyout picker ───────────────
+           Replaces the old native select for this field. Hovering
+           "Powder Coating" or "Anodizing" in the open menu instantly reveals
+           their RAL/finish sub-options in a flyout — no click needed to see
+           them. Touch devices (no hover) fall back to tap-to-open, handled
+           by the media (hover: none) rule below. */
+        .jo-process-picker { position: relative; }
+        .jo-process-trigger {
+          display: flex; align-items: center; justify-content: space-between;
+          width: 100%; box-sizing: border-box; text-align: left;
+          padding: 6px 8px; font-size: 13px; height: 32px;
+          border: 1px solid var(--line); border-radius: 6px; background: #fff;
+          color: var(--ink); font-family: inherit; cursor: pointer;
+        }
+        .jo-process-trigger:focus {
+          outline: none; border-color: var(--teal); box-shadow: 0 0 0 3px rgba(0,128,128,0.12);
+        }
+        .jo-process-trigger-label {
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .jo-process-caret { color: #8a8270; font-size: 11px; margin-left: 6px; flex-shrink: 0; }
+
+        .jo-process-menu {
+          position: absolute; top: calc(100% + 2px); left: 0; z-index: 50;
+          min-width: 220px; max-height: 320px; overflow-y: auto;
+          background: #fff; border: 1px solid var(--line); border-radius: 6px;
+          box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
+        }
+        .jo-process-menu-item {
+          position: relative; padding: 6px 12px; font-size: 13px; cursor: pointer;
+          display: flex; align-items: center; justify-content: space-between;
+        }
+        .jo-process-menu-item:hover,
+        .jo-process-menu-item.has-sub:hover { background: var(--paper-dim); }
+        .jo-process-menu-label { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: space-between; }
+        .jo-process-menu-arrow { font-size: 10px; color: #8a8270; }
+
+        .jo-process-submenu {
+          display: none; position: absolute; left: 100%; top: -4px; z-index: 60;
+          min-width: 220px; max-height: 320px; overflow-y: auto;
+          background: #fff; border: 1px solid var(--line); border-radius: 6px;
+          box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
+        }
+        .jo-process-menu-item.has-sub:hover > .jo-process-submenu { display: block; }
+        .jo-process-submenu li { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .jo-process-submenu li:hover { background: var(--paper-dim); }
+
+        /* Touch devices have no hover — tap the "Powder Coating" row itself
+           (via :active/:focus-within) to reveal its submenu instead. */
+        @media (hover: none) {
+          .jo-process-menu-item.has-sub > .jo-process-submenu { display: none; }
+          .jo-process-menu-item.has-sub:active > .jo-process-submenu,
+          .jo-process-menu-item.has-sub:focus-within > .jo-process-submenu { display: block; }
         }
 
         /* ── Receive-modal per-item row (unrelated grid, same mobile fix) ── */
@@ -3619,7 +3743,7 @@ export default function JobOrder() {
               </div>
 
               <div className="field">
-                <label>Address of Delivery</label>
+                <label>Send To Address</label>
                 <input
                   value={deliveryAddress}
                   onChange={(e) => setDeliveryAddress(e.target.value)}
@@ -3695,7 +3819,6 @@ export default function JobOrder() {
                 idx={idx}
                 updateItem={updateItem}
                 removeItem={removeItem}
-                handleProcessSelect={handleProcessSelect}
                 disableRemove={items.length === 1}
               />
             ))}
