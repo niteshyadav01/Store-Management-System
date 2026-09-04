@@ -114,7 +114,7 @@ router.post(
           unit: it.unit || "NOS",
           process: String(it.process || "").trim(),
           projectName,
-          ralCode: it.ralCode || "",
+          // ralCode: it.ralCode || "",
           remark: it.remark || "",
         });
       }

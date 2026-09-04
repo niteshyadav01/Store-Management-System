@@ -92,7 +92,16 @@ async function apiPatch(path, body) {
 
 // Item shape:
 //   description, weightPerPc, perimeter, length, area (auto), qty, unit,
-//   process (dropdown, was "finish"), processOther, ralCode, projectName, remark
+//   process (main process, dropdown), processSub (RAL code/finish sub-option,
+//   only used when the chosen process has one — Powder Coating / Anodizing),
+//   processOther (typed value when process === OTHER_PROCESS), projectName,
+//   remark.
+// NOTE: RAL Code / Finish is no longer a separate field — it is folded into
+// `process` as a single combined string (see finalizeProcess below). The
+// saved value is now JUST the RAL code / finish (e.g. "PC-RAL-9003 Matt",
+// "Matt") — the main process name ("Powder Coating:", "Anodizing:") is no
+// longer prefixed onto it. For processes with no sub-option (Galvanized,
+// Hot-Dip) the process name itself is stored as-is.
 const emptyItem = () => ({
   _key: Math.random().toString(36).slice(2),
   description: "",
@@ -102,8 +111,8 @@ const emptyItem = () => ({
   qty: "",
   unit: "NOS",
   process: "",
+  processSub: "", // RAL code / finish chosen for the selected process
   processOther: "", // typed value when process === OTHER_PROCESS
-  ralCode: "",
   projectName: "",
   remark: "",
 });
@@ -113,8 +122,43 @@ const CREATE_ROLES = ["admin", "store_manager", "store", "purchase"];
 
 const LOCATIONS = ["Factory", "Site"];
 const UNITS = ["NOS", "MTR", "KG", "SET", "PKT", "BOX", "LTR"];
-const PROCESS_OPTIONS = ["Powder Coating", "Galvanized", "Hot-Dip"];
+
+// Process → RAL Code / Finish. Powder Coating and Anodizing each reveal a
+// second dropdown of finish options once selected; Galvanized and Hot-Dip
+// have no sub-options and are used as-is (nothing else to pick).
+const PROCESS_MAIN_OPTIONS = ["Powder Coating", "Anodizing", "Galvanized", "Hot-Dip"];
+const PROCESS_SUBOPTIONS = {
+  "Powder Coating": [
+    "PC-RAL-9003 Matt",
+    "PC-RAL-9003 SG",
+    "PC-RAL-9003 Texture",
+    "PC-RAL-7035 SG",
+    "PC-RAL-7035 Texture",
+    "PC-RAL-7035 Structure",
+    "PC-RAL-9005 Texture",
+    "PC-RAL-9005 Matt",
+    "PC-RAL-9010 SG",
+    "PC-RAL-9016 SG",
+    "PC-RAL-9002 SG",
+  ],
+  Anodizing: ["Matt", "Glossy"],
+};
 const OTHER_PROCESS = "__other_process__";
+
+// Combines the selected process + sub-option (or typed custom process) into
+// the single string stored on the item and sent to the backend.
+// NOTE: for processes with sub-options (Powder Coating / Anodizing), only the
+// selected RAL code / finish is stored — the main process name is NOT
+// prefixed onto it anymore (e.g. "PC-RAL-9003 Matt", not
+// "Powder Coating: PC-RAL-9003 Matt").
+// Change to (process name + RAL code):
+function finalizeProcess(it) {
+  if (it.process === OTHER_PROCESS) return String(it.processOther || "").trim();
+  if (PROCESS_SUBOPTIONS[it.process]) {
+    return it.processSub ? `${it.process}: ${it.processSub}` : it.process;
+  }
+  return it.process || "";
+}
 
 const VENDORS = [
   {
@@ -168,6 +212,18 @@ const VENDORS = [
 
 ];
 const OTHER_VENDOR = "__other__";
+
+// Preset "Send From" party — currently just the company itself. Selecting it
+// auto-fills both Send From Name and Send From Address; "Add own…" switches
+// to free-typed entry for both fields (same pattern as the Vendor dropdown).
+const SEND_FROM_OPTIONS = [
+  {
+    name: "PROFILE DATA CENTER SOLUTIONS PVT LTD",
+    address:
+      "Gut No. 74/B, MANOR HIGHWAY Zilla Parishad School Sonarpada, Khutal, Palghar Maharashtra 421303 India GSTIN (27AALCP0046M1Z5)",
+  },
+];
+const OTHER_SEND_FROM = "__other_sendfrom__";
 
 const COMPANY_LOGO_URL =
   "https://www.profile-solution.com/wp-content/uploads/PS-Logo-1-e1771321686738.png";
@@ -273,11 +329,6 @@ function calcArea(perimeter, length) {
   if (!p || !l) return 0;
   return (p * l) / AREA_DIVISOR;
 }
-
-function ralFinishLabel(it) {
-  return it.ralCode && String(it.ralCode).trim() ? it.ralCode : "—";
-}
-
 
 function setPrintPageSize(orientation) {
   const id = "job-order-page-size-style";
@@ -578,8 +629,7 @@ function PrintChallan({ order }) {
             <col style={{ width: "7%" }} />
             <col style={{ width: "5%" }} />
             <col style={{ width: "5%" }} />
-            <col style={{ width: "10%" }} />
-            <col style={{ width: "10%" }} />
+            <col style={{ width: "20%" }} />
             <col style={{ width: "10%" }} />
             <col style={{ width: "7%" }} />
           </colgroup>
@@ -594,8 +644,7 @@ function PrintChallan({ order }) {
                 "Area/nos (Sq in)",
                 "Qty",
                 "UOM",
-                "Process",
-                "RAL Code / Finish",
+                "Process / RAL Code / Finish",
                 "Project Name",
                 "Remark",
               ].map((h) => (
@@ -661,9 +710,6 @@ function PrintChallan({ order }) {
                     {it.process || "—"}
                   </td>
                   <td style={{ ...cellBase, textAlign: "center" }}>
-                    {ralFinishLabel(it)}
-                  </td>
-                  <td style={{ ...cellBase, textAlign: "center" }}>
                     {it.projectName || "—"}
                   </td>
                   <td style={cellBase}>{it.remark || "—"}</td>
@@ -673,7 +719,7 @@ function PrintChallan({ order }) {
             {Array.from({ length: Math.max(0, 4 - items.length) }).map(
               (_, i) => (
                 <tr key={`empty-${i}`}>
-                  {Array.from({ length: 12 }).map((_, j) => (
+                  {Array.from({ length: 11 }).map((_, j) => (
                     <td
                       key={j}
                       style={{
@@ -1286,8 +1332,7 @@ function PrintItemsTable({ order }) {
             <col style={{ width: "11%" }} />   {/* Received (where) */}
             <col style={{ width: "5.5%" }} />  {/* Pending */}
             <col style={{ width: "5.5%" }} />  {/* UOM */}
-            <col style={{ width: "7%" }} />    {/* Process */}
-            <col style={{ width: "9.5%" }} />  {/* RAL Code/Finish */}
+            <col style={{ width: "16.5%" }} /> {/* Process / RAL Code / Finish */}
             <col style={{ width: "8%" }} />    {/* Project Name */}
             <col style={{ width: "8.5%" }} />  {/* Remark */}
           </colgroup>
@@ -1304,8 +1349,7 @@ function PrintItemsTable({ order }) {
                 "Received (where)",
                 "Pending",
                 "UOM",
-                "Process",
-                "RAL Code/Finish",
+                "Process / RAL Code / Finish",
                 "Project Name",
                 "Remark",
               ].map((h) => (
@@ -1381,9 +1425,6 @@ function PrintItemsTable({ order }) {
                   <td style={{ ...cellBase, textAlign: "center" }}>
                     {it.process || "—"}
                   </td>
-                  <td style={{ ...cellBase, textAlign: "center", fontSize: 9 }}>
-                    {ralFinishLabel(it)}
-                  </td>
                   <td style={{ ...cellBase, textAlign: "center" }}>
                     {it.projectName || "—"}
                   </td>
@@ -1413,14 +1454,43 @@ function PrintItemsTable({ order }) {
 }
 
 // Given a saved process string, figures out how to prefill the edit form's
-// process <select> + "other" text field: exact match against the presets ->
-// select it; any other non-empty value -> select "Other" and preload the
-// typed field with it; blank -> nothing selected.
+// process dropdown(s). The current save format stores JUST the RAL code /
+// finish for processes with sub-options (e.g. "PC-RAL-9003 Matt", "Matt") —
+// no "Powder Coating: " / "Anodizing: " prefix. Older records saved before
+// this change may still have that prefix, so both formats are handled:
+//  - exact match to a no-suboption process (Galvanized / Hot-Dip) -> select it
+//  - exact match to a known sub-option value -> select its main process +
+//    that sub-option (current format)
+//  - "Main: Sub" (or bare main) matching a known process+suboption -> select
+//    both dropdowns (legacy format, kept for backward compatibility)
+//  - anything else -> select "Other" and preload the typed field with it
+//  - blank -> nothing selected
 function deriveProcessFields(savedProcess) {
   const val = String(savedProcess || "").trim();
-  if (!val) return { process: "", processOther: "" };
-  if (PROCESS_OPTIONS.includes(val)) return { process: val, processOther: "" };
-  return { process: OTHER_PROCESS, processOther: val };
+  if (!val) return { process: "", processSub: "", processOther: "" };
+
+  if (PROCESS_MAIN_OPTIONS.includes(val) && !PROCESS_SUBOPTIONS[val]) {
+    return { process: val, processSub: "", processOther: "" };
+  }
+
+  // Current format: the saved value IS the sub-option itself.
+  for (const main of Object.keys(PROCESS_SUBOPTIONS)) {
+    if (PROCESS_SUBOPTIONS[main].includes(val)) {
+      return { process: main, processSub: val, processOther: "" };
+    }
+  }
+
+  // Legacy format: "Main: Sub" (or bare main name) from before this change.
+  for (const main of Object.keys(PROCESS_SUBOPTIONS)) {
+    if (val === main) return { process: main, processSub: "", processOther: "" };
+    const prefix = `${main}: `;
+    if (val.startsWith(prefix)) {
+      const sub = val.slice(prefix.length);
+      return { process: main, processSub: sub, processOther: "" };
+    }
+  }
+
+  return { process: OTHER_PROCESS, processSub: "", processOther: val };
 }
 
 // ── Shared item-row field renderer ─────────────────────────────────────────
@@ -1509,19 +1579,35 @@ function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disable
         </select>
       </div>
       <div className="field">
-        <label>Process</label>
+        <label>Process / RAL Code / Finish</label>
         <select
           value={it.process}
           onChange={(e) => handleProcessSelect(it._key, e.target.value)}
         >
           <option value="">Select process…</option>
-          {PROCESS_OPTIONS.map((p) => (
+          {PROCESS_MAIN_OPTIONS.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
           ))}
           <option value={OTHER_PROCESS}>Other (type your own)</option>
         </select>
+        {PROCESS_SUBOPTIONS[it.process] && (
+          <select
+            className="field-other-input"
+            value={it.processSub}
+            onChange={(e) => updateItem(it._key, { processSub: e.target.value })}
+          >
+            <option value="">
+              Select {it.process === "Anodizing" ? "finish" : "RAL code"}…
+            </option>
+            {PROCESS_SUBOPTIONS[it.process].map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
         {it.process === OTHER_PROCESS && (
           <input
             className="field-other-input"
@@ -1530,14 +1616,6 @@ function ItemRow({ it, idx, updateItem, removeItem, handleProcessSelect, disable
             placeholder="Enter process"
           />
         )}
-      </div>
-      <div className="field">
-        <label>RAL Code/Finish</label>
-        <input
-          value={it.ralCode}
-          onChange={(e) => updateItem(it._key, { ralCode: e.target.value })}
-          placeholder="e.g. RAL 9010"
-        />
       </div>
       <div className="field">
         <label>
@@ -1761,8 +1839,7 @@ function ViewModal({ order, onClose, onEdit }) {
                   <th>Received (where)</th>
                   <th className="num">Pending</th>
                   <th>UOM</th>
-                  <th>Process</th>
-                  <th>RAL Code/Finish</th>
+                  <th>Process / RAL Code / Finish</th>
                   <th>Project Name</th>
                   <th>Remark</th>
                 </tr>
@@ -1821,7 +1898,6 @@ function ViewModal({ order, onClose, onEdit }) {
                       </td>
                       <td>{it.unit}</td>
                       <td>{it.process || "—"}</td>
-                      <td>{ralFinishLabel(it)}</td>
                       <td>{it.projectName || "—"}</td>
                       <td>{it.remark || "—"}</td>
                     </tr>
@@ -2194,6 +2270,11 @@ function EditModal({ order, onSave, onClose }) {
   const [date, setDate] = useState((order.date || "").slice(0, 10) || todayStr());
   const [sendFromName, setSendFromName] = useState(order.sendFromName || "");
   const [sendFromAddress, setSendFromAddress] = useState(order.sendFromAddress || "");
+  const [sendFromCustom, setSendFromCustom] = useState(
+    () =>
+      !!order.sendFromName &&
+      !SEND_FROM_OPTIONS.some((v) => v.name === order.sendFromName),
+  );
   const [vendorName, setVendorName] = useState(order.vendorName || "");
   const [vendorCustom, setVendorCustom] = useState(
     () => !!order.vendorName && !VENDORS.some((v) => v.name === order.vendorName),
@@ -2204,7 +2285,7 @@ function EditModal({ order, onSave, onClose }) {
 
   const [items, setItems] = useState(() =>
     (order.items || []).map((it) => {
-      const { process, processOther } = deriveProcessFields(it.process);
+      const { process, processSub, processOther } = deriveProcessFields(it.process);
       return {
         _key: Math.random().toString(36).slice(2),
         description: it.description || "",
@@ -2214,8 +2295,8 @@ function EditModal({ order, onSave, onClose }) {
         qty: it.qty != null ? String(it.qty) : "",
         unit: it.unit || "NOS",
         process,
+        processSub,
         processOther,
-        ralCode: it.ralCode || "",
         projectName: it.projectName || "",
         remark: it.remark || "",
       };
@@ -2230,6 +2311,10 @@ function EditModal({ order, onSave, onClose }) {
     setDate((order.date || "").slice(0, 10) || todayStr());
     setSendFromName(order.sendFromName || "");
     setSendFromAddress(order.sendFromAddress || "");
+    setSendFromCustom(
+      !!order.sendFromName &&
+        !SEND_FROM_OPTIONS.some((v) => v.name === order.sendFromName),
+    );
     setVendorName(order.vendorName || "");
     setVendorCustom(
       !!order.vendorName && !VENDORS.some((v) => v.name === order.vendorName),
@@ -2261,8 +2346,7 @@ function EditModal({ order, onSave, onClose }) {
     );
   }
   function handleProcessSelect(key, val) {
-    if (val === OTHER_PROCESS) updateItem(key, { process: OTHER_PROCESS });
-    else updateItem(key, { process: val, processOther: "" });
+    updateItem(key, { process: val, processSub: "", processOther: "" });
   }
 
   async function handleSave(e) {
@@ -2294,7 +2378,6 @@ function EditModal({ order, onSave, onClose }) {
           it.perimeter ||
           it.length ||
           it.process ||
-          it.ralCode.trim() ||
           it.remark.trim(),
       );
       if (!touchedItems.length)
@@ -2313,6 +2396,14 @@ function EditModal({ order, onSave, onClose }) {
         );
       }
 
+      const missingSubProcess = touchedItems.find(
+        (it) => PROCESS_SUBOPTIONS[it.process] && !it.processSub,
+      );
+      if (missingSubProcess)
+        return setErr(
+          `Select a ${missingSubProcess.process === "Anodizing" ? "finish" : "RAL code"} for "${missingSubProcess.description || "an item"}" (${missingSubProcess.process}).`,
+        );
+
       const missingCustomProcess = touchedItems.find(
         (it) => it.process === OTHER_PROCESS && !it.processOther.trim(),
       );
@@ -2321,15 +2412,14 @@ function EditModal({ order, onSave, onClose }) {
           `Enter a custom process for "${missingCustomProcess.description}", or pick a preset.`,
         );
 
-      payload.items = touchedItems.map(({ processOther, ...it }) => ({
+      payload.items = touchedItems.map((it) => ({
         description: it.description,
         weightPerPc: it.weightPerPc === "" ? null : parseFloat(it.weightPerPc),
         perimeter: it.perimeter === "" ? null : parseFloat(it.perimeter),
         length: it.length === "" ? null : parseFloat(it.length),
         qty: parseFloat(it.qty) || 0,
         unit: it.unit,
-        process: it.process === OTHER_PROCESS ? processOther.trim() : it.process,
-        ralCode: it.ralCode,
+        process: finalizeProcess(it),
         projectName: it.projectName,
         remark: it.remark,
       }));
@@ -2386,18 +2476,61 @@ function EditModal({ order, onSave, onClose }) {
               </div>
               <div className="field">
                 <label>Send From Name</label>
-                <input
-                  value={sendFromName}
-                  onChange={(e) => setSendFromName(e.target.value)}
-                  placeholder="Enter sender name"
-                />
+                {sendFromCustom ? (
+                  <div className="jo-vendor-custom-row">
+                    <input
+                      value={sendFromName}
+                      onChange={(e) => setSendFromName(e.target.value)}
+                      placeholder="Enter sender name"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ whiteSpace: "nowrap" }}
+                      onClick={() => {
+                        setSendFromCustom(false);
+                        setSendFromName("");
+                        setSendFromAddress("");
+                      }}
+                    >
+                      ← Back
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={sendFromName}
+                    onChange={(e) => {
+                      if (e.target.value === OTHER_SEND_FROM) {
+                        setSendFromCustom(true);
+                        setSendFromName("");
+                        setSendFromAddress("");
+                      } else {
+                        setSendFromName(e.target.value);
+                        const found = SEND_FROM_OPTIONS.find(
+                          (v) => v.name === e.target.value,
+                        );
+                        if (found) setSendFromAddress(found.address);
+                        else setSendFromAddress("");
+                      }
+                    }}
+                  >
+                    <option value="">— Select sender —</option>
+                    {SEND_FROM_OPTIONS.map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.name}
+                      </option>
+                    ))}
+                    <option value={OTHER_SEND_FROM}>✎ Add own…</option>
+                  </select>
+                )}
               </div>
               <div className="field">
                 <label>Send From Address</label>
                 <input
                   value={sendFromAddress}
                   onChange={(e) => setSendFromAddress(e.target.value)}
-                  placeholder="Enter sender address"
+                  placeholder="Auto-filled from selection, or enter manually"
                 />
               </div>
               <div className="field">
@@ -2508,8 +2641,7 @@ function EditModal({ order, onSave, onClose }) {
                       <th>Item Description</th>
                       <th className="num">Qty</th>
                       <th>UOM</th>
-                      <th>Process</th>
-                      <th>RAL Code</th>
+                      <th>Process / RAL Code / Finish</th>
                       <th>Project Name</th>
                       <th>Remark</th>
                     </tr>
@@ -2522,7 +2654,6 @@ function EditModal({ order, onSave, onClose }) {
                         <td className="num">{it.qty}</td>
                         <td>{it.unit}</td>
                         <td>{it.process || "—"}</td>
-                        <td>{it.ralCode || "—"}</td>
                         <td>{it.projectName || "—"}</td>
                         <td>{it.remark || "—"}</td>
                       </tr>
@@ -2545,8 +2676,7 @@ function EditModal({ order, onSave, onClose }) {
                   <span>Area/nos (Sq in)</span>
                   <span>Qty</span>
                   <span>UOM</span>
-                  <span>Process</span>
-                  <span>RAL Code/Finish</span>
+                  <span>Process / RAL Code / Finish</span>
                   <span>
                     Project Name <span style={{ color: "var(--red)" }}>*</span>
                   </span>
@@ -2630,6 +2760,7 @@ export default function JobOrder() {
   const [date, setDate] = useState(todayStr());
   const [sendFromName, setSendFromName] = useState("");
   const [sendFromAddress, setSendFromAddress] = useState("");
+  const [sendFromCustom, setSendFromCustom] = useState(false);
   const [vendorName, setVendorName] = useState("");
   const [vendorCustom, setVendorCustom] = useState(false);
   const [vehicleNo, setVehicleNo] = useState("");
@@ -2643,10 +2774,11 @@ export default function JobOrder() {
     setDate(todayStr());
     setSendFromName("");
     setSendFromAddress("");
+    setSendFromCustom(false);
     setVendorName("");
     setVendorCustom(false);
     setVehicleNo("");
-    setIssuedBy(user?.name || "");
+    setIssuedBy("");
     setDeliveryAddress("");
     setItems([emptyItem()]);
   }
@@ -2718,11 +2850,7 @@ export default function JobOrder() {
 
   // Called from the Process <select> in each item row.
   function handleProcessSelect(key, val) {
-    if (val === OTHER_PROCESS) {
-      updateItem(key, { process: OTHER_PROCESS });
-    } else {
-      updateItem(key, { process: val, processOther: "" });
-    }
+    updateItem(key, { process: val, processSub: "", processOther: "" });
   }
 
   async function handleSubmit(e) {
@@ -2759,7 +2887,6 @@ export default function JobOrder() {
         it.perimeter ||
         it.length ||
         it.process ||
-        it.ralCode.trim() ||
         it.remark.trim(),
     );
     if (!touchedItems.length) {
@@ -2791,6 +2918,17 @@ export default function JobOrder() {
 
     const validItems = touchedItems;
 
+    const missingSubProcess = validItems.find(
+      (it) => PROCESS_SUBOPTIONS[it.process] && !it.processSub,
+    );
+    if (missingSubProcess) {
+      setMsg({
+        text: `Select a ${missingSubProcess.process === "Anodizing" ? "finish" : "RAL code"} for "${missingSubProcess.description}" (${missingSubProcess.process}).`,
+        ok: false,
+      });
+      return;
+    }
+
     const missingCustomProcess = validItems.find(
       (it) => it.process === OTHER_PROCESS && !it.processOther.trim(),
     );
@@ -2813,7 +2951,7 @@ export default function JobOrder() {
         vehicleNo,
         issuedBy,
         deliveryAddress,
-        items: validItems.map(({ processOther, ...it }) => ({
+        items: validItems.map((it) => ({
           description: it.description,
           // Blank stays blank ("" -> null) instead of being coerced to 0, so
           // the backend/UI can tell "not entered" apart from "entered as 0".
@@ -2822,8 +2960,7 @@ export default function JobOrder() {
           length: it.length === "" ? null : parseFloat(it.length),
           qty: parseFloat(it.qty) || 0,
           unit: it.unit,
-          process: it.process === OTHER_PROCESS ? processOther.trim() : it.process,
-          ralCode: it.ralCode,
+          process: finalizeProcess(it),
           projectName: it.projectName,
           remark: it.remark,
         })),
@@ -2998,7 +3135,7 @@ export default function JobOrder() {
         /* ── Item row grid (create form + EditModal, via <ItemRow>) ───────── */
         .jo-item-row {
           display: grid;
-          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 0.85fr 1fr 1fr 1fr auto;
+          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 1.3fr 1fr 1fr auto;
           gap: 8px;
           align-items: start;
           padding: 10px;
@@ -3011,7 +3148,7 @@ export default function JobOrder() {
            delete-button column, which the header replaces with an empty span). */
         .jo-item-header {
           display: grid;
-          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 0.85fr 1fr 1fr 1fr 32px;
+          grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 1.3fr 1fr 1fr 32px;
           gap: 8px;
           padding: 4px 10px;
           font-size: 10px;
@@ -3368,18 +3505,62 @@ export default function JobOrder() {
               </div>
               <div className="field">
                 <label>Send From Name</label>
-                <input
-                  value={sendFromName}
-                  onChange={(e) => setSendFromName(e.target.value)}
-                  placeholder="Enter sender name"
-                />
+                {sendFromCustom ? (
+                  <div className="jo-vendor-custom-row">
+                    <input
+                      value={sendFromName}
+                      onChange={(e) => setSendFromName(e.target.value)}
+                      placeholder="Enter sender name"
+                      autoFocus
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      style={{ whiteSpace: "nowrap" }}
+                      onClick={() => {
+                        setSendFromCustom(false);
+                        setSendFromName("");
+                        setSendFromAddress("");
+                      }}
+                    >
+                      ← Back
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={sendFromName}
+                    onChange={(e) => {
+                      if (e.target.value === OTHER_SEND_FROM) {
+                        setSendFromCustom(true);
+                        setSendFromName("");
+                        setSendFromAddress("");
+                      } else {
+                        setSendFromName(e.target.value);
+                        const found = SEND_FROM_OPTIONS.find(
+                          (v) => v.name === e.target.value,
+                        );
+                        if (found) setSendFromAddress(found.address);
+                        else setSendFromAddress("");
+                      }
+                    }}
+                  >
+                    <option value="">— Select sender —</option>
+                    {SEND_FROM_OPTIONS.map((v) => (
+                      <option key={v.name} value={v.name}>
+                        {v.name}
+                      </option>
+                    ))}
+                    <option value={OTHER_SEND_FROM}>✎ Add own…</option>
+                  </select>
+                )}
               </div>
               <div className="field">
                 <label>Send From Address</label>
                 <input
                   value={sendFromAddress}
                   onChange={(e) => setSendFromAddress(e.target.value)}
-                  placeholder="Enter sender address"
+                  placeholder="Auto-filled from selection, or enter manually"
                 />
               </div>
               <div className="field">
@@ -3499,8 +3680,7 @@ export default function JobOrder() {
               <span>Area/nos (Sq in)</span>
               <span>Qty</span>
               <span>UOM</span>
-              <span>Process</span>
-              <span>RAL Code/Finish</span>
+              <span>Process / RAL Code / Finish</span>
               <span>
                 Project Name <span style={{ color: "var(--red)" }}>*</span>
               </span>
@@ -3579,12 +3759,12 @@ export default function JobOrder() {
                 <tr>
                   <th>Challan No</th>
                   <th>Date</th>
-                  <th>Vendor Name</th>
+                  <th>Send From</th>
+                  <th>Send To</th>
                   <th>Vehicle No</th>
                   <th>Issued By</th>
-                  <th>Items</th>
-                  <th>Received At</th>
-                  <th>Send From Name</th>
+                  <th className="num">Dispatched Qty</th>
+                  <th className="num">Received Qty</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -3593,6 +3773,14 @@ export default function JobOrder() {
                 {visible.map((order) => {
                   const sc =
                     STATUS_COLORS[order.status] || STATUS_COLORS.issued;
+                  const dispatchedQty = (order.items || []).reduce(
+                    (sum, it) => sum + num(it.qty),
+                    0,
+                  );
+                  const receivedQtyTotal = (order.items || []).reduce(
+                    (sum, it) => sum + num(it.receivedQty),
+                    0,
+                  );
                   const pendingTotal = (order.items || []).reduce(
                     (sum, it) =>
                       sum + Math.max(0, num(it.qty) - num(it.receivedQty)),
@@ -3605,12 +3793,12 @@ export default function JobOrder() {
                         {order.srNo}
                       </td>
                       <td>{formatDate(order.date)}</td>
+                      <td>{order.sendFromName || "—"}</td>
                       <td style={{ fontWeight: 500 }}>{order.vendorName}</td>
                       <td>{order.vehicleNo || "—"}</td>
                       <td>{order.issuedBy || "—"}</td>
-                      <td>{order.items?.length || 0}</td>
-                      <td>{order.receivedAt || "—"}</td>
-                      <td>{order.sendFromName || "—"}</td>
+                      <td className="num">{dispatchedQty}</td>
+                      <td className="num">{receivedQtyTotal}</td>
                       <td>
                         <span
                           style={{

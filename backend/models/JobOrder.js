@@ -24,7 +24,7 @@ const joItemSchema = new mongoose.Schema({
   unit:        { type: String, default: 'NOS' },
   process:     { type: String, default: '' },
   projectName: { type: String, required: true, trim: true },
-  ralCode:     { type: String, default: '' },
+  // ralCode:     { type: String, default: '' },
 
   receivedQty: { type: Number, default: 0, min: 0 },   // sum of all receipts, clamped to qty
   receipts:    { type: [receiptSchema], default: [] }, // per-location receiving history for this item
