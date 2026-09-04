@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getMaster, getInward, getOutward } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, formatINR, formatInt } from "../utils/helpers";
+import * as XLSX from "xlsx";
 import {
   BarChart,
   Bar,
@@ -635,6 +636,51 @@ export default function StockOverview() {
         (!cf.totalVal.length ||
           cf.totalVal.includes(String(formatINR(r.totalVal)))),
     );
+
+  // ── Excel export ──────────────────────────────────────────────────────────
+  // Exports exactly what's currently visible in the table — respects the
+  // search box, the active stat-card filter (low/zero stock), and every
+  // column filter (cf.*), since it reads straight from `rows`.
+  function exportToExcel() {
+    if (!rows.length) return;
+
+    const exportRows = rows.map((r) => {
+      const base = {
+        "Material Name": r.name || "",
+        Type: r.type || "",
+        Category: r.category || "",
+        Code: r.code || "",
+        Inward: Number(r.inQty.toFixed(2)),
+        Outward: Number(r.outQty.toFixed(2)),
+        Balance: Number(r.stock.toFixed(2)),
+        "Min Stock": Number(r.minStock.toFixed(2)),
+        UOM: r.uom || "",
+      };
+      if (canSeePrice) {
+        base["Avg Price (₹)"] = Number(r.avgPrice.toFixed(2));
+        base["Stock Value (₹)"] = Number(r.totalVal.toFixed(2));
+      }
+      return base;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportRows);
+
+    // Auto-size columns so names/numbers aren't clipped when opened in Excel.
+    const headers = Object.keys(exportRows[0]);
+    ws["!cols"] = headers.map((h) => ({
+      wch:
+        Math.max(
+          h.length,
+          ...exportRows.map((r) => String(r[h] ?? "").length),
+        ) + 2,
+    }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Stock Balance");
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `stock-balance-${dateStr}.xlsx`);
+  }
 
   // ── Chart data ────────────────────────────────────────────────────────────
   // Top 10 by balance
@@ -1376,6 +1422,26 @@ export default function StockOverview() {
               Select all flagged ({flaggedInView.length})
             </button>
           )}
+          <button
+            onClick={exportToExcel}
+            disabled={!rows.length}
+            title="Export the currently filtered/searched results to Excel"
+            style={{
+              fontSize: 12,
+              padding: "4px 10px",
+              borderRadius: 14,
+              border: "1px solid var(--line)",
+              background: rows.length ? "var(--teal)" : "#fff",
+              color: rows.length ? "#fff" : "var(--text-3)",
+              cursor: rows.length ? "pointer" : "not-allowed",
+              whiteSpace: "nowrap",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            ⬇ Export Excel
+          </button>
         </h3>
         <div className="searchbar">
           <input
