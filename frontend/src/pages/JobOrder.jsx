@@ -1504,11 +1504,15 @@ function deriveProcessFields(savedProcess) {
 // block below.
 function ProcessPicker({ value, subValue, otherValue, onSelect }) {
   const [open, setOpen] = useState(false);
+  const [openSub, setOpenSub] = useState(null); // which main option's submenu is open
   const ref = useRef(null);
 
   useEffect(() => {
     function onDocClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+        setOpenSub(null);
+      }
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -1524,6 +1528,12 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
   function pick(main, sub) {
     onSelect(main, sub);
     setOpen(false);
+    setOpenSub(null);
+  }
+
+  function toggleSub(main, e) {
+    e.stopPropagation();
+    setOpenSub((cur) => (cur === main ? null : main));
   }
 
   return (
@@ -1531,7 +1541,10 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
       <button
         type="button"
         className="jo-process-trigger"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          setOpenSub(null);
+        }}
       >
         <span className="jo-process-trigger-label">{label}</span>
         <span className="jo-process-caret">▾</span>
@@ -1543,13 +1556,23 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
             const subs = PROCESS_SUBOPTIONS[main];
             if (subs) {
               return (
-                <li key={main} className="jo-process-menu-item has-sub" tabIndex={0}>
+                <li
+                  key={main}
+                  className={`jo-process-menu-item has-sub${openSub === main ? " is-open" : ""}`}
+                  onClick={(e) => toggleSub(main, e)}
+                >
                   <span className="jo-process-menu-label">
                     {main} <span className="jo-process-menu-arrow">▸</span>
                   </span>
                   <ul className="jo-process-submenu">
                     {subs.map((s) => (
-                      <li key={s} onClick={() => pick(main, s)}>
+                      <li
+                        key={s}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pick(main, s);
+                        }}
+                      >
                         {s}
                       </li>
                     ))}
@@ -1578,7 +1601,6 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
     </div>
   );
 }
-
 // ── Shared item-row field renderer ─────────────────────────────────────────
 // Used by both the create form and EditModal so the mobile fix (stacked,
 // individually-labelled fields) only has to live in one place. Every field
@@ -3302,38 +3324,30 @@ export default function JobOrder() {
         }
         .jo-process-caret { color: #8a8270; font-size: 11px; margin-left: 6px; flex-shrink: 0; }
 
-        .jo-process-menu {
-          position: absolute; top: calc(100% + 2px); left: 0; z-index: 50;
-          min-width: 220px; max-height: 320px; overflow-y: auto;
-          background: #fff; border: 1px solid var(--line); border-radius: 6px;
-          box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
-        }
-        .jo-process-menu-item {
-          position: relative; padding: 6px 12px; font-size: 13px; cursor: pointer;
-          display: flex; align-items: center; justify-content: space-between;
-        }
-        .jo-process-menu-item:hover,
-        .jo-process-menu-item.has-sub:hover { background: var(--paper-dim); }
-        .jo-process-menu-label { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: space-between; }
-        .jo-process-menu-arrow { font-size: 10px; color: #8a8270; }
+       .jo-process-menu {
+  position: absolute; top: calc(100% + 2px); left: 0; z-index: 50;
+  min-width: 220px;
+  background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
+}
+.jo-process-menu-item {
+  position: relative; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.jo-process-menu-item:hover,
+.jo-process-menu-item.has-sub.is-open { background: var(--paper-dim); }
+.jo-process-menu-label { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: space-between; }
+.jo-process-menu-arrow { font-size: 10px; color: #8a8270; }
 
-        .jo-process-submenu {
-          display: none; position: absolute; left: 100%; top: -4px; z-index: 60;
-          min-width: 220px; max-height: 320px; overflow-y: auto;
-          background: #fff; border: 1px solid var(--line); border-radius: 6px;
-          box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
-        }
-        .jo-process-menu-item.has-sub:hover > .jo-process-submenu { display: block; }
-        .jo-process-submenu li { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
-        .jo-process-submenu li:hover { background: var(--paper-dim); }
-
-        /* Touch devices have no hover — tap the "Powder Coating" row itself
-           (via :active/:focus-within) to reveal its submenu instead. */
-        @media (hover: none) {
-          .jo-process-menu-item.has-sub > .jo-process-submenu { display: none; }
-          .jo-process-menu-item.has-sub:active > .jo-process-submenu,
-          .jo-process-menu-item.has-sub:focus-within > .jo-process-submenu { display: block; }
-        }
+.jo-process-submenu {
+  display: none; position: absolute; left: 100%; top: -4px; z-index: 60;
+  min-width: 220px;
+  background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
+}
+.jo-process-menu-item.has-sub.is-open > .jo-process-submenu { display: block; }
+.jo-process-submenu li { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.jo-process-submenu li:hover { background: var(--paper-dim); }
 
         /* ── Receive-modal per-item row (unrelated grid, same mobile fix) ── */
         .jo-receive-row {
@@ -3689,7 +3703,7 @@ export default function JobOrder() {
               </div>
               <div className="field">
                 <label>
-                  Vendor Name <span style={{ color: "var(--red)" }}>*</span>
+                  Send To Name <span style={{ color: "var(--red)" }}>*</span>
                 </label>
                 {vendorCustom ? (
                   <div className="jo-vendor-custom-row">
