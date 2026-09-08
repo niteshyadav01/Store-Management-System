@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { todayStr } from "../utils/helpers";
+import { unwrapList } from "../api/api";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 // ── API helpers (add these to your api.js too) ────────────────────────────────
 const API = import.meta.env.VITE_API_URL
@@ -2887,7 +2890,7 @@ export default function JobOrder() {
   const load = useCallback(async () => {
     try {
       const data = await apiGet("/job-orders");
-      setOrders(Array.isArray(data) ? data : []);
+      setOrders(unwrapList(data));
     } catch (err) {
       console.error("[JobOrder] failed to load job orders", err);
       setOrders([]);
@@ -3162,6 +3165,8 @@ export default function JobOrder() {
     statusFilter === "all"
       ? orders
       : orders.filter((o) => o.status === statusFilter);
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(visible, 25);
 
   function OrderActionButtons({ order, hasPending }) {
     return (
@@ -3907,7 +3912,7 @@ export default function JobOrder() {
                 </tr>
               </thead>
               <tbody>
-                {visible.map((order) => {
+                {pageItems.map((order) => {
                   const sc =
                     STATUS_COLORS[order.status] || STATUS_COLORS.issued;
                   const dispatchedQty = (order.items || []).reduce(
@@ -3963,6 +3968,15 @@ export default function JobOrder() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && (
+          <Pagination
+            page={page}
+            pageSize={pageSize}
+            total={total}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
         )}
         {!loading && !visible.length && (
           <div className="empty">

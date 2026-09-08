@@ -48,9 +48,44 @@ client.interceptors.response.use(
 export const login = (username, password) =>
   client.post("/auth/login", { username, password });
 
+// ── Helpers — list APIs may return a bare array (legacy) or
+// { items, total, page, limit } when ?page=&limit= is passed.
+export function unwrapList(data) {
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.items)) return data.items;
+  return [];
+}
+
+export function listMeta(data, fallbackLen = 0) {
+  if (data && typeof data === "object" && !Array.isArray(data) && Array.isArray(data.items)) {
+    return {
+      items: data.items,
+      total: Number(data.total) || data.items.length,
+      page: Number(data.page) || 1,
+      limit: Number(data.limit) || data.items.length || 25,
+    };
+  }
+  const items = Array.isArray(data) ? data : [];
+  return {
+    items,
+    total: fallbackLen || items.length,
+    page: 1,
+    limit: items.length || 25,
+  };
+}
+
+function withQuery(path, params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    qs.set(k, String(v));
+  });
+  const s = qs.toString();
+  return s ? `${path}?${s}` : path;
+}
+
 // ── Master list ───────────────────────────────────────────────────────────────
-// ── Master list ───────────────────────────────────────────────────────────────
-export const getMaster = () => client.get("/master");
+export const getMaster = (params) => client.get(withQuery("/master", params || {}));
 export const addMaterial = (data) => client.post("/master", data);
 export const updateMaterial = (id, data) => client.put(`/master/${id}`, data);
 export const bulkMaster = (materials) =>
@@ -58,7 +93,7 @@ export const bulkMaster = (materials) =>
 export const deleteMaterial = (id) => client.delete(`/master/${id}`);
 
 // ── Inward ────────────────────────────────────────────────────────────────────
-export const getInward = () => client.get("/inward");
+export const getInward = (params) => client.get(withQuery("/inward", params || {}));
 export const addInward = (data) => client.post("/inward", data);
 export const bulkInward = (entries) => client.post("/inward/bulk", { entries });
 export const updatePrice = (id, price) =>
@@ -67,7 +102,7 @@ export const updateInward = (id, data) => client.put(`/inward/${id}`, data);
 export const deleteInward = (id) => client.delete(`/inward/${id}`);
 
 // ── Outward ───────────────────────────────────────────────────────────────────
-export const getOutward = () => client.get("/outward");
+export const getOutward = (params) => client.get(withQuery("/outward", params || {}));
 export const addOutward = (data) => client.post("/outward", data);
 export const bulkOutward = (entries) =>
   client.post("/outward/bulk", { entries });
@@ -75,14 +110,15 @@ export const updateOutward = (id, data) => client.put(`/outward/${id}`, data);
 export const deleteOutward = (id) => client.delete(`/outward/${id}`);
 
 // ── Users ─────────────────────────────────────────────────────────────────────
-export const getUsers = () => client.get("/users");
+export const getUsers = (params) => client.get(withQuery("/users", params || {}));
 export const saveUser = (data) => client.post("/users", data);
 export const deleteUser = (username) => client.delete(`/users/${username}`);
 export const recordUserPassword = (username, plainPassword) =>
   client.patch(`/users/${username}/password`, { plainPassword });
 
 // ── Purchase requests ────────────────────────────────────────────────────────
-export const getPurchaseRequests = () => client.get("/purchase-requests");
+export const getPurchaseRequests = (params) =>
+  client.get(withQuery("/purchase-requests", params || {}));
 export const createPurchaseRequest = (data) =>
   client.post("/purchase-requests", data);
 export const updatePurchaseRequest = (id, data) =>
@@ -97,9 +133,11 @@ export const savePrItemPrices = (id, items) =>
 // ── Purchase orders ──────────────────────────────────────────────────────────
 export const getPONextNumber = () => client.get("/purchase-orders/next-number");
 
-export const getPurchaseOrders = () => client.get("/purchase-orders");
+export const getPurchaseOrders = (params) =>
+  client.get(withQuery("/purchase-orders", params || {}));
 
-export const getPurchaseOrdersByPR = (prId) => client.get(`/purchase-orders?prId=${prId}`);
+export const getPurchaseOrdersByPR = (prId) =>
+  client.get(withQuery("/purchase-orders", { prId }));
 
 export const getPurchaseOrderByNumber = (poNumber) =>
   client.get(`/purchase-orders/by-number/${encodeURIComponent(poNumber)}`);
@@ -115,3 +153,7 @@ export const updatePurchaseOrder = (id, data) => client.patch(`/purchase-orders/
 export const deletePurchaseOrder = (id) => client.delete(`/purchase-orders/${id}`);
 
 export const getPurchaseOrderActivity = (id) => client.get(`/purchase-orders/${id}/activity`);
+
+// ── Job orders ───────────────────────────────────────────────────────────────
+export const getJobOrders = (params) =>
+  client.get(withQuery("/job-orders", params || {}));

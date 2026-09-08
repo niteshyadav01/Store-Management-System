@@ -7,6 +7,7 @@ import {
   bulkOutward,
   updateOutward,
   deleteOutward,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -18,6 +19,8 @@ import {
   exportXlsx,
   formatDateDMY,
 } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 function normalizeOutwardEntry(entry) {
   const reqty =
@@ -541,9 +544,9 @@ export default function OutwardEntry() {
 
   const load = useCallback(async () => {
     const [m, e, i] = await Promise.all([getMaster(), getOutward(), getInward()]);
-    setMaster(m);
-    setEntries(Array.isArray(e) ? e.map(normalizeOutwardEntry) : []);
-    setInwardEntries(Array.isArray(i) ? i : []);
+    setMaster(unwrapList(m));
+    setEntries(unwrapList(e).map(normalizeOutwardEntry));
+    setInwardEntries(unwrapList(i));
   }, []);
   useEffect(() => {
     load();
@@ -555,6 +558,8 @@ export default function OutwardEntry() {
       matchesSearchText(entry, searchText)
     );
   });
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(filteredEntries, 25);
 
   async function handleEditSave(id, data) {
     await updateOutward(id, data);
@@ -1438,7 +1443,7 @@ export default function OutwardEntry() {
               </tr>
             </thead>
             <tbody>
-              {filteredEntries.map((e) => {
+              {pageItems.map((e) => {
                 const hasReqty =
                   e.reqty !== undefined && e.reqty !== null && e.reqty !== "";
                 const remaining = hasReqty
@@ -1496,6 +1501,13 @@ export default function OutwardEntry() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!entries.length && (
           <div className="empty">
             No outward entries yet.

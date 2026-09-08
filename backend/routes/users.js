@@ -2,12 +2,23 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const User   = require('../models/User');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { parsePagination } = require('../utils/paginate');
 
 // GET /api/users — returns plainPassword too (admin only)
+// Optional ?page=&limit= → { items, total, page, limit }; otherwise full array.
 router.get('/', authMiddleware, requireRole('admin'), async (req, res) => {
   try {
-    const list = await User.find().select('-password').lean();
-    res.json(list);
+    const pagination = parsePagination(req.query);
+    if (!pagination) {
+      const list = await User.find().select('-password').lean();
+      return res.json(list);
+    }
+    const { page, limit, skip } = pagination;
+    const [items, total] = await Promise.all([
+      User.find().select('-password').skip(skip).limit(limit).lean(),
+      User.countDocuments(),
+    ]);
+    res.json({ items, total, page, limit });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

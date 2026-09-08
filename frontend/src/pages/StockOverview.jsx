@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { getMaster, getInward, getOutward } from "../api/api";
+import { getMaster, getInward, getOutward, unwrapList } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, formatINR, formatInt } from "../utils/helpers";
 import * as XLSX from "xlsx";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 import {
   BarChart,
   Bar,
@@ -501,9 +503,9 @@ export default function StockOverview() {
       getInward(),
       getOutward(),
     ]);
-    setMaster(m);
-    setInward(i);
-    setOutward(o);
+    setMaster(unwrapList(m));
+    setInward(unwrapList(i));
+    setOutward(unwrapList(o));
   }, []);
   useEffect(() => {
     load();
@@ -636,6 +638,9 @@ export default function StockOverview() {
         (!cf.totalVal.length ||
           cf.totalVal.includes(String(formatINR(r.totalVal)))),
     );
+
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(rows, 25);
 
   // ── Excel export ──────────────────────────────────────────────────────────
   // Exports exactly what's currently visible in the table — respects the
@@ -1685,7 +1690,7 @@ export default function StockOverview() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {pageItems.map((r) => {
                 const candidate = isPRCandidate(r);
                 return (
                   <tr key={r._id}>
@@ -1763,6 +1768,13 @@ export default function StockOverview() {
               hidden behind the fixed bulk-selection bar below. */}
           {selectedCount > 0 && <div style={{ height: 76 }} />}
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!master.length && (
           <div className="empty">
             No materials yet.

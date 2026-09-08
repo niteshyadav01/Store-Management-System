@@ -1,6 +1,7 @@
 const router  = require('express').Router();
 const Outward = require('../models/Outward');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { parsePagination, paginateQuery } = require('../utils/paginate');
 
 const OUTWARD_EDIT_ROLES = ['admin', 'store', 'store_manager'];
 
@@ -23,10 +24,21 @@ function normalizeOutwardResponse(entry) {
 }
 
 // GET /api/outward
+// Optional ?page=&limit= → { items, total, page, limit }; otherwise full array.
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const entries = await Outward.find().sort({ createdAt: -1 }).lean();
-    res.json(entries.map(normalizeOutwardResponse));
+    const pagination = parsePagination(req.query);
+    const result = await paginateQuery(Outward, {}, {
+      sort: { createdAt: -1 },
+      pagination,
+    });
+    if (Array.isArray(result)) {
+      return res.json(result.map(normalizeOutwardResponse));
+    }
+    res.json({
+      ...result,
+      items: result.items.map(normalizeOutwardResponse),
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

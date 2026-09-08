@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
-import { getInward, updatePrice } from "../api/api";
+import { getInward, updatePrice, unwrapList } from "../api/api";
 import { formatNum, exportXlsx } from "../utils/helpers";
 // NOTE: adjust this import path if your AuthContext file lives elsewhere.
 import { useAuth } from "../context/AuthContext";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 // Display dates as dd-mm-yyyy regardless of the underlying stored format.
 function toDDMMYYYY(dateStr) {
@@ -431,7 +433,7 @@ export default function PriceEntry() {
   });
 
   const load = useCallback(async () => {
-    const data = await getInward();
+    const data = unwrapList(await getInward());
     setEntries(data);
     const init = {};
     data.forEach((e) => {
@@ -474,6 +476,8 @@ export default function PriceEntry() {
       const bZero = (b.price ?? 0) === 0 ? 0 : 1;
       return aZero - bZero;
     });
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(filtered, 25);
 
   function handleFocus(id) {
     // If the current value is 0, clear it so user can type a fresh number
@@ -1234,7 +1238,7 @@ export default function PriceEntry() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e) => {
+              {pageItems.map((e) => {
                 const isZero = (e.price ?? 0) === 0;
                 const canEdit = canEditEntry(e);
                 return (
@@ -1327,6 +1331,13 @@ export default function PriceEntry() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!entries.length && (
           <div className="empty">
             No inward entries yet.<p>Add inward entries first to set prices.</p>

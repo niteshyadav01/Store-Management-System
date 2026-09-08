@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const JobOrder = require("../models/JobOrder");
 const { authMiddleware, requireRole } = require("../middleware/auth");
+const { parsePagination, paginateQuery } = require("../utils/paginate");
 
 // Matches ROLE_ACCESS.jobOrders in App.jsx
 const ALLOWED_ROLES = ["admin", "store_manager", "store", "purchase"];
@@ -33,10 +34,15 @@ function calcArea(perimeter, length) {
 }
 
 // ── GET /api/job-orders ───────────────────────────────────────────────────────
+// Optional ?page=&limit= → { items, total, page, limit }; otherwise full array.
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    const list = await JobOrder.find().sort({ createdAt: -1 }).lean();
-    res.json(list);
+    const pagination = parsePagination(req.query);
+    const result = await paginateQuery(JobOrder, {}, {
+      sort: { createdAt: -1 },
+      pagination,
+    });
+    res.json(result);
   } catch (err) {
     console.error("[job-orders GET /] ", err);
     res.status(500).json({ error: err.message });

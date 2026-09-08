@@ -5,9 +5,12 @@ import {
   updateMaterial,
   bulkMaster,
   deleteMaterial,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { readSheetFile, pickCol, exportXlsx } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 const EMPTY = {
   name: "",
@@ -32,7 +35,7 @@ export default function MasterList() {
 
   const load = useCallback(async () => {
     try {
-      setList(await getMaster());
+      setList(unwrapList(await getMaster()));
     } catch {}
   }, []);
   useEffect(() => {
@@ -45,6 +48,8 @@ export default function MasterList() {
       m.name.toLowerCase().includes(search.toLowerCase()) ||
       (m.code || "").toLowerCase().includes(search.toLowerCase()),
   );
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(filtered, 25);
 
 function dedupeCategories(items) {
   const map = new Map(); // key: lowercase, value: original casing to display
@@ -427,7 +432,7 @@ const categoryOptions = dedupeCategories(list.map((m) => m.category));
               </tr>
             </thead>
             <tbody>
-              {filtered.map((m) => (
+              {pageItems.map((m) => (
                 <tr
                   key={m._id}
                   style={
@@ -478,6 +483,13 @@ const categoryOptions = dedupeCategories(list.map((m) => m.category));
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!list.length && (
           <div className="empty">
             No materials yet.

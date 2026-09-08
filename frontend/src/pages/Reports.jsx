@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { getMaster, getInward, getOutward } from "../api/api";
+import { getMaster, getInward, getOutward, unwrapList } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, formatINR, exportXlsx, todayStr, toDDMMYYYY } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 // ── Excel-style dropdown filter — portal-based, with Apply button ────────────
 function ColFilter({ values, selected, onChange, formatLabel }) {
@@ -418,9 +420,9 @@ export default function Reports() {
       getInward(),
       getOutward(),
     ]);
-    setMaster(m);
-    setInward(Array.isArray(i) ? i : (i?.entries ?? []));
-    setOutward(Array.isArray(o) ? o : (o?.entries ?? []));
+    setMaster(unwrapList(m));
+    setInward(unwrapList(i));
+    setOutward(unwrapList(o));
   }, []);
   useEffect(() => {
     load();
@@ -695,6 +697,9 @@ export default function Reports() {
       );
     }
   });
+
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(filteredRows || [], 25);
 
   // ── Summary stats ──────────────────────────────────────────────────────────
   const totalIn =
@@ -1126,7 +1131,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRows.map((r, i) => (
+                      {pageItems.map((r, i) => (
                         <tr key={i}>
                           <td className="wrap-cell" style={{ fontWeight: 500 }}>
                             {r.name}
@@ -1343,7 +1348,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredRows.map((r, i) => (
+                      {pageItems.map((r, i) => (
                         <tr key={i}>
                           <td>{toDDMMYYYY(r.date)}</td>
                           <td className="wrap-cell" style={{ fontWeight: 500 }}>
@@ -1399,6 +1404,13 @@ export default function Reports() {
                 )}
               </table>
             </div>
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
             {!filteredRows.length && (
               <div className="empty">
                 No records match the selected filters.

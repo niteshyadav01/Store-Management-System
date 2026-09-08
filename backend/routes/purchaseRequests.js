@@ -2,6 +2,7 @@ const router = require('express').Router();
 const PurchaseRequest = require('../models/PurchaseRequest');
 const { nextSeq } = require('../models/Counter');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { parsePagination, paginateQuery } = require('../utils/paginate');
 
 // Roles that can raise a Purchase Request
 const CREATOR_ROLES = ['admin', 'store', 'store_manager', 'viewer'];
@@ -47,13 +48,18 @@ const VIEWER_ROLES = ['admin', 'purchase', 'store_manager', 'store', 'viewer'];
 
 // GET /api/purchase-requests
 // Admin / purchase / store_manager / store see all requests. viewer sees only their own.
+// Optional ?page=&limit= → { items, total, page, limit }; otherwise full array.
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const canViewAll = VIEWER_ROLES.includes(req.user.role);
     console.log(`[GET LIST] role=${JSON.stringify(req.user.role)} canViewAll=${canViewAll}`);
     const filter = canViewAll ? {} : { requestedByUsername: req.user.username };
-    const list = await PurchaseRequest.find(filter).sort({ createdAt: -1 }).lean();
-    res.json(list);
+    const pagination = parsePagination(req.query);
+    const result = await paginateQuery(PurchaseRequest, filter, {
+      sort: { createdAt: -1 },
+      pagination,
+    });
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

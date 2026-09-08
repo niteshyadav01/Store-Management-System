@@ -4,6 +4,7 @@ const PurchaseRequest = require('../models/PurchaseRequest');
 const Inward          = require('../models/Inward');
 const { Counter, nextSeq } = require('../models/Counter');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { parsePagination, paginateQuery } = require('../utils/paginate');
 
 const ALLOWED_ROLES = ['admin', 'purchase'];
 
@@ -175,8 +176,12 @@ router.get('/pending-inward', authMiddleware, async (req, res) => {
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const filter = req.query.prId ? { prId: req.query.prId } : {};
-    const list   = await PurchaseOrder.find(filter).sort({ createdAt: -1 }).lean();
-    res.json(list);
+    const pagination = parsePagination(req.query);
+    const result = await paginateQuery(PurchaseOrder, filter, {
+      sort: { createdAt: -1 },
+      pagination,
+    });
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

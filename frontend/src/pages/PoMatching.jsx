@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPoMatching } from '../api/api';
+import { getPoMatching, unwrapList } from '../api/api';
 import {toDDMMYYYY} from '../utils/helpers';
+import Pagination from '../components/Pagination';
+import useClientPagination from '../hooks/useClientPagination';
 
 const STATUS_LABEL = { received: 'Fully Received', partial: 'Partially Received', pending: 'Pending' };
 const STATUS_COLOR = { received: '#2a9d8f', partial: '#e9a44e', pending: '#c0392b' };
@@ -19,7 +21,7 @@ export default function PoMatching() {
     setLoading(true);
     try {
       const data = await getPoMatching();
-      setRows(data);
+      setRows(unwrapList(data));
     } catch (e) { setErr(e.message); }
     finally { setLoading(false); }
   }, []);
@@ -51,6 +53,8 @@ export default function PoMatching() {
     }
     return true;
   });
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(visible, 25);
 
   return (
     <>
@@ -113,7 +117,7 @@ export default function PoMatching() {
               </tr>
             </thead>
             <tbody>
-              {visible.map(po => {
+              {pageItems.map(po => {
                 const totalOrdered  = po.items.reduce((s, i) => s + i.orderedQty, 0);
                 const totalReceived = po.items.reduce((s, i) => s + i.receivedQty, 0);
                 const totalPending  = po.items.reduce((s, i) => s + i.pendingQty,  0);
@@ -212,6 +216,14 @@ export default function PoMatching() {
             </tbody>
           </table>
         </div>
+
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
 
         {!loading && !visible.length && (
           <div className="empty">

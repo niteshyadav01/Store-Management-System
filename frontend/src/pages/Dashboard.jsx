@@ -7,6 +7,7 @@ import {
   getMaster,
   getInward,
   getOutward,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, formatINR, toDDMMYYYY } from "../utils/helpers";
@@ -1784,11 +1785,11 @@ export default function Dashboard() {
         getInward(),
         getOutward(),
       ]);
-      setRequests(r);
-      setPos(p);
-      setMaster(Array.isArray(m) ? m : []);
-      setInward(Array.isArray(i) ? i : []);
-      setOutward(Array.isArray(o) ? o : []);
+      setRequests(unwrapList(r));
+      setPos(unwrapList(p));
+      setMaster(unwrapList(m));
+      setInward(unwrapList(i));
+      setOutward(unwrapList(o));
     } catch (e) {
       setErr(e.message);
     } finally {

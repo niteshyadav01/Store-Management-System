@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FaEye, FaEyeSlash } from 'react-icons/fa';
-import { getUsers, saveUser, deleteUser, recordUserPassword } from '../api/api';
+import { getUsers, saveUser, deleteUser, recordUserPassword, unwrapList } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS } from '../utils/helpers';
+import Pagination from '../components/Pagination';
+import useClientPagination from '../hooks/useClientPagination';
 
 const EMPTY = { name: '', username: '', password: '', role: 'viewer' };
 
@@ -25,7 +27,7 @@ export default function Users() {
   const [recordingPwd, setRecordingPwd] = useState({});
 
   const load = useCallback(async () => {
-    try { setUsers(await getUsers()); } catch {}
+    try { setUsers(unwrapList(await getUsers())); } catch {}
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -78,6 +80,8 @@ export default function Users() {
   }
 
   const roleStyle = (role) => ROLE_COLORS[role] || ROLE_COLORS.viewer;
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(users, 25);
 
   return (
     <>
@@ -149,7 +153,7 @@ export default function Users() {
               </tr>
             </thead>
             <tbody>
-              {users.map(u => {
+              {pageItems.map(u => {
                 const rs         = roleStyle(u.role);
                 const plain      = u.plainPassword;
                 const isVisible  = !!visiblePwds[u.username];
@@ -211,6 +215,13 @@ export default function Users() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!users.length && <div className="empty">No users found.</div>}
       </div>
     </>

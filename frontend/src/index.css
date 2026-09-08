@@ -715,3 +715,54 @@ textarea {
 .tablewrap::-webkit-scrollbar-corner {
   background: var(--paper-dim);
 }
+
+/* ── Pagination ────────────────────────────────────────────── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: #6b6555;
+}
+.pagination-info strong { color: var(--ink); font-weight: 600; }
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pagination-page {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.pagination-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6555;
+  margin-right: 4px;
+}
+.pagination-size select {
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+  height: 30px;
+}
+@media (max-width: 480px) {
+  .pagination-bar { flex-direction: column; align-items: stretch; }
+  .pagination-controls { justify-content: center; }
+}

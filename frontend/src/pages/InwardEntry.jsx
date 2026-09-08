@@ -9,6 +9,7 @@ import {
   deleteInward,
   getPendingInwardPOs,
   getPurchaseOrderByNumber,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -20,6 +21,8 @@ import {
   exportXlsx,
   formatDateDMY,
 } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 const EMPTY = {
   date: todayStr(),
@@ -568,8 +571,8 @@ export default function InwardEntry() {
       getInward(),
       getPendingInwardPOs(),
     ]);
-    setMaster(m);
-    setEntries(Array.isArray(e) ? e : []);
+    setMaster(unwrapList(m));
+    setEntries(unwrapList(e));
     setPoList(pos);
   }, []);
   useEffect(() => {
@@ -602,6 +605,8 @@ export default function InwardEntry() {
       matchesSearchText(entry, searchText)
     );
   });
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(filteredEntries, 25);
 
   // ── PO search/filter for the searchable PO Number field ───────────────
   const filteredPoList = poList.filter((po) => {
@@ -2316,7 +2321,7 @@ export default function InwardEntry() {
               </tr>
             </thead>
             <tbody>
-              {filteredEntries.map((e) => (
+              {pageItems.map((e) => (
                 <tr key={e._id}>
                   <td>{formatDateDMY(e.date)}</td>
                   <td>{e.invdate ? formatDateDMY(e.invdate) : "—"}</td>
@@ -2358,6 +2363,13 @@ export default function InwardEntry() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
         {!entries.length && (
           <div className="empty">
             No inward entries yet.

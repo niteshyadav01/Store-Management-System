@@ -1,12 +1,29 @@
 const router   = require('express').Router();
 const Material = require('../models/Material');
 const { authMiddleware, requireRole } = require('../middleware/auth');
+const { parsePagination, paginateQuery } = require('../utils/paginate');
 
 // GET /api/master
+// Optional ?page=&limit=&q= → { items, total, page, limit }; otherwise full array.
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const list = await Material.find().sort({ name: 1 }).lean();
-    res.json(list);
+    const pagination = parsePagination(req.query);
+    const q = String(req.query.q || "").trim();
+    const filter = q
+      ? {
+          $or: [
+            { name: { $regex: q, $options: "i" } },
+            { code: { $regex: q, $options: "i" } },
+            { category: { $regex: q, $options: "i" } },
+            { type: { $regex: q, $options: "i" } },
+          ],
+        }
+      : {};
+    const result = await paginateQuery(Material, filter, {
+      sort: { name: 1 },
+      pagination,
+    });
+    res.json(result);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

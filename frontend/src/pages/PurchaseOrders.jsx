@@ -13,9 +13,12 @@ import {
   deletePurchaseOrder,
   updatePurchaseOrder,
   getPurchaseOrderActivity,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { todayStr, toDDMMYYYY } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 const STATUS_LABEL = {
   pending: "Pending",
@@ -83,18 +86,19 @@ export default function PurchaseOrders() {
       getInward(),
       getOutward(),
     ]);
-    setRequests(reqs);
-    setPoList(pos);
+    const masterList = unwrapList(m);
+    setRequests(unwrapList(reqs));
+    setPoList(unwrapList(pos));
     const inTotals = {},
       outTotals = {};
-    (Array.isArray(inw) ? inw : (inw?.entries ?? [])).forEach((e) => {
+    unwrapList(inw).forEach((e) => {
       inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
     });
-    (Array.isArray(out) ? out : (out?.entries ?? [])).forEach((e) => {
+    unwrapList(out).forEach((e) => {
       outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
     });
     const map = {};
-    m.forEach((mat) => {
+    masterList.forEach((mat) => {
       map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0);
     });
     setStockMap(map);
@@ -107,6 +111,22 @@ export default function PurchaseOrders() {
   const eligiblePRs = requests.filter((r) =>
     ["approved", "partial"].includes(r.status),
   );
+  const {
+    pageItems: prPageItems,
+    page: prPage,
+    pageSize: prPageSize,
+    total: prTotal,
+    setPage: setPrPage,
+    setPageSize: setPrPageSize,
+  } = useClientPagination(eligiblePRs, 25);
+  const {
+    pageItems: poPageItems,
+    page: poPage,
+    pageSize: poPageSize,
+    total: poTotal,
+    setPage: setPoPage,
+    setPageSize: setPoPageSize,
+  } = useClientPagination(poList, 25);
 
   // ── Load pending items for a PR in the pending section ───────────────────
   async function loadPrItems(pr) {
@@ -1189,7 +1209,7 @@ export default function PurchaseOrders() {
                 </tr>
               </thead>
               <tbody>
-                {eligiblePRs.map((pr) => (
+                {prPageItems.map((pr) => (
                   <React.Fragment key={pr._id}>
                     <tr
                       style={{ cursor: "pointer" }}
@@ -1470,6 +1490,15 @@ export default function PurchaseOrders() {
             </table>
           </div>
         )}
+        {eligiblePRs.length > 0 && (
+          <Pagination
+            page={prPage}
+            pageSize={prPageSize}
+            total={prTotal}
+            onPageChange={setPrPage}
+            onPageSizeChange={setPrPageSize}
+          />
+        )}
       </div>
 
       {/* ── All POs list ──────────────────────────────────────────────────── */}
@@ -1514,7 +1543,7 @@ export default function PurchaseOrders() {
               </tr>
             </thead>
             <tbody>
-              {poList.map((po) => {
+              {poPageItems.map((po) => {
                 const totalValue = (po.items || []).reduce(
                   (s, i) => s + i.orderedQty * (i.price || 0),
                   0,
@@ -1855,6 +1884,13 @@ export default function PurchaseOrders() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={poPage}
+          pageSize={poPageSize}
+          total={poTotal}
+          onPageChange={setPoPage}
+          onPageSizeChange={setPoPageSize}
+        />
         {!poList.length && (
           <div className="empty">
             No purchase orders yet.

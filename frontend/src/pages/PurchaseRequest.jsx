@@ -11,9 +11,12 @@ import {
   getPurchaseOrdersByPR,
   getInward,
   getOutward,
+  unwrapList,
 } from "../api/api";
 import { useAuth } from "../context/AuthContext";
 import { formatNum, todayStr } from "../utils/helpers";
+import Pagination from "../components/Pagination";
+import useClientPagination from "../hooks/useClientPagination";
 
 const CREATOR_ROLES  = ["admin", "store", "store_manager",  "viewer"];
 const APPROVER_ROLES = ["admin", "store_manager"];
@@ -196,20 +199,21 @@ export default function PurchaseRequest() {
     const [m, r, inw, out] = await Promise.all([
       getMaster(), getPurchaseRequests(), getInward(), getOutward(),
     ]);
-    setMaster(m);
-    setRequests(r);
+    const masterList = unwrapList(m);
+    setMaster(masterList);
+    setRequests(unwrapList(r));
     // Build balance map: inward - outward per material
-    const inwardArr = Array.isArray(inw) ? inw : (inw?.entries ?? []);
+    const inwardArr = unwrapList(inw);
     setInwardEntries(inwardArr);
     const inTotals = {}, outTotals = {};
     inwardArr.forEach(e => {
       inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
     });
-    (Array.isArray(out) ? out : (out?.entries ?? [])).forEach(e => {
+    unwrapList(out).forEach(e => {
       outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
     });
     const map = {};
-    m.forEach(mat => { map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0); });
+    masterList.forEach(mat => { map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0); });
     setStockMap(map);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -487,6 +491,8 @@ export default function PurchaseRequest() {
     statusFilter === "all"
       ? requests
       : requests.filter((r) => r.status === statusFilter);
+  const { pageItems, page, pageSize, total, setPage, setPageSize } =
+    useClientPagination(visible, 25);
 
   return (
     <>
@@ -864,7 +870,7 @@ export default function PurchaseRequest() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((pr) => {
+              {pageItems.map((pr) => {
                 const isOwner = pr.requestedByUsername === user?.username;
                 const canEditThis = isOwner || user?.role === "admin" || user?.role === "store_manager";
                 const isPartial = pr.status === "partial";
@@ -1055,6 +1061,13 @@ export default function PurchaseRequest() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
 
         {!visible.length && (
           <div className="empty">
