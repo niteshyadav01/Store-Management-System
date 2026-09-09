@@ -1945,15 +1945,17 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
       const menuW = 240;
-      const menuH = 280;
+      const gap = 4;
+      const pad = 12;
+      // Always open BELOW the trigger so the menu never covers fields above
+      // (Send From / Vendor / etc.). Scroll inside the menu if needed.
       let left = rect.left;
-      let top = rect.bottom + 4;
-      left = Math.min(left, window.innerWidth - menuW - 12);
-      left = Math.max(12, left);
-      if (top + menuH > window.innerHeight) {
-        top = Math.max(12, rect.top - menuH - 4);
-      }
-      setPos({ top, left });
+      left = Math.min(left, window.innerWidth - menuW - pad);
+      left = Math.max(pad, left);
+      const top = rect.bottom + gap;
+      const maxHeight = Math.max(160, window.innerHeight - top - pad);
+
+      setPos({ top, left, maxHeight });
     }
     setOpen((v) => !v);
     setOpenSub(null);
@@ -1965,7 +1967,12 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
       <ul
         ref={menuRef}
         className="jo-process-menu jo-process-menu--portal"
-        style={{ top: pos.top, left: pos.left }}
+        style={{
+          top: pos.top,
+          left: pos.left,
+          maxHeight: pos.maxHeight || 280,
+          overflowY: "auto",
+        }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         {PROCESS_MAIN_OPTIONS.map((main) => {
@@ -3730,9 +3737,8 @@ export default function JobOrder() {
           border-radius: 8px;
           margin-bottom: 8px;
         }
-        /* Shared column-header row above the item rows — desktop only.
-           Mirrors .jo-item-row's non-mobile column layout (minus the trailing
-           delete-button column, which the header replaces with an empty span). */
+        /* Shared column-header — wide desktop only. Tablets/phones use the
+           per-field <label>s on each ItemRow instead. */
         .jo-item-header {
           display: grid;
           grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr 0.85fr 0.55fr 0.65fr 1.3fr 1fr 1fr 32px;
@@ -3745,19 +3751,15 @@ export default function JobOrder() {
           color: #8a8270;
         }
 
-        @media (max-width: 1200px) {
-          .jo-item-row { grid-template-columns: 1fr 1fr; }
-          .jo-item-header { display: none; }
-          .jo-item-row .field label { display: block; }
+        .jo-item-row .field label {
+          font-size: 11px;
+          margin-bottom: 3px;
+          display: block !important; /* always visible — tablet/phone + desktop */
+          color: var(--text-3);
+          font-weight: 600;
+          line-height: 1.2;
         }
-
-        /* Mobile: ONE field per row, full width */
-        @media (max-width: 640px) {
-          .jo-item-row { grid-template-columns: 1fr; }
-        }
-
-        .jo-item-row .field label { font-size: 11px; margin-bottom: 3px; display: none; color: var(--text-3); font-weight: 600; }
-        .jo-item-row .field { display: flex; flex-direction: column; }
+        .jo-item-row .field { display: flex; flex-direction: column; min-width: 0; }
         .jo-item-row .field input,
         .jo-item-row .field select {
           padding: 6px 8px; font-size: 13px; height: 32px; width: 100%; box-sizing: border-box;
@@ -3781,21 +3783,32 @@ export default function JobOrder() {
         .jo-item-row .field select:disabled { background: var(--paper-dim); cursor: not-allowed; }
         .jo-item-row .field-other-input { margin-top: 6px; }
 
-        /* Show per-field labels only once the header row above is gone
-           (i.e. on mobile) — on desktop the header row already labels
-           every column, so repeating labels per-row would be redundant. */
-        @media (max-width: 640px) {
-          .jo-item-row .field label { display: block; }
-        }
-
         .jo-item-remove {
           height: 32px; width: 32px; border-radius: 6px; border: 1px solid var(--line);
           background: transparent; cursor: pointer; color: var(--red); font-size: 14px;
-          flex-shrink: 0; align-self: start;
+          flex-shrink: 0; align-self: end;
+          margin-bottom: 0;
         }
         .jo-item-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Large tablet / small laptop: 2-col grid; drop wide header row */
+        @media (max-width: 1400px) {
+          .jo-item-row {
+            grid-template-columns: 1fr 1fr;
+          }
+          .jo-item-header { display: none !important; }
+          .jo-item-remove {
+            grid-column: 1 / -1;
+            width: 100%;
+            height: 36px;
+            align-self: stretch;
+          }
+        }
+
+        /* Phone: one field per row */
         @media (max-width: 640px) {
-          .jo-item-remove { width: 100%; height: 36px; margin-top: 4px; }
+          .jo-item-row { grid-template-columns: 1fr; }
+          .jo-item-remove { width: 100%; height: 36px; }
         }
 
         /* ── Process / RAL Code / Finish hover-flyout picker ───────────────
@@ -3830,6 +3843,9 @@ export default function JobOrder() {
   position: fixed;
   z-index: 12000;
   min-width: 240px;
+  max-height: min(280px, calc(100vh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .jo-process-menu-item {
   position: relative; padding: 6px 12px; font-size: 13px; cursor: pointer;
