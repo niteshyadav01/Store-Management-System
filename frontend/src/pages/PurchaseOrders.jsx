@@ -29,6 +29,23 @@ const STATUS_LABEL = {
   received: "Received",
 };
 
+// Same material can appear on a PR for different projects — key by both.
+function itemLineKey(name, projectName) {
+  return `${String(name || "").trim()}||${String(projectName || "").trim()}`;
+}
+
+function buildAlreadyOrderedMap(existingPOs) {
+  const alreadyOrdered = {};
+  for (const po of existingPOs || []) {
+    for (const it of po.items || []) {
+      const key = itemLineKey(it.name, it.projectName);
+      alreadyOrdered[key] =
+        (alreadyOrdered[key] || 0) + (parseFloat(it.orderedQty) || 0);
+    }
+  }
+  return alreadyOrdered;
+}
+
 export default function PurchaseOrders() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -138,14 +155,11 @@ export default function PurchaseOrders() {
     setPrItemsLoading((prev) => ({ ...prev, [pr._id]: true }));
     try {
       const existingPOs = await getPurchaseOrdersByPR(pr._id);
-      const alreadyOrdered = {};
-      for (const po of existingPOs || [])
-        for (const it of po.items || [])
-          alreadyOrdered[it.name] =
-            (alreadyOrdered[it.name] || 0) + (it.orderedQty || 0);
+      const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
       const rows = pr.items.map((it) => {
-        const already = alreadyOrdered[it.name] || 0;
+        const key = itemLineKey(it.name, it.projectName);
+        const already = alreadyOrdered[key] || 0;
         const remaining = Math.max(
           0,
           parseFloat((it.qty - already).toFixed(6)),
@@ -399,15 +413,12 @@ export default function PurchaseOrders() {
     setInitLoading(true);
     try {
       const existingPOs = await getPurchaseOrdersByPR(prId);
-      const alreadyOrdered = {};
-      for (const po of existingPOs || [])
-        for (const it of po.items || [])
-          alreadyOrdered[it.name] =
-            (alreadyOrdered[it.name] || 0) + (it.orderedQty || 0);
+      const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
       const rows = [];
       for (const it of pr.items) {
-        const already = alreadyOrdered[it.name] || 0;
+        const key = itemLineKey(it.name, it.projectName);
+        const already = alreadyOrdered[key] || 0;
         const remaining = Math.max(
           0,
           parseFloat((it.qty - already).toFixed(6)),
@@ -577,14 +588,11 @@ export default function PurchaseOrders() {
         let rows = prItemsMap[pr._id];
         if (!rows) {
           const existingPOs = await getPurchaseOrdersByPR(pr._id);
-          const alreadyOrdered = {};
-          for (const po of existingPOs || [])
-            for (const it of po.items || [])
-              alreadyOrdered[it.name] =
-                (alreadyOrdered[it.name] || 0) + (it.orderedQty || 0);
+          const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
           rows = pr.items.map((it) => {
-            const already = alreadyOrdered[it.name] || 0;
+            const key = itemLineKey(it.name, it.projectName);
+            const already = alreadyOrdered[key] || 0;
             const remaining = Math.max(
               0,
               parseFloat((it.qty - already).toFixed(6)),
@@ -1177,7 +1185,7 @@ export default function PurchaseOrders() {
           }}
         >
           <h3 style={{ margin: 0 }}>
-            Pending purchase requests
+            Pending Create PO
             <span className="pill-count">{eligiblePRs.length}</span>
           </h3>
           <button
@@ -1236,7 +1244,7 @@ export default function PurchaseOrders() {
                             setTimeout(() => handlePrChange(pr._id), 100);
                           }}
                         >
-                          Create PO
+                          Pending Create PO
                         </button>
                       </td>
                     </tr>

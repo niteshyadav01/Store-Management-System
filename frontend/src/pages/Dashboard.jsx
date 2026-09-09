@@ -405,10 +405,14 @@ function AdminDashboard({
     const prPos = posByPrId[String(pr._id)] || [];
     const ordered = {};
     for (const po of prPos)
-      for (const it of po.items || [])
-        ordered[it.name] = (ordered[it.name] || 0) + (it.orderedQty || 0);
-    return pr.items.filter((it) => it.qty - (ordered[it.name] || 0) > 0.00001)
-      .length;
+      for (const it of po.items || []) {
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
+      }
+    return pr.items.filter((it) => {
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      return it.qty - (ordered[key] || 0) > 0.00001;
+    }).length;
   }
 
   const remainingItemsCount = requests
@@ -827,10 +831,14 @@ function PurchaseDashboard({
     const prPos = posByPrId[String(pr._id)] || [];
     const ordered = {};
     for (const po of prPos)
-      for (const it of po.items || [])
-        ordered[it.name] = (ordered[it.name] || 0) + (it.orderedQty || 0);
-    return pr.items.filter((it) => it.qty - (ordered[it.name] || 0) > 0.00001)
-      .length;
+      for (const it of po.items || []) {
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
+      }
+    return pr.items.filter((it) => {
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      return it.qty - (ordered[key] || 0) > 0.00001;
+    }).length;
   }
 
   const remainingItemsCount = requests
@@ -1164,10 +1172,14 @@ function StoreDashboard({
     const prPos = posByPrId[String(pr._id)] || [];
     const ordered = {};
     for (const po of prPos)
-      for (const it of po.items || [])
-        ordered[it.name] = (ordered[it.name] || 0) + (it.orderedQty || 0);
-    return pr.items.filter((it) => it.qty - (ordered[it.name] || 0) > 0.00001)
-      .length;
+      for (const it of po.items || []) {
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
+      }
+    return pr.items.filter((it) => {
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      return it.qty - (ordered[key] || 0) > 0.00001;
+    }).length;
   }
 
   const remainingItemsCount = requests
@@ -1593,7 +1605,7 @@ function PRTable({
                           className="btn btn-sm btn-in"
                           onClick={() => navigate("/purchase-orders")}
                         >
-                          Create PO
+                          Pending Create PO
                         </button>
                       )}
                     {canApprove && pr.status === "pending" && (

@@ -5,7 +5,11 @@ import {toDDMMYYYY} from '../utils/helpers';
 import Pagination from '../components/Pagination';
 import useClientPagination from '../hooks/useClientPagination';
 
-const STATUS_LABEL = { received: 'Fully Received', partial: 'Partially Received', pending: 'Pending' };
+const STATUS_LABEL = {
+  received: 'Fully Received',
+  partial: 'Partially Received',
+  pending: 'Pending Inward Entry',
+};
 const STATUS_COLOR = { received: '#2a9d8f', partial: '#e9a44e', pending: '#c0392b' };
 
 export default function PoMatching() {
@@ -67,7 +71,7 @@ export default function PoMatching() {
 
       {/* Stat cards */}
       <div className="statrow">
-        {[['all','Total POs', rows.length, ''], ['pending','Pending', counts.pending||0,'var(--red)'],
+        {[['all','Total POs', rows.length, ''], ['pending','Pending Inward Entry', counts.pending||0,'var(--red)'],
           ['partial','Partially Received', counts.partial||0,'#e9a44e'],
           ['received','Fully Received', counts.received||0,'#2a9d8f']].map(([key, label, val, color]) => (
           <div key={key} className={`stat${filter === key ? ' teal' : ''}`}
@@ -147,7 +151,7 @@ export default function PoMatching() {
                           borderRadius: 20, background: STATUS_COLOR[po.status] + '22',
                           color: STATUS_COLOR[po.status],
                         }}>
-                          {STATUS_LABEL[po.status]}
+                          {po.statusLabel || STATUS_LABEL[po.status]}
                         </span>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
@@ -156,7 +160,7 @@ export default function PoMatching() {
                             className="btn btn-sm btn-in"
                             onClick={() => goToInward(po)}
                           >
-                            Receive items
+                            Pending Inward Entry
                           </button>
                         )}
                       </td>

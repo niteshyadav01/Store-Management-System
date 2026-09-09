@@ -540,7 +540,7 @@ export default function InwardEntry() {
   const [manualRows, setManualRows] = useState([emptyManualRow()]);
 
   // ── PR → Inward hand-off ───────────────────────────────────────────────
-  // The Purchase Request page's "Receive items" button navigates here with
+  // The Purchase Request page's "Pending Inward Entry" button navigates here with
   // `state: { presetPo, prNumber, prPoNumbers }`. We wait until poList has
   // loaded (so the preset PO actually exists as a searchable option), apply
   // it once, show a small banner, then clear the navigation state.

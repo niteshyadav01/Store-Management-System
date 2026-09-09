@@ -63,6 +63,395 @@ function formatDateTimeDMY(input) {
   return `${d}/${m}/${y}, ${hours}:${minutes} ${ampm}`;
 }
 
+const EMPTY_COL_FILTERS = {
+  prNumber: [],
+  date: [],
+  projectName: [],
+  requestFrom: [],
+  requestedBy: [],
+  items: [],
+  status: [],
+};
+
+// ── Excel-style dropdown filter (same pattern as Live Stock / Job Order) ─────
+function ColFilter({ values, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pending, setPending] = useState([]);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef();
+  const panelRef = useRef();
+
+  useEffect(() => {
+    if (open) setPending(selected);
+  }, [open]); // eslint-disable-line
+
+  useEffect(() => {
+    function handler(e) {
+      if (
+        panelRef.current &&
+        !panelRef.current.contains(e.target) &&
+        btnRef.current &&
+        !btnRef.current.contains(e.target)
+      )
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onScroll(e) {
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  function handleOpen() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const panelW = Math.min(320, window.innerWidth - 16);
+      const panelH = 360;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      let top = spaceBelow < panelH ? rect.top - panelH - 4 : rect.bottom + 4;
+      let left = rect.left;
+      left = Math.min(left, window.innerWidth - panelW - 12);
+      left = Math.max(left, 12);
+      top = Math.min(top, window.innerHeight - panelH - 12);
+      top = Math.max(top, 12);
+      setPos({ top, left });
+    }
+    setOpen((v) => !v);
+  }
+
+  const unique = [...new Set(values.filter(Boolean))];
+  const toNum = (v) => {
+    const c = String(v).replace(/[^0-9.\-]/g, "");
+    return c === "" || c === "-" ? NaN : parseFloat(c);
+  };
+  const isNum = unique.every((v) => !isNaN(toNum(v)));
+  unique.sort((a, b) =>
+    isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)),
+  );
+
+  const filtered = unique.filter((v) =>
+    String(v).toLowerCase().includes(search.toLowerCase()),
+  );
+  const allSelected = pending.length === unique.length && unique.length > 0;
+  const someSelected = pending.length > 0 && pending.length < unique.length;
+
+  function toggle(val) {
+    setPending((prev) =>
+      prev.includes(val) ? prev.filter((s) => s !== val) : [...prev, val],
+    );
+  }
+  function toggleAll() {
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
+  }
+  function handleApply() {
+    onChange(pending);
+    setOpen(false);
+  }
+  function handleClear() {
+    setPending([]);
+    onChange([]);
+    setOpen(false);
+  }
+
+  const hasChanges =
+    JSON.stringify(pending.slice().sort()) !==
+    JSON.stringify(selected.slice().sort());
+
+  const panel = (
+    <div
+      ref={panelRef}
+      style={{
+        position: "fixed",
+        top: pos.top,
+        left: pos.left,
+        zIndex: 99999,
+        background: "#fff",
+        border: "1px solid var(--line)",
+        borderRadius: 10,
+        boxShadow: "0 8px 32px rgba(0,0,0,.18)",
+        width: "min(320px, calc(100vw - 16px))",
+        maxWidth: 320,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <input
+          autoFocus
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: "7px 10px",
+            fontSize: 13,
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            fontFamily: "Inter, Poppins, sans-serif",
+            outline: "none",
+            background: "#fafaf8",
+            color: "var(--ink)",
+            boxSizing: "border-box",
+          }}
+          onFocus={(e) => (e.target.style.borderColor = "var(--teal)")}
+          onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
+        />
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          style={{
+            flexShrink: 0,
+            width: 26,
+            height: 26,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 15,
+            color: "#8a8270",
+            borderRadius: 5,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        onClick={toggleAll}
+        style={{
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+          background: someSelected
+            ? "#fffbf0"
+            : allSelected
+              ? "var(--teal-light)"
+              : undefined,
+        }}
+      >
+        <input
+          type="checkbox"
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected;
+          }}
+          checked={allSelected}
+          onChange={toggleAll}
+          style={{
+            cursor: "pointer",
+            accentColor: "var(--teal)",
+            width: 14,
+            height: 14,
+            flexShrink: 0,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <span
+          style={{
+            fontSize: 12.5,
+            fontStyle: "italic",
+            color: "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {someSelected
+            ? `${pending.length} of ${unique.length} selected`
+            : allSelected
+              ? "All selected"
+              : "(Select all)"}
+        </span>
+        {pending.length > 0 && (
+          <span
+            style={{
+              marginLeft: "auto",
+              flexShrink: 0,
+              fontSize: 11,
+              background: someSelected ? "var(--amber)" : "var(--teal)",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "1px 7px",
+              fontWeight: 600,
+            }}
+          >
+            {pending.length}
+          </span>
+        )}
+      </div>
+      <div style={{ maxHeight: 200, overflowY: "auto" }}>
+        {filtered.map((v) => (
+          <div
+            key={v}
+            onClick={() => toggle(v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 14px",
+              cursor: "pointer",
+              fontSize: 13,
+              fontFamily: "Inter, Poppins, sans-serif",
+              background: pending.includes(v) ? "var(--teal-light)" : undefined,
+              transition: "background 100ms",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={pending.includes(v)}
+              onChange={() => toggle(v)}
+              style={{
+                cursor: "pointer",
+                accentColor: "var(--teal)",
+                width: 14,
+                height: 14,
+                flexShrink: 0,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {v}
+            </span>
+          </div>
+        ))}
+        {!filtered.length && (
+          <div
+            style={{
+              padding: "12px 14px",
+              fontSize: 12.5,
+              color: "var(--text-3)",
+              textAlign: "center",
+            }}
+          >
+            No results
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 12px",
+          borderTop: "1px solid var(--line)",
+          background: "var(--paper-dim)",
+        }}
+      >
+        <button
+          type="button"
+          onClick={handleClear}
+          style={{
+            flex: 1,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: "#fff",
+            fontFamily: "Inter, Poppins, sans-serif",
+            color: "var(--ink)",
+          }}
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          onClick={handleApply}
+          style={{
+            flex: 2,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: hasChanges ? "var(--teal)" : "var(--paper-dim)",
+            color: hasChanges ? "#fff" : "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            fontWeight: 600,
+          }}
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleOpen();
+        }}
+        style={{
+          background: selected.length > 0 ? "var(--teal)" : "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "2px 6px",
+          borderRadius: 4,
+          fontSize: 10,
+          color: selected.length > 0 ? "#fff" : "#8a8270",
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+        title={
+          selected.length > 0 ? `${selected.length} filter(s) active` : "Filter"
+        }
+      >
+        ▼
+      </button>
+      {open && createPortal(panel, document.body)}
+    </>
+  );
+}
+
+function ThFilter({ label, values, selected, onChange }) {
+  return (
+    <span
+      style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {label}{" "}
+      <ColFilter values={values} selected={selected} onChange={onChange} />
+    </span>
+  );
+}
+
 // ── Searchable select component (portal-based, never clipped) ─────────────────
 function SearchSelect({ options, value, onChange, placeholder }) {
   const [search, setSearch] = useState('');
@@ -173,6 +562,8 @@ export default function PurchaseRequest() {
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [colFilters, setColFilters] = useState(EMPTY_COL_FILTERS);
+  const [materialSearch, setMaterialSearch] = useState("");
 
   const [stockMap, setStockMap] = useState({});
 
@@ -409,13 +800,14 @@ export default function PurchaseRequest() {
       const byName = {};
       for (const po of pos || []) {
         for (const it of po.items || []) {
-          if (!byName[it.name]) byName[it.name] = { orderedQty: 0, expectedDates: [], poNumbers: [] };
-          byName[it.name].orderedQty += parseFloat(it.orderedQty) || 0;
-          if (po.poExpectedDate && !byName[it.name].expectedDates.includes(po.poExpectedDate)) {
-            byName[it.name].expectedDates.push(po.poExpectedDate);
+          const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+          if (!byName[key]) byName[key] = { orderedQty: 0, expectedDates: [], poNumbers: [] };
+          byName[key].orderedQty += parseFloat(it.orderedQty) || 0;
+          if (po.poExpectedDate && !byName[key].expectedDates.includes(po.poExpectedDate)) {
+            byName[key].expectedDates.push(po.poExpectedDate);
           }
-          if (po.poNumber && !byName[it.name].poNumbers.includes(po.poNumber)) {
-            byName[it.name].poNumbers.push(po.poNumber);
+          if (po.poNumber && !byName[key].poNumbers.includes(po.poNumber)) {
+            byName[key].poNumbers.push(po.poNumber);
           }
         }
       }
@@ -461,7 +853,7 @@ export default function PurchaseRequest() {
 
   // Once every item on an "ordered" PR has been fully inward-received,
   // auto-flip its status to "received" — this is what makes the
-  // "Mark received"/"Receive items" button disappear on its own.
+  // "Pending Inward Entry" button disappear on its own.
   useEffect(() => {
     requests
       .filter((pr) => pr.status === "ordered")
@@ -487,12 +879,134 @@ export default function PurchaseRequest() {
     }
   }
 
-  const visible =
+  function prHasMaterial(pr, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return true;
+    return (pr.items || []).some((it) =>
+      String(it.name || "")
+        .toLowerCase()
+        .includes(q),
+    );
+  }
+
+  function matchingMaterialItems(pr, query) {
+    const q = String(query || "").trim().toLowerCase();
+    if (!q) return [];
+    return (pr.items || []).filter((it) =>
+      String(it.name || "")
+        .toLowerCase()
+        .includes(q),
+    );
+  }
+
+  // For a PR + material search: Ordered / Partial / Not ordered / Rejected / …
+  function getMaterialOrderLabel(pr, query) {
+    const items = matchingMaterialItems(pr, query);
+    if (!items.length) return "—";
+    if (pr.status === "rejected") return "Rejected";
+    if (pr.status === "pending" || pr.status === "approved") return "Not ordered";
+    if (pr.status === "received") return "Ordered";
+
+    // partial / ordered — need PO line qty when available
+    if (!poDataByPr[pr._id]) {
+      if (poDataLoading[pr._id]) return "…";
+      if (pr.status === "ordered") return "Ordered";
+      if (pr.status === "partial") return "Partial";
+      return "Not ordered";
+    }
+
+    const byName = poDataByPr[pr._id].byName || {};
+    let anyOrdered = false;
+    let allCovered = true;
+    for (const it of items) {
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      const ordered =
+        byName[key]?.orderedQty ||
+        byName[it.name]?.orderedQty ||
+        0;
+      const qty = parseFloat(it.qty) || 0;
+      if (ordered > 0.00001) anyOrdered = true;
+      if (ordered < qty - 0.00001) allCovered = false;
+    }
+    if (!anyOrdered) return "Not ordered";
+    if (allCovered) return "Ordered";
+    return "Partial";
+  }
+
+  const statusScoped =
     statusFilter === "all"
       ? requests
       : requests.filter((r) => r.status === statusFilter);
+
+  const materialQ = materialSearch.trim();
+
+  const visible = statusScoped.filter((pr) => {
+    if (materialQ && !prHasMaterial(pr, materialQ)) return false;
+    if (
+      colFilters.prNumber.length &&
+      !colFilters.prNumber.includes(pr.prNumber)
+    )
+      return false;
+    if (
+      colFilters.date.length &&
+      !colFilters.date.includes(formatDDMMYYYY(pr.date))
+    )
+      return false;
+    if (
+      colFilters.projectName.length &&
+      !colFilters.projectName.includes(pr.projectName || "—")
+    )
+      return false;
+    if (
+      colFilters.requestFrom.length &&
+      !colFilters.requestFrom.includes(pr.requestFrom || "—")
+    )
+      return false;
+    if (
+      colFilters.requestedBy.length &&
+      !colFilters.requestedBy.includes(pr.requestedByName)
+    )
+      return false;
+    if (
+      colFilters.items.length &&
+      !colFilters.items.includes(String((pr.items || []).length))
+    )
+      return false;
+    if (
+      colFilters.status.length &&
+      !colFilters.status.includes(STATUS_LABEL[pr.status] || pr.status)
+    )
+      return false;
+    return true;
+  });
+
   const { pageItems, page, pageSize, total, setPage, setPageSize } =
     useClientPagination(visible, 25);
+
+  const hasColFilters = Object.values(colFilters).some((v) => v.length > 0);
+  const hasListFilters = hasColFilters || !!materialQ;
+
+  function clearListFilters() {
+    setColFilters(EMPTY_COL_FILTERS);
+    setMaterialSearch("");
+  }
+
+  // When searching a material, preload PO data so "Ordered / Not ordered" is accurate.
+  useEffect(() => {
+    if (!materialQ) return;
+    const ids = visible
+      .filter((pr) =>
+        ["partial", "ordered", "received"].includes(pr.status),
+      )
+      .map((pr) => pr._id);
+    ids.forEach((id) => {
+      const pr = requests.find((r) => r._id === id);
+      if (pr && !poDataByPr[id] && !poDataLoading[id]) {
+        loadPoDataForPr(pr);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialQ, visible.length, statusFilter]);
 
   return (
     <>
@@ -835,12 +1349,32 @@ export default function PurchaseRequest() {
       )}
 
       <div className="card">
-        <h3>
-          {canReview ? "All requests" : "My requests"}{" "}
-          <span className="pill-count">{visible.length}</span>
-        </h3>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <h3 style={{ margin: 0 }}>
+            {canReview ? "All requests" : "My requests"}{" "}
+            <span className="pill-count">{visible.length}</span>
+          </h3>
+          {hasListFilters && (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={clearListFilters}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
 
-        <div style={{ marginTop: -6, marginBottom: 14, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ marginTop: -2, marginBottom: 14, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", paddingBottom: 2 }}>
             {STATUS_TABS.map((s) => (
               <button
@@ -855,17 +1389,148 @@ export default function PurchaseRequest() {
           </div>
         </div>
 
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 10,
+            alignItems: "flex-end",
+            marginBottom: 14,
+          }}
+        >
+          <label
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              minWidth: 260,
+              flex: "1 1 260px",
+            }}
+          >
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "var(--text-3)",
+              }}
+            >
+              Search material
+            </span>
+            <input
+              value={materialSearch}
+              onChange={(e) => setMaterialSearch(e.target.value)}
+              placeholder="Material name — see if ordered on each PR…"
+              style={{
+                height: 40,
+                padding: "8px 12px",
+                border: "1px solid var(--line)",
+                borderRadius: 8,
+                fontSize: 13.5,
+                fontFamily: "inherit",
+                boxSizing: "border-box",
+                width: "100%",
+              }}
+            />
+          </label>
+          {materialQ && (
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12.5,
+                color: "var(--text-3)",
+                flex: "1 1 200px",
+                lineHeight: 1.4,
+              }}
+            >
+              Showing PRs that include this material, with order status per request.
+            </p>
+          )}
+        </div>
+
         <div className="tablewrap">
           <table>
-            <thead>
+            <thead
+              style={{
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
+                background: "var(--paper-dim)",
+              }}
+            >
               <tr>
-                <th>PR No</th>
-                <th>Date</th>
-                <th>Project Name</th>
-                <th>Request From</th>
-                <th>Requested by</th>
-                <th>Items</th>
-                <th>Status</th>
+                <th>
+                  <ThFilter
+                    label="PR No"
+                    values={statusScoped.map((p) => p.prNumber)}
+                    selected={colFilters.prNumber}
+                    onChange={(v) =>
+                      setColFilters((f) => ({ ...f, prNumber: v }))
+                    }
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Date"
+                    values={statusScoped.map((p) => formatDDMMYYYY(p.date))}
+                    selected={colFilters.date}
+                    onChange={(v) => setColFilters((f) => ({ ...f, date: v }))}
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Project Name"
+                    values={statusScoped.map((p) => p.projectName || "—")}
+                    selected={colFilters.projectName}
+                    onChange={(v) =>
+                      setColFilters((f) => ({ ...f, projectName: v }))
+                    }
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Request From"
+                    values={statusScoped.map((p) => p.requestFrom || "—")}
+                    selected={colFilters.requestFrom}
+                    onChange={(v) =>
+                      setColFilters((f) => ({ ...f, requestFrom: v }))
+                    }
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Requested by"
+                    values={statusScoped.map((p) => p.requestedByName)}
+                    selected={colFilters.requestedBy}
+                    onChange={(v) =>
+                      setColFilters((f) => ({ ...f, requestedBy: v }))
+                    }
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Items"
+                    values={statusScoped.map((p) =>
+                      String((p.items || []).length),
+                    )}
+                    selected={colFilters.items}
+                    onChange={(v) => setColFilters((f) => ({ ...f, items: v }))}
+                  />
+                </th>
+                <th>
+                  <ThFilter
+                    label="Status"
+                    values={statusScoped.map(
+                      (p) => STATUS_LABEL[p.status] || p.status,
+                    )}
+                    selected={colFilters.status}
+                    onChange={(v) =>
+                      setColFilters((f) => ({ ...f, status: v }))
+                    }
+                  />
+                </th>
+                {materialQ && <th>Material order</th>}
                 <th></th>
               </tr>
             </thead>
@@ -875,6 +1540,17 @@ export default function PurchaseRequest() {
                 const canEditThis = isOwner || user?.role === "admin" || user?.role === "store_manager";
                 const isPartial = pr.status === "partial";
                 const receivedByName = getReceivedByName(pr);
+                const materialOrderLabel = materialQ
+                  ? getMaterialOrderLabel(pr, materialQ)
+                  : null;
+                const matchedNames = materialQ
+                  ? [
+                      ...new Set(
+                        matchingMaterialItems(pr, materialQ).map((it) => it.name),
+                      ),
+                    ]
+                  : [];
+                const colSpan = materialQ ? 9 : 8;
                 return (
                   <React.Fragment key={pr._id}>
                     <tr
@@ -891,6 +1567,56 @@ export default function PurchaseRequest() {
                         <span className={`tag ${pr.status}`}>{STATUS_LABEL[pr.status]}</span>
                         {isPartial && <span className="partial-badge">Partially Ordered</span>}
                       </td>
+                      {materialQ && (
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: "3px 10px",
+                              borderRadius: 12,
+                              background:
+                                materialOrderLabel === "Ordered"
+                                  ? "#e6f2f0"
+                                  : materialOrderLabel === "Partial"
+                                    ? "#fef3c7"
+                                    : materialOrderLabel === "Not ordered"
+                                      ? "#fde8e8"
+                                      : "var(--paper-dim)",
+                              color:
+                                materialOrderLabel === "Ordered"
+                                  ? "var(--teal-dark)"
+                                  : materialOrderLabel === "Partial"
+                                    ? "#92400e"
+                                    : materialOrderLabel === "Not ordered"
+                                      ? "var(--red)"
+                                      : "var(--text-3)",
+                            }}
+                            title={
+                              matchedNames.length
+                                ? matchedNames.join(", ")
+                                : undefined
+                            }
+                          >
+                            {materialOrderLabel}
+                          </span>
+                          {matchedNames.length > 0 && (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--text-3)",
+                                marginTop: 4,
+                                maxWidth: 180,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {matchedNames.join(", ")}
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td onClick={(e) => e.stopPropagation()}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                           {pr.status === "pending" && canEditThis && (
@@ -906,10 +1632,10 @@ export default function PurchaseRequest() {
                             </>
                           )}
                           {canReview && (pr.status === "approved" || pr.status === "partial") && (user?.role === 'admin' || user?.role === 'purchase') && (
-                            <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Create PO</button>
+                            <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Pending Create PO</button>
                           )}
                           {canReview && pr.status === "ordered" && (
-                            <button className="btn btn-sm btn-in" onClick={() => goToInward(pr)}>Receive items</button>
+                            <button className="btn btn-sm btn-in" onClick={() => goToInward(pr)}>Pending Inward Entry</button>
                           )}
                         </div>
                       </td>
@@ -917,7 +1643,7 @@ export default function PurchaseRequest() {
 
                     {expanded === pr._id && (
                       <tr>
-                        <td colSpan={8} style={{ background: "var(--paper-dim)" }}>
+                        <td colSpan={colSpan} style={{ background: "var(--paper-dim)" }}>
                           <div style={{ padding: "14px 6px" }}>
                             {(pr.status === "partial" || pr.status === "ordered" || pr.status === "received") && poDataLoading[pr._id] && (
                               <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "0 0 8px" }}>Loading PO data…</p>
@@ -952,7 +1678,10 @@ export default function PurchaseRequest() {
                                     const stock = stockMap[it.name] ?? null;
                                     const isLow = stock !== null && stock < it.qty;
                                     const showOrderTracking = pr.status === "partial" || pr.status === "ordered" || pr.status === "received";
-                                    const poInfo = poDataByPr[pr._id]?.byName?.[it.name];
+                                    const poInfo =
+                                      poDataByPr[pr._id]?.byName?.[
+                                        `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`
+                                      ];
                                     const orderedQty = poInfo?.orderedQty || 0;
                                     const balance = Math.max(0, (parseFloat(it.qty) || 0) - orderedQty);
                                     const itemPartial = showOrderTracking && orderedQty > 0 && balance > 0;
@@ -960,8 +1689,22 @@ export default function PurchaseRequest() {
                                     const poLoading = !!poDataLoading[pr._id];
                                     const receivedQty = receivedByName[it.name] || 0;
                                     const pendingReceipt = Math.max(0, (parseFloat(it.qty) || 0) - receivedQty);
+                                    const matchesMaterial =
+                                      materialQ &&
+                                      String(it.name || "")
+                                        .toLowerCase()
+                                        .includes(materialQ.toLowerCase());
                                     return (
-                                      <tr key={i} style={itemPartial ? { background: 'rgba(217,119,6,0.08)' } : undefined}>
+                                      <tr
+                                        key={i}
+                                        style={
+                                          matchesMaterial
+                                            ? { background: "rgba(0,128,128,0.10)" }
+                                            : itemPartial
+                                              ? { background: "rgba(217,119,6,0.08)" }
+                                              : undefined
+                                        }
+                                      >
                                         <td>
                                           {it.name}
                                           {itemPartial && <span className="partial-badge">Partial</span>}
@@ -1071,8 +1814,12 @@ export default function PurchaseRequest() {
 
         {!visible.length && (
           <div className="empty">
-            No purchase requests{statusFilter !== "all" ? ` with status "${STATUS_LABEL[statusFilter]}"` : ""}.
-            {canCreate && <p>Use the form above to raise your first request.</p>}
+            {hasListFilters
+              ? "No purchase requests match these filters."
+              : `No purchase requests${statusFilter !== "all" ? ` with status "${STATUS_LABEL[statusFilter]}"` : ""}.`}
+            {!hasListFilters && canCreate && (
+              <p>Use the form above to raise your first request.</p>
+            )}
           </div>
         )}
       </div>

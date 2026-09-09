@@ -10,12 +10,20 @@ const ALLOWED_ROLES = ['admin', 'purchase'];
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
+// Same material can appear on a PR multiple times for different projects.
+// Always key remaining/ordered qty by name + project so lines don't collide.
+function itemLineKey(name, projectName) {
+  return `${String(name || '').trim()}||${String(projectName || '').trim()}`;
+}
+
 async function orderedQtyMap(prId) {
   const pos = await PurchaseOrder.find({ prId }).lean();
   const map = {};
   for (const po of pos)
-    for (const it of (po.items || []))
-      map[it.name] = (map[it.name] || 0) + (it.orderedQty || 0);
+    for (const it of (po.items || [])) {
+      const key = itemLineKey(it.name, it.projectName);
+      map[key] = (map[key] || 0) + (it.orderedQty || 0);
+    }
   return map;
 }
 
@@ -36,8 +44,12 @@ async function syncPrStatus(prId, { note, byName, byUsername } = {}) {
   if (!pr) return null;
 
   const updatedOrdered = await orderedQtyMap(prId);
-  const fullyCovered = pr.items.every(it => (updatedOrdered[it.name] ?? 0) >= it.qty - 0.00001);
-  const anyOrdered   = pr.items.some(it => (updatedOrdered[it.name] ?? 0) > 0.00001);
+  const fullyCovered = pr.items.every(it =>
+    (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) >= it.qty - 0.00001
+  );
+  const anyOrdered = pr.items.some(it =>
+    (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) > 0.00001
+  );
 
   pr.status = fullyCovered ? 'ordered' : anyOrdered ? 'partial' : 'approved';
   if (note) {
@@ -143,11 +155,19 @@ router.get('/po-matching', authMiddleware, async (req, res) => {
       });
       const fullyReceived    = items.every(it => it.pendingQty  <= 0.00001);
       const partiallyReceived = !fullyReceived && items.some(it => it.receivedQty > 0);
+      const status = fullyReceived ? 'received' : partiallyReceived ? 'partial' : 'pending';
       return {
         _id: po._id, poNumber: po.poNumber, poDate: po.poDate,
         poExpectedDate: po.poExpectedDate || '', prNumber: po.prNumber,
         vendorName: po.vendorName, createdByName: po.createdByName, items,
-        status: fullyReceived ? 'received' : partiallyReceived ? 'partial' : 'pending',
+        status,
+        // Display labels used by PO Matching UI
+        statusLabel:
+          status === 'received'
+            ? 'Fully Received'
+            : status === 'partial'
+              ? 'Partially Received'
+              : 'Pending Inward Entry',
       };
     });
     res.json(result);
@@ -221,7 +241,11 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     if (!['approved', 'partial', 'ordered'].includes(pr.status))
       return res.status(400).json({ error: `Cannot create a PO for a PR with status "${pr.status}".` });
 
-    const prQtyMap      = Object.fromEntries(pr.items.map(it => [it.name, it.qty]));
+    const prQtyMap = {};
+    for (const it of pr.items || []) {
+      const key = itemLineKey(it.name, it.projectName);
+      prQtyMap[key] = (prQtyMap[key] || 0) + (parseFloat(it.qty) || 0);
+    }
     const alreadyOrdered = await orderedQtyMap(prId);
 
     const cleanItems = [];
@@ -230,13 +254,19 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
       const orderedQty = parseFloat(it.orderedQty);
       if (!name || !orderedQty || orderedQty <= 0) continue;
 
-      const remaining = (prQtyMap[name] ?? 0) - (alreadyOrdered[name] ?? 0);
+      const lineProject = String(it.projectName || projectName || '').trim();
+      const key = itemLineKey(name, lineProject);
+      const remaining = (prQtyMap[key] ?? 0) - (alreadyOrdered[key] ?? 0);
       if (orderedQty > remaining + 0.00001)
         return res.status(400).json({ error: `"${name}": qty (${orderedQty}) exceeds remaining (${remaining}).` });
 
+      // Count this line toward remaining for later lines in the same request
+      // (same material + project must not over-order within one PO).
+      alreadyOrdered[key] = (alreadyOrdered[key] || 0) + orderedQty;
+
       cleanItems.push({
         name, code: it.code || '', category: it.category || '', uom: it.uom || '',
-        projectName: it.projectName || projectName || '',
+        projectName: lineProject,
         orderedQty, price: parseFloat(it.price) || 0, remarks: it.remarks || '',
       });
     }
@@ -260,7 +290,9 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     });
 
     const updatedOrdered = await orderedQtyMap(prId);
-    const fullyCovered   = pr.items.every(it => (updatedOrdered[it.name] ?? 0) >= it.qty - 0.00001);
+    const fullyCovered = pr.items.every(it =>
+      (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) >= it.qty - 0.00001
+    );
 
     if (fullyCovered) {
       pr.status = 'ordered'; pr.poNumber = cleanPoNumber;

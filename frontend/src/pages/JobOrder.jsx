@@ -1,9 +1,371 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "../context/AuthContext";
 import { todayStr } from "../utils/helpers";
 import { unwrapList } from "../api/api";
 import Pagination from "../components/Pagination";
 import useClientPagination from "../hooks/useClientPagination";
+
+// ── Excel-style dropdown filter (same pattern as Live Stock) ──────────────────
+function ColFilter({ values, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pending, setPending] = useState([]);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef();
+  const panelRef = useRef();
+
+  useEffect(() => {
+    if (open) setPending(selected);
+  }, [open]); // eslint-disable-line
+
+  useEffect(() => {
+    function handler(e) {
+      if (
+        panelRef.current &&
+        !panelRef.current.contains(e.target) &&
+        btnRef.current &&
+        !btnRef.current.contains(e.target)
+      )
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onScroll(e) {
+      if (panelRef.current && panelRef.current.contains(e.target)) return;
+      setOpen(false);
+    }
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
+
+  function handleOpen() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const panelW = Math.min(320, window.innerWidth - 16);
+      const panelH = 360;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      let top = spaceBelow < panelH ? rect.top - panelH - 4 : rect.bottom + 4;
+      let left = rect.left;
+      left = Math.min(left, window.innerWidth - panelW - 12);
+      left = Math.max(left, 12);
+      top = Math.min(top, window.innerHeight - panelH - 12);
+      top = Math.max(top, 12);
+      setPos({ top, left });
+    }
+    setOpen((v) => !v);
+  }
+
+  const unique = [...new Set(values.filter(Boolean))];
+  const toNum = (v) => {
+    const c = String(v).replace(/[^0-9.\-]/g, "");
+    return c === "" || c === "-" ? NaN : parseFloat(c);
+  };
+  const isNum = unique.every((v) => !isNaN(toNum(v)));
+  unique.sort((a, b) =>
+    isNum ? toNum(a) - toNum(b) : String(a).localeCompare(String(b)),
+  );
+
+  const filtered = unique.filter((v) =>
+    String(v).toLowerCase().includes(search.toLowerCase()),
+  );
+  const allSelected = pending.length === unique.length && unique.length > 0;
+  const someSelected = pending.length > 0 && pending.length < unique.length;
+
+  function toggle(val) {
+    setPending((prev) =>
+      prev.includes(val) ? prev.filter((s) => s !== val) : [...prev, val],
+    );
+  }
+  function toggleAll() {
+    if (pending.length === unique.length) setPending([]);
+    else setPending(unique);
+  }
+  function handleApply() {
+    onChange(pending);
+    setOpen(false);
+  }
+  function handleClear() {
+    setPending([]);
+    onChange([]);
+    setOpen(false);
+  }
+
+  const hasChanges =
+    JSON.stringify(pending.slice().sort()) !==
+    JSON.stringify(selected.slice().sort());
+
+  const panel = (
+    <div
+      ref={panelRef}
+      style={{
+        position: "fixed",
+        top: pos.top,
+        left: pos.left,
+        zIndex: 99999,
+        background: "#fff",
+        border: "1px solid var(--line)",
+        borderRadius: 10,
+        boxShadow: "0 8px 32px rgba(0,0,0,.18)",
+        width: "min(320px, calc(100vw - 16px))",
+        maxWidth: 320,
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
+      <div
+        style={{
+          padding: "10px 12px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <input
+          autoFocus
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            padding: "7px 10px",
+            fontSize: 13,
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            fontFamily: "Inter, Poppins, sans-serif",
+            outline: "none",
+            background: "#fafaf8",
+            color: "var(--ink)",
+            boxSizing: "border-box",
+          }}
+          onFocus={(e) => (e.target.style.borderColor = "var(--teal)")}
+          onBlur={(e) => (e.target.style.borderColor = "var(--line)")}
+        />
+        <button
+          onClick={() => setOpen(false)}
+          style={{
+            flexShrink: 0,
+            width: 26,
+            height: 26,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 15,
+            color: "#8a8270",
+            borderRadius: 5,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      <div
+        onClick={toggleAll}
+        style={{
+          padding: "8px 14px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+          background: someSelected
+            ? "#fffbf0"
+            : allSelected
+              ? "var(--teal-light)"
+              : undefined,
+        }}
+      >
+        <input
+          type="checkbox"
+          ref={(el) => {
+            if (el) el.indeterminate = someSelected;
+          }}
+          checked={allSelected}
+          onChange={toggleAll}
+          style={{
+            cursor: "pointer",
+            accentColor: "var(--teal)",
+            width: 14,
+            height: 14,
+            flexShrink: 0,
+          }}
+          onClick={(e) => e.stopPropagation()}
+        />
+        <span
+          style={{
+            fontSize: 12.5,
+            fontStyle: "italic",
+            color: "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {someSelected
+            ? `${pending.length} of ${unique.length} selected`
+            : allSelected
+              ? "All selected"
+              : "(Select all)"}
+        </span>
+        {pending.length > 0 && (
+          <span
+            style={{
+              marginLeft: "auto",
+              flexShrink: 0,
+              fontSize: 11,
+              background: someSelected ? "var(--amber)" : "var(--teal)",
+              color: "#fff",
+              borderRadius: 10,
+              padding: "1px 7px",
+              fontWeight: 600,
+            }}
+          >
+            {pending.length}
+          </span>
+        )}
+      </div>
+      <div style={{ maxHeight: 200, overflowY: "auto" }}>
+        {filtered.map((v) => (
+          <div
+            key={v}
+            onClick={() => toggle(v)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 14px",
+              cursor: "pointer",
+              fontSize: 13,
+              fontFamily: "Inter, Poppins, sans-serif",
+              background: pending.includes(v) ? "var(--teal-light)" : undefined,
+              transition: "background 100ms",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={pending.includes(v)}
+              onChange={() => toggle(v)}
+              style={{
+                cursor: "pointer",
+                accentColor: "var(--teal)",
+                width: 14,
+                height: 14,
+                flexShrink: 0,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <span
+              style={{
+                minWidth: 0,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {v}
+            </span>
+          </div>
+        ))}
+        {!filtered.length && (
+          <div
+            style={{
+              padding: "12px 14px",
+              fontSize: 12.5,
+              color: "var(--text-3)",
+              textAlign: "center",
+            }}
+          >
+            No results
+          </div>
+        )}
+      </div>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          padding: "10px 12px",
+          borderTop: "1px solid var(--line)",
+          background: "var(--paper-dim)",
+        }}
+      >
+        <button
+          onClick={handleClear}
+          style={{
+            flex: 1,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "1.5px solid var(--line)",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: "#fff",
+            fontFamily: "Inter, Poppins, sans-serif",
+            color: "var(--ink)",
+          }}
+        >
+          Clear
+        </button>
+        <button
+          onClick={handleApply}
+          style={{
+            flex: 2,
+            fontSize: 12.5,
+            padding: "7px 0",
+            border: "none",
+            borderRadius: 6,
+            cursor: "pointer",
+            background: hasChanges ? "var(--teal)" : "var(--paper-dim)",
+            color: hasChanges ? "#fff" : "var(--text-3)",
+            fontFamily: "Inter, Poppins, sans-serif",
+            fontWeight: 600,
+          }}
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={handleOpen}
+        type="button"
+        style={{
+          background: selected.length > 0 ? "var(--teal)" : "none",
+          border: "none",
+          cursor: "pointer",
+          padding: "2px 6px",
+          borderRadius: 4,
+          fontSize: 10,
+          color: selected.length > 0 ? "#fff" : "#8a8270",
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+        title={
+          selected.length > 0 ? `${selected.length} filter(s) active` : "Filter"
+        }
+      >
+        ▼
+      </button>
+      {open && createPortal(panel, document.body)}
+    </>
+  );
+}
 
 // ── API helpers (add these to your api.js too) ────────────────────────────────
 const API = import.meta.env.VITE_API_URL
@@ -286,6 +648,26 @@ function formatDate(d) {
   if (!y || !m || !day) return String(d);
   return `${day}/${m}/${y}`;
 }
+
+function orderDispatchedQty(order) {
+  return (order.items || []).reduce((sum, it) => sum + num(it.qty), 0);
+}
+
+function orderReceivedQty(order) {
+  return (order.items || []).reduce((sum, it) => sum + num(it.receivedQty), 0);
+}
+
+const EMPTY_COL_FILTERS = {
+  challanNo: [],
+  date: [],
+  sendFrom: [],
+  sendTo: [],
+  vehicleNo: [],
+  issuedBy: [],
+  dispatchedQty: [],
+  receivedQty: [],
+  status: [],
+};
 
 // dd/mm/yyyy, hh:mm AM/PM — used for history timestamps.
 function formatDateTime(d) {
@@ -1508,18 +1890,38 @@ function deriveProcessFields(savedProcess) {
 function ProcessPicker({ value, subValue, otherValue, onSelect }) {
   const [open, setOpen] = useState(false);
   const [openSub, setOpenSub] = useState(null); // which main option's submenu is open
-  const ref = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     function onDocClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-        setOpenSub(null);
-      }
+      if (
+        btnRef.current?.contains(e.target) ||
+        menuRef.current?.contains(e.target)
+      )
+        return;
+      setOpen(false);
+      setOpenSub(null);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    function onScroll(e) {
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+      setOpenSub(null);
+    }
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [open]);
 
   const label =
     value === OTHER_PROCESS
@@ -1539,68 +1941,93 @@ function ProcessPicker({ value, subValue, otherValue, onSelect }) {
     setOpenSub((cur) => (cur === main ? null : main));
   }
 
+  function handleOpen() {
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const menuW = 240;
+      const menuH = 280;
+      let left = rect.left;
+      let top = rect.bottom + 4;
+      left = Math.min(left, window.innerWidth - menuW - 12);
+      left = Math.max(12, left);
+      if (top + menuH > window.innerHeight) {
+        top = Math.max(12, rect.top - menuH - 4);
+      }
+      setPos({ top, left });
+    }
+    setOpen((v) => !v);
+    setOpenSub(null);
+  }
+
+  const menu =
+    open &&
+    createPortal(
+      <ul
+        ref={menuRef}
+        className="jo-process-menu jo-process-menu--portal"
+        style={{ top: pos.top, left: pos.left }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {PROCESS_MAIN_OPTIONS.map((main) => {
+          const subs = PROCESS_SUBOPTIONS[main];
+          if (subs) {
+            return (
+              <li
+                key={main}
+                className={`jo-process-menu-item has-sub${openSub === main ? " is-open" : ""}`}
+                onClick={(e) => toggleSub(main, e)}
+              >
+                <span className="jo-process-menu-label">
+                  {main} <span className="jo-process-menu-arrow">▸</span>
+                </span>
+                <ul className="jo-process-submenu">
+                  {subs.map((s) => (
+                    <li
+                      key={s}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pick(main, s);
+                      }}
+                    >
+                      {s}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          }
+          return (
+            <li
+              key={main}
+              className="jo-process-menu-item"
+              onClick={() => pick(main, "")}
+            >
+              {main}
+            </li>
+          );
+        })}
+        <li
+          className="jo-process-menu-item"
+          onClick={() => pick(OTHER_PROCESS, "")}
+        >
+          Other (type your own)
+        </li>
+      </ul>,
+      document.body,
+    );
+
   return (
-    <div className="jo-process-picker" ref={ref}>
+    <div className="jo-process-picker">
       <button
+        ref={btnRef}
         type="button"
         className="jo-process-trigger"
-        onClick={() => {
-          setOpen((v) => !v);
-          setOpenSub(null);
-        }}
+        onClick={handleOpen}
       >
         <span className="jo-process-trigger-label">{label}</span>
         <span className="jo-process-caret">▾</span>
       </button>
-
-      {open && (
-        <ul className="jo-process-menu">
-          {PROCESS_MAIN_OPTIONS.map((main) => {
-            const subs = PROCESS_SUBOPTIONS[main];
-            if (subs) {
-              return (
-                <li
-                  key={main}
-                  className={`jo-process-menu-item has-sub${openSub === main ? " is-open" : ""}`}
-                  onClick={(e) => toggleSub(main, e)}
-                >
-                  <span className="jo-process-menu-label">
-                    {main} <span className="jo-process-menu-arrow">▸</span>
-                  </span>
-                  <ul className="jo-process-submenu">
-                    {subs.map((s) => (
-                      <li
-                        key={s}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          pick(main, s);
-                        }}
-                      >
-                        {s}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              );
-            }
-            return (
-              <li
-                key={main}
-                className="jo-process-menu-item"
-                onClick={() => pick(main, "")}
-              >
-                {main}
-              </li>
-            );
-          })}
-          <li
-            className="jo-process-menu-item"
-            onClick={() => pick(OTHER_PROCESS, "")}
-          >
-            Other (type your own)
-          </li>
-        </ul>
-      )}
+      {menu}
     </div>
   );
 }
@@ -2204,10 +2631,12 @@ function ReceiveModal({ order, onSave, onClose }) {
   }
 
   return (
-    <div className="jo-modal-overlay jo-modal-overlay--high" onClick={onClose}>
+    <div className="jo-modal-overlay jo-modal-overlay--high">
       <div
         className="jo-modal-panel jo-modal-panel--md"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Mark as Received ${order.srNo}`}
       >
         <div className="jo-modal-header">
           <div className="jo-modal-header-text">
@@ -2536,10 +2965,12 @@ function EditModal({ order, onSave, onClose }) {
   }
 
   return (
-    <div className="jo-modal-overlay jo-modal-overlay--high" onClick={onClose}>
+    <div className="jo-modal-overlay jo-modal-overlay--high">
       <div
         className="jo-modal-panel jo-modal-panel--lg"
-        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Edit Job Order ${order.srNo}`}
       >
         <div className="jo-modal-header">
           <div className="jo-modal-header-text">
@@ -2556,7 +2987,20 @@ function EditModal({ order, onSave, onClose }) {
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="jo-modal-form">
+        <form
+          onSubmit={handleSave}
+          className="jo-modal-form"
+          onKeyDown={(e) => {
+            // Enter in a field used to submit & close the modal mid-edit.
+            if (
+              e.key === "Enter" &&
+              e.target.tagName !== "TEXTAREA" &&
+              e.target.type !== "submit"
+            ) {
+              e.preventDefault();
+            }
+          }}
+        >
           <div className="jo-modal-body">
             {/* Header fields */}
             <div className="formgrid" style={{ marginBottom: 20 }}>
@@ -2852,7 +3296,7 @@ export default function JobOrder() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState({ text: "", ok: true });
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [colFilters, setColFilters] = useState(EMPTY_COL_FILTERS);
 
   // Form state
   const [srNo, setSrNo] = useState("");
@@ -3161,12 +3605,59 @@ export default function JobOrder() {
     partial: { bg: "#fef3c7", color: "#92400e" },
   };
 
-  const visible =
-    statusFilter === "all"
-      ? orders
-      : orders.filter((o) => o.status === statusFilter);
+  const visible = orders.filter((o) => {
+    const dispatchedQty = orderDispatchedQty(o);
+    const receivedQty = orderReceivedQty(o);
+
+    if (colFilters.challanNo.length && !colFilters.challanNo.includes(o.srNo))
+      return false;
+    if (
+      colFilters.date.length &&
+      !colFilters.date.includes(formatDate(o.date))
+    )
+      return false;
+    if (
+      colFilters.sendFrom.length &&
+      !colFilters.sendFrom.includes(o.sendFromName)
+    )
+      return false;
+    if (colFilters.sendTo.length && !colFilters.sendTo.includes(o.vendorName))
+      return false;
+    if (
+      colFilters.vehicleNo.length &&
+      !colFilters.vehicleNo.includes(o.vehicleNo)
+    )
+      return false;
+    if (
+      colFilters.issuedBy.length &&
+      !colFilters.issuedBy.includes(o.issuedBy)
+    )
+      return false;
+    if (
+      colFilters.dispatchedQty.length &&
+      !colFilters.dispatchedQty.includes(String(dispatchedQty))
+    )
+      return false;
+    if (
+      colFilters.receivedQty.length &&
+      !colFilters.receivedQty.includes(String(receivedQty))
+    )
+      return false;
+    if (
+      colFilters.status.length &&
+      !colFilters.status.includes(statusLabel(o))
+    )
+      return false;
+    return true;
+  });
   const { pageItems, page, pageSize, total, setPage, setPageSize } =
     useClientPagination(visible, 25);
+
+  const hasActiveFilters = Object.values(colFilters).some((v) => v.length > 0);
+
+  function clearJoFilters() {
+    setColFilters(EMPTY_COL_FILTERS);
+  }
 
   function OrderActionButtons({ order, hasPending }) {
     return (
@@ -3335,6 +3826,11 @@ export default function JobOrder() {
   background: #fff; border: 1px solid var(--line); border-radius: 6px;
   box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
 }
+.jo-process-menu--portal {
+  position: fixed;
+  z-index: 12000;
+  min-width: 240px;
+}
 .jo-process-menu-item {
   position: relative; padding: 6px 12px; font-size: 13px; cursor: pointer;
   display: flex; align-items: center; justify-content: space-between;
@@ -3349,6 +3845,9 @@ export default function JobOrder() {
   min-width: 220px;
   background: #fff; border: 1px solid var(--line); border-radius: 6px;
   box-shadow: var(--shadow-lg); list-style: none; margin: 0; padding: 4px 0;
+}
+.jo-process-menu--portal .jo-process-submenu {
+  z-index: 12001;
 }
 .jo-process-menu-item.has-sub.is-open > .jo-process-submenu { display: block; }
 .jo-process-submenu li { padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
@@ -3392,6 +3891,11 @@ export default function JobOrder() {
           display: flex;
           gap: 6px;
           flex-wrap: wrap;
+        }
+        .jo-th-filter {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
         }
         .jo-vendor-custom-row {
           display: flex;
@@ -3878,18 +4382,14 @@ export default function JobOrder() {
           <h3 style={{ margin: 0 }}>
             All Job Orders <span className="pill-count">{visible.length}</span>
           </h3>
-          <div className="jo-status-filters">
-            {["all", "issued", "partial", "received"].map((s) => (
-              <button
-                key={s}
-                className={`btn btn-sm ${statusFilter === s ? "btn-in" : "btn-ghost"}`}
-                onClick={() => setStatusFilter(s)}
-                style={{ textTransform: "capitalize" }}
-              >
-                {s === "all" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={clearJoFilters}
+            disabled={!hasActiveFilters}
+          >
+            Clear filters
+          </button>
         </div>
 
         {loading ? (
@@ -3897,17 +4397,125 @@ export default function JobOrder() {
         ) : (
           <div className="tablewrap jo-orders-wrap">
             <table className="jo-orders-table">
-              <thead>
+              <thead
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 2,
+                  background: "var(--paper-dim)",
+                }}
+              >
                 <tr>
-                  <th>Challan No</th>
-                  <th>Date</th>
-                  <th>Send From</th>
-                  <th>Send To</th>
-                  <th>Vehicle No</th>
-                  <th>Issued By</th>
-                  <th className="num">Dispatched Qty</th>
-                  <th className="num">Received Qty</th>
-                  <th>Status</th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Challan No{" "}
+                      <ColFilter
+                        values={orders.map((o) => o.srNo)}
+                        selected={colFilters.challanNo}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, challanNo: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Date{" "}
+                      <ColFilter
+                        values={orders.map((o) => formatDate(o.date))}
+                        selected={colFilters.date}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, date: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Send From{" "}
+                      <ColFilter
+                        values={orders.map((o) => o.sendFromName)}
+                        selected={colFilters.sendFrom}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, sendFrom: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Send To{" "}
+                      <ColFilter
+                        values={orders.map((o) => o.vendorName)}
+                        selected={colFilters.sendTo}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, sendTo: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Vehicle No{" "}
+                      <ColFilter
+                        values={orders.map((o) => o.vehicleNo)}
+                        selected={colFilters.vehicleNo}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, vehicleNo: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Issued By{" "}
+                      <ColFilter
+                        values={orders.map((o) => o.issuedBy)}
+                        selected={colFilters.issuedBy}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, issuedBy: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th className="num">
+                    <span className="jo-th-filter">
+                      Dispatched Qty{" "}
+                      <ColFilter
+                        values={orders.map((o) =>
+                          String(orderDispatchedQty(o)),
+                        )}
+                        selected={colFilters.dispatchedQty}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, dispatchedQty: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th className="num">
+                    <span className="jo-th-filter">
+                      Received Qty{" "}
+                      <ColFilter
+                        values={orders.map((o) => String(orderReceivedQty(o)))}
+                        selected={colFilters.receivedQty}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, receivedQty: v }))
+                        }
+                      />
+                    </span>
+                  </th>
+                  <th>
+                    <span className="jo-th-filter">
+                      Status{" "}
+                      <ColFilter
+                        values={orders.map((o) => statusLabel(o))}
+                        selected={colFilters.status}
+                        onChange={(v) =>
+                          setColFilters((f) => ({ ...f, status: v }))
+                        }
+                      />
+                    </span>
+                  </th>
                   <th></th>
                 </tr>
               </thead>
@@ -3915,14 +4523,8 @@ export default function JobOrder() {
                 {pageItems.map((order) => {
                   const sc =
                     STATUS_COLORS[order.status] || STATUS_COLORS.issued;
-                  const dispatchedQty = (order.items || []).reduce(
-                    (sum, it) => sum + num(it.qty),
-                    0,
-                  );
-                  const receivedQtyTotal = (order.items || []).reduce(
-                    (sum, it) => sum + num(it.receivedQty),
-                    0,
-                  );
+                  const dispatchedQty = orderDispatchedQty(order);
+                  const receivedQtyTotal = orderReceivedQty(order);
                   const pendingTotal = (order.items || []).reduce(
                     (sum, it) =>
                       sum + Math.max(0, num(it.qty) - num(it.receivedQty)),
@@ -3980,11 +4582,15 @@ export default function JobOrder() {
         )}
         {!loading && !visible.length && (
           <div className="empty">
-            No job orders yet.
-            <p>
-              Click <strong>+ New Job Order</strong> above to create your first
-              delivery challan.
-            </p>
+            {hasActiveFilters
+              ? "No job orders match these filters."
+              : "No job orders yet."}
+            {!hasActiveFilters && (
+              <p>
+                Click <strong>+ New Job Order</strong> above to create your first
+                delivery challan.
+              </p>
+            )}
           </div>
         )}
       </div>
