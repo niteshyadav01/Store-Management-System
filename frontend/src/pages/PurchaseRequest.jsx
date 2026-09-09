@@ -548,7 +548,9 @@ export default function PurchaseRequest() {
   const location = useLocation();
   const canCreate = CREATOR_ROLES.includes(user?.role);
   const canReview = APPROVER_ROLES.includes(user?.role);
-  // Store team performs inward receiving against ordered PRs
+  // Create PO: purchase/admin only — not store team
+  const canPendingCreatePO = ["admin", "purchase"].includes(user?.role);
+  // Inward: store team (+ admin)
   const canPendingInward = ["admin", "store_manager", "store"].includes(
     user?.role,
   );
@@ -1635,7 +1637,7 @@ export default function PurchaseRequest() {
                               <button className="btn-del btn-sm" onClick={() => handleReject(pr)}>Reject</button>
                             </>
                           )}
-                          {canReview && (pr.status === "approved" || pr.status === "partial") && (user?.role === 'admin' || user?.role === 'purchase') && (
+                          {canPendingCreatePO && (pr.status === "approved" || pr.status === "partial") && (
                             <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Pending Create PO</button>
                           )}
                           {canPendingInward && pr.status === "ordered" && (
