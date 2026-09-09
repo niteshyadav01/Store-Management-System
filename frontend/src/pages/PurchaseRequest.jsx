@@ -548,6 +548,10 @@ export default function PurchaseRequest() {
   const location = useLocation();
   const canCreate = CREATOR_ROLES.includes(user?.role);
   const canReview = APPROVER_ROLES.includes(user?.role);
+  // Store team performs inward receiving against ordered PRs
+  const canPendingInward = ["admin", "store_manager", "store"].includes(
+    user?.role,
+  );
 
   const [master, setMaster] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -1634,7 +1638,7 @@ export default function PurchaseRequest() {
                           {canReview && (pr.status === "approved" || pr.status === "partial") && (user?.role === 'admin' || user?.role === 'purchase') && (
                             <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Pending Create PO</button>
                           )}
-                          {canReview && pr.status === "ordered" && (
+                          {canPendingInward && pr.status === "ordered" && (
                             <button className="btn btn-sm btn-in" onClick={() => goToInward(pr)}>Pending Inward Entry</button>
                           )}
                         </div>
