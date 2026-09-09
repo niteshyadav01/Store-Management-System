@@ -3754,7 +3754,7 @@ export default function JobOrder() {
         .jo-item-row .field label {
           font-size: 11px;
           margin-bottom: 3px;
-          display: block !important; /* always visible — tablet/phone + desktop */
+          display: none; /* laptop/desktop: .jo-item-header already names columns */
           color: var(--text-3);
           font-weight: 600;
           line-height: 1.2;
@@ -3791,12 +3791,13 @@ export default function JobOrder() {
         }
         .jo-item-remove:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        /* Large tablet / small laptop: 2-col grid; drop wide header row */
+        /* Tablet / small laptop: 2-col grid — hide header, show per-field labels */
         @media (max-width: 1400px) {
           .jo-item-row {
             grid-template-columns: 1fr 1fr;
           }
           .jo-item-header { display: none !important; }
+          .jo-item-row .field label { display: block !important; }
           .jo-item-remove {
             grid-column: 1 / -1;
             width: 100%;
@@ -3808,6 +3809,7 @@ export default function JobOrder() {
         /* Phone: one field per row */
         @media (max-width: 640px) {
           .jo-item-row { grid-template-columns: 1fr; }
+          .jo-item-row .field label { display: block !important; }
           .jo-item-remove { width: 100%; height: 36px; }
         }
 
