@@ -527,7 +527,9 @@ function EditModal({ entry, master, inwardEntries, outwardEntries, onSave, onClo
 export default function OutwardEntry() {
   const { user } = useAuth();
   const OUTWARD_EDIT_ROLES = ["admin", "store", "store_manager"];
+  const BULK_DELETE_ROLES = ["admin", "store_manager"];
   const canEditDelete = OUTWARD_EDIT_ROLES.includes(user?.role);
+  const canBulkDeleteFiltered = BULK_DELETE_ROLES.includes(user?.role);
 
   const [master, setMaster] = useState([]);
   const [entries, setEntries] = useState([]);
@@ -541,6 +543,8 @@ export default function OutwardEntry() {
   const [searchText, setSearchText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const load = useCallback(async () => {
     const [m, e, i] = await Promise.all([getMaster(), getOutward(), getInward()]);
@@ -560,6 +564,55 @@ export default function OutwardEntry() {
   });
   const { pageItems, page, pageSize, total, setPage, setPageSize } =
     useClientPagination(filteredEntries, 25);
+
+  const hasDateFilter = Boolean(fromDate || toDate);
+  const showBulkSelect = canBulkDeleteFiltered && hasDateFilter;
+  const allFilteredSelected =
+    filteredEntries.length > 0 &&
+    filteredEntries.every((e) => selectedIds.has(e._id));
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [fromDate, toDate, searchText]);
+
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllFiltered() {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set());
+      return;
+    }
+    setSelectedIds(new Set(filteredEntries.map((e) => e._id)));
+  }
+
+  async function handleBulkDeleteSelected() {
+    if (!selectedIds.size) return;
+    if (
+      !window.confirm(
+        `Delete ${selectedIds.size} outward entr${selectedIds.size === 1 ? "y" : "ies"} from the filtered list?\n\nThis will affect the stock balance.`,
+      )
+    )
+      return;
+    setBulkDeleting(true);
+    try {
+      for (const id of selectedIds) {
+        await deleteOutward(id);
+      }
+      setSelectedIds(new Set());
+      await load();
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      setBulkDeleting(false);
+    }
+  }
 
   async function handleEditSave(id, data) {
     await updateOutward(id, data);
@@ -977,6 +1030,7 @@ export default function OutwardEntry() {
       </div>
 
       {/* Bulk upload */}
+      {canEditDelete && (
       <div className="card">
         <h3>Bulk upload</h3>
         <div className="uploadbox">
@@ -1019,8 +1073,10 @@ export default function OutwardEntry() {
           )}
         </div>
       </div>
+      )}
 
       {/* Manual entry form */}
+      {canEditDelete && (
       <div className="card compact-form">
         <h3>New outward entry</h3>
         <p
@@ -1292,6 +1348,7 @@ export default function OutwardEntry() {
           </div>
         </form>
       </div>
+      )}
 
       {/* All entries table */}
       <div className="card entries-section">
@@ -1396,11 +1453,49 @@ export default function OutwardEntry() {
               setSearchText("");
               setFromDate("");
               setToDate("");
+              setSelectedIds(new Set());
             }}
           >
             Clear
           </button>
+          {showBulkSelect && (
+            <>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{
+                  height: "var(--input-h)",
+                  padding: "10px 14px",
+                  fontSize: "13.5px",
+                }}
+                onClick={toggleSelectAllFiltered}
+                disabled={!filteredEntries.length || bulkDeleting}
+              >
+                {allFilteredSelected ? "Clear selection" : `Select all filtered (${filteredEntries.length})`}
+              </button>
+              <button
+                type="button"
+                className="btn-del btn-sm"
+                style={{
+                  height: "var(--input-h)",
+                  padding: "10px 14px",
+                  fontSize: "13.5px",
+                }}
+                onClick={handleBulkDeleteSelected}
+                disabled={!selectedIds.size || bulkDeleting}
+              >
+                {bulkDeleting
+                  ? "Deleting…"
+                  : `Delete selected (${selectedIds.size})`}
+              </button>
+            </>
+          )}
         </div>
+        {canBulkDeleteFiltered && !hasDateFilter && (
+          <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "0 0 10px" }}>
+            Set a From and/or To date filter to select and delete matching outward entries.
+          </p>
+        )}
         <h3>
           All outward entries{" "}
           <span className="pill-count">{filteredEntries.length || 0}</span>
@@ -1423,6 +1518,18 @@ export default function OutwardEntry() {
               }}
             >
               <tr>
+                {showBulkSelect && (
+                  <th style={{ width: 42 }}>
+                    <input
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleSelectAllFiltered}
+                      disabled={!filteredEntries.length || bulkDeleting}
+                      title="Select all filtered"
+                      aria-label="Select all filtered"
+                    />
+                  </th>
+                )}
                 <th>Date</th>
                 <th>Project</th>
                 <th>Customer PO</th>
@@ -1451,6 +1558,17 @@ export default function OutwardEntry() {
                   : null;
                 return (
                   <tr key={e._id}>
+                    {showBulkSelect && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(e._id)}
+                          onChange={() => toggleSelect(e._id)}
+                          disabled={bulkDeleting}
+                          aria-label={`Select ${e.name || e._id}`}
+                        />
+                      </td>
+                    )}
                     <td>{formatDateDMY(e.date)}</td>
                     <td>
                       {e.project || (
