@@ -148,6 +148,12 @@ export const getPoMatching = () => client.get("/purchase-orders/po-matching");
 
 export const createPurchaseOrder = (data) => client.post("/purchase-orders", data);
 
+export const resyncPrPoStatus = (prId) =>
+  client.post(`/purchase-orders/resync-status/${prId}`);
+
+export const healPendingCreatePOs = () =>
+  client.post("/purchase-orders/heal-pending");
+
 export const updatePurchaseOrder = (id, data) => client.patch(`/purchase-orders/${id}`, data);
 
 export const deletePurchaseOrder = (id) => client.delete(`/purchase-orders/${id}`);

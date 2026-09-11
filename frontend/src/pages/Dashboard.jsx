@@ -406,11 +406,11 @@ function AdminDashboard({
     const ordered = {};
     for (const po of prPos)
       for (const it of po.items || []) {
-        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || po.projectName || "").trim()}`;
         ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
       }
     return pr.items.filter((it) => {
-      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`;
       return it.qty - (ordered[key] || 0) > 0.00001;
     }).length;
   }
@@ -832,11 +832,11 @@ function PurchaseDashboard({
     const ordered = {};
     for (const po of prPos)
       for (const it of po.items || []) {
-        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || po.projectName || "").trim()}`;
         ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
       }
     return pr.items.filter((it) => {
-      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`;
       return it.qty - (ordered[key] || 0) > 0.00001;
     }).length;
   }
@@ -1173,11 +1173,11 @@ function StoreDashboard({
     const ordered = {};
     for (const po of prPos)
       for (const it of po.items || []) {
-        const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+        const key = `${String(it.name || "").trim()}||${String(it.projectName || po.projectName || "").trim()}`;
         ordered[key] = (ordered[key] || 0) + (it.orderedQty || 0);
       }
     return pr.items.filter((it) => {
-      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`;
       return it.qty - (ordered[key] || 0) > 0.00001;
     }).length;
   }

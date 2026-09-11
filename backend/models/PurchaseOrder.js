@@ -5,6 +5,9 @@ const poItemSchema = new mongoose.Schema({
   code:       { type: String, default: '' },
   category:   { type: String, default: '' },
   uom:        { type: String, default: '' },
+  // Same material can be ordered for different projects — must persist per line
+  // so remaining/coverage keys (name||projectName) stay correct.
+  projectName:{ type: String, default: '' },
   orderedQty: { type: Number, required: true, min: 0.0001 },
   price:      { type: Number, default: 0 },
   remarks:    { type: String, default: '' },

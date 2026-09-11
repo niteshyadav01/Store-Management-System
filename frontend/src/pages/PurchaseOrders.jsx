@@ -6,6 +6,7 @@ import {
   getPurchaseRequests,
   getPurchaseOrdersByPR,
   createPurchaseOrder,
+  healPendingCreatePOs,
   getPurchaseOrders,
   getInward,
   getOutward,
@@ -34,16 +35,54 @@ function itemLineKey(name, projectName) {
   return `${String(name || "").trim()}||${String(projectName || "").trim()}`;
 }
 
+function resolveProject(...parts) {
+  for (const p of parts) {
+    const s = String(p || "").trim();
+    if (s) return s;
+  }
+  return "";
+}
+
 function buildAlreadyOrderedMap(existingPOs) {
   const alreadyOrdered = {};
   for (const po of existingPOs || []) {
     for (const it of po.items || []) {
-      const key = itemLineKey(it.name, it.projectName);
+      // Prefer line project; fall back to PO header (legacy rows missing line projectName)
+      const key = itemLineKey(
+        it.name,
+        resolveProject(it.projectName, po.projectName),
+      );
       alreadyOrdered[key] =
         (alreadyOrdered[key] || 0) + (parseFloat(it.orderedQty) || 0);
     }
   }
   return alreadyOrdered;
+}
+
+function alreadyForPrLine(alreadyOrdered, pr, it) {
+  const project = resolveProject(it.projectName, pr.projectName);
+  const key = itemLineKey(it.name, project);
+  if ((alreadyOrdered[key] || 0) > 0) return alreadyOrdered[key] || 0;
+
+  const bareKey = itemLineKey(it.name, "");
+  const sameNameCount = (pr.items || []).filter(
+    (x) => String(x.name || "").trim() === String(it.name || "").trim(),
+  ).length;
+  if (sameNameCount === 1 && (alreadyOrdered[bareKey] || 0) > 0) {
+    return alreadyOrdered[bareKey] || 0;
+  }
+  return alreadyOrdered[key] || 0;
+}
+
+function prHasRemaining(pr, allPos) {
+  const prPos = (allPos || []).filter(
+    (p) => String(p.prId) === String(pr._id),
+  );
+  const alreadyOrdered = buildAlreadyOrderedMap(prPos);
+  return (pr.items || []).some((it) => {
+    const already = alreadyForPrLine(alreadyOrdered, pr, it);
+    return parseFloat(it.qty) - already > 0.00001;
+  });
 }
 
 export default function PurchaseOrders() {
@@ -104,8 +143,8 @@ export default function PurchaseOrders() {
       getOutward(),
     ]);
     const masterList = unwrapList(m);
-    setRequests(unwrapList(reqs));
-    setPoList(unwrapList(pos));
+    let requestList = unwrapList(reqs);
+    let posList = unwrapList(pos);
     const inTotals = {},
       outTotals = {};
     unwrapList(inw).forEach((e) => {
@@ -119,14 +158,33 @@ export default function PurchaseOrders() {
       map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0);
     });
     setStockMap(map);
+
+    // Heal previous stuck PRs: backfill missing PO line projects + resync status
+    try {
+      const heal = await healPendingCreatePOs();
+      if (heal?.healed > 0 || heal?.itemsFixed > 0) {
+        const [reqs2, pos2] = await Promise.all([
+          getPurchaseRequests(),
+          getPurchaseOrders(),
+        ]);
+        requestList = unwrapList(reqs2);
+        posList = unwrapList(pos2);
+      }
+    } catch {
+      /* heal is best-effort; page still loads */
+    }
+
+    setPoList(posList);
+    setRequests(requestList);
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const eligiblePRs = requests.filter((r) =>
-    ["approved", "partial"].includes(r.status),
+  const eligiblePRs = requests.filter(
+    (r) =>
+      ["approved", "partial"].includes(r.status) && prHasRemaining(r, poList),
   );
   const {
     pageItems: prPageItems,
@@ -158,8 +216,7 @@ export default function PurchaseOrders() {
       const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
       const rows = pr.items.map((it) => {
-        const key = itemLineKey(it.name, it.projectName);
-        const already = alreadyOrdered[key] || 0;
+        const already = alreadyForPrLine(alreadyOrdered, pr, it);
         const remaining = Math.max(
           0,
           parseFloat((it.qty - already).toFixed(6)),
@@ -417,8 +474,7 @@ export default function PurchaseOrders() {
 
       const rows = [];
       for (const it of pr.items) {
-        const key = itemLineKey(it.name, it.projectName);
-        const already = alreadyOrdered[key] || 0;
+        const already = alreadyForPrLine(alreadyOrdered, pr, it);
         const remaining = Math.max(
           0,
           parseFloat((it.qty - already).toFixed(6)),
@@ -431,7 +487,7 @@ export default function PurchaseOrders() {
           category: it.category || "",
           uom: it.uom || "",
           remarks: it.remarks || "",
-          projectName: it.projectName || pr.projectName || "",
+          projectName: resolveProject(it.projectName, pr.projectName),
           orderedQty: String(remaining),
           price: it.price ? String(it.price) : "",
           maxQty: remaining,
@@ -532,13 +588,14 @@ export default function PurchaseOrders() {
           category: it.category,
           uom: it.uom,
           remarks: it.remarks,
-          projectName: it.projectName || poProjectName || "",
+          projectName: resolveProject(it.projectName, poProjectName),
           orderedQty: parseFloat(it.orderedQty),
           price: parseFloat(it.price) || 0,
         })),
       });
       setMsg({ text: `✓ ${poNumber} created successfully.`, ok: true });
       setPrItemsMap({});
+      setExpandedPr(null);
       await load();
       setTimeout(resetForm, 1500);
     } catch (err) {
@@ -591,8 +648,7 @@ export default function PurchaseOrders() {
           const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
           rows = pr.items.map((it) => {
-            const key = itemLineKey(it.name, it.projectName);
-            const already = alreadyOrdered[key] || 0;
+            const already = alreadyForPrLine(alreadyOrdered, pr, it);
             const remaining = Math.max(
               0,
               parseFloat((it.qty - already).toFixed(6)),

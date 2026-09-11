@@ -806,7 +806,7 @@ export default function PurchaseRequest() {
       const byName = {};
       for (const po of pos || []) {
         for (const it of po.items || []) {
-          const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+          const key = `${String(it.name || "").trim()}||${String(it.projectName || po.projectName || "").trim()}`;
           if (!byName[key]) byName[key] = { orderedQty: 0, expectedDates: [], poNumbers: [] };
           byName[key].orderedQty += parseFloat(it.orderedQty) || 0;
           if (po.poExpectedDate && !byName[key].expectedDates.includes(po.poExpectedDate)) {
@@ -825,15 +825,30 @@ export default function PurchaseRequest() {
     }
   }
 
-  // Auto-load PO data for every "ordered" PR (not just the expanded one) so
-  // the fully-received check below has what it needs, even for rows the
-  // user hasn't opened.
+  // Auto-load PO data for ordered / approved / partial so remaining & buttons stay accurate
   useEffect(() => {
     requests
-      .filter((pr) => pr.status === "ordered" && !poDataByPr[pr._id] && !poDataLoading[pr._id])
+      .filter(
+        (pr) =>
+          ["ordered", "approved", "partial"].includes(pr.status) &&
+          !poDataByPr[pr._id] &&
+          !poDataLoading[pr._id],
+      )
       .forEach((pr) => loadPoDataForPr(pr));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requests]);
+
+  function prNeedsCreatePO(pr) {
+    if (!["approved", "partial"].includes(pr.status)) return false;
+    const data = poDataByPr[pr._id];
+    if (!data) return true; // still loading — keep button until we know
+    const byName = data.byName || {};
+    return (pr.items || []).some((it) => {
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`;
+      const ordered = byName[key]?.orderedQty || 0;
+      return (parseFloat(it.qty) || 0) - ordered > 0.00001;
+    });
+  }
 
   // Given a PR, sum actual inward entries per material name, restricted to
   // the PO number(s) linked to that PR (via poDataByPr), so inward entries
@@ -925,7 +940,7 @@ export default function PurchaseRequest() {
     let anyOrdered = false;
     let allCovered = true;
     for (const it of items) {
-      const key = `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`;
+      const key = `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`;
       const ordered =
         byName[key]?.orderedQty ||
         byName[it.name]?.orderedQty ||
@@ -1637,7 +1652,7 @@ export default function PurchaseRequest() {
                               <button className="btn-del btn-sm" onClick={() => handleReject(pr)}>Reject</button>
                             </>
                           )}
-                          {canPendingCreatePO && (pr.status === "approved" || pr.status === "partial") && (
+                          {canPendingCreatePO && prNeedsCreatePO(pr) && (
                             <button className="btn btn-sm btn-in" onClick={() => navigate("/purchase-orders")}>Pending Create PO</button>
                           )}
                           {canPendingInward && pr.status === "ordered" && (
@@ -1686,7 +1701,7 @@ export default function PurchaseRequest() {
                                     const showOrderTracking = pr.status === "partial" || pr.status === "ordered" || pr.status === "received";
                                     const poInfo =
                                       poDataByPr[pr._id]?.byName?.[
-                                        `${String(it.name || "").trim()}||${String(it.projectName || "").trim()}`
+                                        `${String(it.name || "").trim()}||${String(it.projectName || pr.projectName || "").trim()}`
                                       ];
                                     const orderedQty = poInfo?.orderedQty || 0;
                                     const balance = Math.max(0, (parseFloat(it.qty) || 0) - orderedQty);

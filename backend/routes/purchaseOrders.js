@@ -16,15 +16,40 @@ function itemLineKey(name, projectName) {
   return `${String(name || '').trim()}||${String(projectName || '').trim()}`;
 }
 
+// Prefer line project, then document/header project (legacy POs may only have header).
+function resolveProject(...parts) {
+  for (const p of parts) {
+    const s = String(p || '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
 async function orderedQtyMap(prId) {
   const pos = await PurchaseOrder.find({ prId }).lean();
   const map = {};
   for (const po of pos)
     for (const it of (po.items || [])) {
-      const key = itemLineKey(it.name, it.projectName);
+      const key = itemLineKey(it.name, resolveProject(it.projectName, po.projectName));
       map[key] = (map[key] || 0) + (it.orderedQty || 0);
     }
   return map;
+}
+
+// Resolve ordered qty for a PR line, including legacy PO lines that lost projectName
+// (stored under name||) when that material appears only once on the PR.
+function orderedForPrLine(map, pr, it) {
+  const project = resolveProject(it.projectName, pr.projectName);
+  const key = itemLineKey(it.name, project);
+  if ((map[key] || 0) > 0) return map[key] || 0;
+
+  const bareKey = itemLineKey(it.name, '');
+  const sameNameCount = (pr.items || []).filter(
+    (x) => String(x.name || '').trim() === String(it.name || '').trim()
+  ).length;
+  if (sameNameCount === 1 && (map[bareKey] || 0) > 0) return map[bareKey] || 0;
+
+  return map[key] || 0;
 }
 
 async function inwardedQtyMap(poNumbers) {
@@ -45,20 +70,72 @@ async function syncPrStatus(prId, { note, byName, byUsername } = {}) {
 
   const updatedOrdered = await orderedQtyMap(prId);
   const fullyCovered = pr.items.every(it =>
-    (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) >= it.qty - 0.00001
+    orderedForPrLine(updatedOrdered, pr, it) >= it.qty - 0.00001
   );
   const anyOrdered = pr.items.some(it =>
-    (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) > 0.00001
+    orderedForPrLine(updatedOrdered, pr, it) > 0.00001
   );
 
+  const prevStatus = pr.status;
   pr.status = fullyCovered ? 'ordered' : anyOrdered ? 'partial' : 'approved';
-  if (note) {
+  const statusChanged = prevStatus !== pr.status;
+  if (statusChanged || note) {
     pr.history.push({
-      status: pr.status, byName: byName || '', byUsername: byUsername || '', note, at: new Date(),
+      status: pr.status,
+      byName: byName || '',
+      byUsername: byUsername || '',
+      note: note || `Status corrected from "${prevStatus}" to "${pr.status}" after PO coverage resync.`,
+      at: new Date(),
     });
+    await pr.save();
   }
-  await pr.save();
   return pr;
+}
+
+// Backfill missing PO line projectName from PR / PO header, then resync PR status.
+async function healPrPoCoverage(prId) {
+  const pr = await PurchaseRequest.findById(prId);
+  if (!pr) return null;
+
+  const pos = await PurchaseOrder.find({ prId });
+  let itemsFixed = 0;
+
+  for (const po of pos) {
+    let changed = false;
+    const items = (po.items || []).map((it) => {
+      const plain = typeof it.toObject === 'function' ? it.toObject() : { ...it };
+      if (resolveProject(plain.projectName)) return plain;
+
+      const sameName = (pr.items || []).filter(
+        (x) => String(x.name || '').trim() === String(plain.name || '').trim()
+      );
+      let lineProject = '';
+      if (sameName.length === 1) {
+        lineProject = resolveProject(sameName[0].projectName, pr.projectName, po.projectName);
+      } else {
+        // Single header project (not a joined "A, B" list) is safe to apply
+        const header = resolveProject(po.projectName, pr.projectName);
+        if (header && !header.includes(',')) lineProject = header;
+      }
+
+      if (!lineProject) return plain;
+      itemsFixed += 1;
+      changed = true;
+      return { ...plain, projectName: lineProject };
+    });
+
+    if (changed) {
+      po.items = items;
+      await po.save();
+    }
+  }
+
+  const prAfter = await syncPrStatus(prId, {
+    note: itemsFixed
+      ? `Healed ${itemsFixed} PO line project(s) and resynced coverage.`
+      : undefined,
+  });
+  return { pr: prAfter, itemsFixed };
 }
 
 // Build a human-readable list of exactly what changed between the old PO
@@ -130,6 +207,56 @@ router.get('/next-number', authMiddleware, async (req, res) => {
     const counter    = await Counter.findOne({ _id: 'purchaseOrder' });
     const nextSeqNum = (counter?.seq ?? 0) + 1;
     res.json({ poNumber: `PO-${String(nextSeqNum).padStart(5, '0')}` });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Recompute PR ordered/partial/approved from existing POs (heals stuck Pending Create PO).
+router.post('/resync-status/:prId', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const result = await healPrPoCoverage(req.params.prId);
+    if (!result?.pr) return res.status(404).json({ error: 'Purchase request not found.' });
+    res.json({
+      ok: true,
+      status: result.pr.status,
+      prNumber: result.pr.prNumber,
+      itemsFixed: result.itemsFixed || 0,
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Heal all approved/partial PRs — backfill legacy PO line projects + resync status.
+router.post('/heal-pending', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res) => {
+  try {
+    const prs = await PurchaseRequest.find({
+      status: { $in: ['approved', 'partial'] },
+    }).select('_id prNumber status');
+
+    let healed = 0;
+    let itemsFixed = 0;
+    const results = [];
+
+    for (const pr of prs) {
+      const before = pr.status;
+      const result = await healPrPoCoverage(pr._id);
+      if (!result?.pr) continue;
+      itemsFixed += result.itemsFixed || 0;
+      if (result.pr.status !== before) {
+        healed += 1;
+        results.push({
+          prNumber: result.pr.prNumber,
+          from: before,
+          to: result.pr.status,
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      checked: prs.length,
+      healed,
+      itemsFixed,
+      results,
+    });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -243,7 +370,7 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
 
     const prQtyMap = {};
     for (const it of pr.items || []) {
-      const key = itemLineKey(it.name, it.projectName);
+      const key = itemLineKey(it.name, resolveProject(it.projectName, pr.projectName));
       prQtyMap[key] = (prQtyMap[key] || 0) + (parseFloat(it.qty) || 0);
     }
     const alreadyOrdered = await orderedQtyMap(prId);
@@ -254,7 +381,8 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
       const orderedQty = parseFloat(it.orderedQty);
       if (!name || !orderedQty || orderedQty <= 0) continue;
 
-      const lineProject = String(it.projectName || projectName || '').trim();
+      // Must match prQtyMap keying: line project, else PR/PO header project
+      const lineProject = resolveProject(it.projectName, projectName, pr.projectName);
       const key = itemLineKey(name, lineProject);
       const remaining = (prQtyMap[key] ?? 0) - (alreadyOrdered[key] ?? 0);
       if (orderedQty > remaining + 0.00001)
@@ -291,7 +419,7 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
 
     const updatedOrdered = await orderedQtyMap(prId);
     const fullyCovered = pr.items.every(it =>
-      (updatedOrdered[itemLineKey(it.name, it.projectName)] ?? 0) >= it.qty - 0.00001
+      orderedForPrLine(updatedOrdered, pr, it) >= it.qty - 0.00001
     );
 
     if (fullyCovered) {
@@ -354,7 +482,7 @@ router.patch('/:id', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, 
 
       cleanItems.push({
         name, code: it.code || '', category: it.category || '', uom: it.uom || '',
-        projectName: it.projectName || projectName || '',
+        projectName: resolveProject(it.projectName, projectName),
         orderedQty, price, remarks: it.remarks || '',
       });
     }
