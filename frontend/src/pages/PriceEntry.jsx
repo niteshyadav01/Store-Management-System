@@ -822,6 +822,44 @@ export default function PriceEntry() {
     );
   }
 
+  // Export currently filtered/searched table rows (not the full unfiltered list).
+  function exportFilteredToExcel() {
+    if (!filtered.length) return;
+
+    const headers = [
+      "Date",
+      "Month",
+      "Vendor",
+      "Material",
+      "Code",
+      "Category",
+      "Qty",
+      "UOM",
+      "Unit Price",
+    ];
+    const rows = filtered.map((e) => [
+      toDDMMYYYY(e.date) || "",
+      monthKeyToLabel(toMonthKey(e.date)) || "",
+      e.vendor || "",
+      e.name || "",
+      e.code || "",
+      e.category || "",
+      e.qty ?? "",
+      e.uom || "",
+      prices[e._id] === "" || prices[e._id] === undefined
+        ? (e.price ?? 0)
+        : prices[e._id],
+    ]);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    exportXlsx(
+      headers,
+      rows,
+      "Price Entry",
+      `price-entry-${dateStr}.xlsx`,
+    );
+  }
+
   return (
     <>
       <div className="pagehead">
@@ -933,6 +971,21 @@ export default function PriceEntry() {
             />
             Bulk Update
           </label>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={exportFilteredToExcel}
+            disabled={!filtered.length}
+            title="Export the currently filtered/searched results to Excel"
+            style={{
+              marginLeft: "auto",
+              whiteSpace: "nowrap",
+              opacity: filtered.length ? 1 : 0.5,
+              cursor: filtered.length ? "pointer" : "not-allowed",
+            }}
+          >
+            ⬇ Export Excel ({filtered.length})
+          </button>
         </div>
 
         {excelPreview && (

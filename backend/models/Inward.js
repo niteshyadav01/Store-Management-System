@@ -12,6 +12,7 @@ const inwardSchema = new mongoose.Schema({
   category: { type: String, default: '' },
   uom:      { type: String, default: '' },
   qty:      { type: Number, required: true },
+  gin:      { type: String, default: '' },
   by:       { type: String, default: '' },
   location: { type: String, default: '' },
   remarks:  { type: String, default: '' },

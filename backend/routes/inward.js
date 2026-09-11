@@ -9,7 +9,7 @@ const { parsePagination, paginateQuery } = require('../utils/paginate');
 const INWARD_FIELDS = [
   'date','invdate','challan','po','vendor',
   'name','type','code','category','uom',
-  'qty','by','location','remarks','price',
+  'qty','gin','by','location','remarks','price',
 ];
 
 function pickFields(body, fields) {
@@ -95,7 +95,9 @@ router.post('/', authMiddleware, requireRole('admin','store','store_manager','pu
     const data = pickFields(req.body, INWARD_FIELDS);
     if (!data.name)                             return res.status(400).json({ error: 'Material name is required.' });
     if (!data.qty || parseFloat(data.qty) <= 0) return res.status(400).json({ error: 'Valid quantity is required.' });
+    if (!data.gin || !String(data.gin).trim())  return res.status(400).json({ error: 'GIN is required.' });
     data.qty   = parseFloat(data.qty);
+    data.gin   = String(data.gin).trim();
     data.price = parseFloat(data.price) || 0;
 
     const entry = await Inward.create(data);
@@ -119,9 +121,10 @@ router.post('/bulk', authMiddleware, requireRole('admin','store','store_manager'
     const clean = entries.map(e => {
       const d = pickFields(e, INWARD_FIELDS);
       d.qty   = parseFloat(d.qty)   || 0;
+      d.gin   = d.gin != null ? String(d.gin).trim() : '';
       d.price = parseFloat(d.price) || 0;
       return d;
-    }).filter(d => d.name && d.qty > 0);
+    }).filter(d => d.name && d.qty > 0 && d.gin);
 
     if (!clean.length) return res.status(400).json({ error: 'No valid entries after validation.' });
 
@@ -155,6 +158,10 @@ router.put('/:id', authMiddleware, requireRole('admin','store','store_manager'),
   try {
     const data = pickFields(req.body, INWARD_FIELDS);
     if (data.qty   !== undefined) data.qty   = parseFloat(data.qty)   || 0;
+    if (data.gin   !== undefined) {
+      data.gin = String(data.gin || '').trim();
+      if (!data.gin) return res.status(400).json({ error: 'GIN is required.' });
+    }
     if (data.price !== undefined) data.price = parseFloat(data.price) || 0;
     const doc = await Inward.findByIdAndUpdate(
       req.params.id, { $set: data }, { new: true }

@@ -36,6 +36,7 @@ const EMPTY = {
   category: "",
   uom: "",
   qty: "",
+  gin: "",
   by: "",
   location: "",
   remarks: "",
@@ -50,6 +51,7 @@ const emptyManualRow = () => ({
   category: "",
   uom: "",
   qty: "",
+  gin: "",
   location: "",
   remarks: "",
 });
@@ -113,6 +115,7 @@ function matchesSearchText(entry, query) {
     entry?.category,
     entry?.uom,
     entry?.qty,
+    entry?.gin,
     entry?.by,
     entry?.location,
     entry?.remarks,
@@ -138,6 +141,7 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
     category: entry.category || "",
     uom: entry.uom || "",
     qty: entry.qty || "",
+    gin: entry.gin || "",
     by: entry.by || "",
     location: entry.location || "",
     remarks: entry.remarks || "",
@@ -189,11 +193,16 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
       setErr("Enter a valid quantity.");
       return;
     }
+    if (!String(form.gin || "").trim()) {
+      setErr("GIN is required.");
+      return;
+    }
     setSaving(true);
     try {
       await onSave(entry._id, {
         ...form,
         qty: parseFloat(form.qty),
+        gin: String(form.gin).trim(),
         price: parseFloat(form.price) || 0,
       });
     } catch (e) {
@@ -404,6 +413,18 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
                     setForm((f) => ({ ...f, qty: e.target.value }))
                   }
                   placeholder="0"
+                />
+              </div>
+              <div className="field">
+                <label>
+                  GIN <span style={{ color: "var(--red)" }}>*</span>
+                </label>
+                <input
+                  value={form.gin}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, gin: e.target.value }))
+                  }
+                  placeholder="GIN number"
                 />
               </div>
               <div className="field">
@@ -780,6 +801,7 @@ export default function InwardEntry() {
           uom: it.uom || mat?.uom || "",
           poQty: it.orderedQty,
           qty: String(it.orderedQty),
+          gin: "",
           location: "",
           remarks: "",
         };
@@ -861,6 +883,14 @@ export default function InwardEntry() {
         });
         return;
       }
+      const invalidGin = poRows.find((r) => !String(r.gin || "").trim());
+      if (invalidGin) {
+        setMsg({
+          text: `"${invalidGin.name}": enter GIN.`,
+          ok: false,
+        });
+        return;
+      }
       const invalidLoc = poRows.find((r) => !r.location.trim());
       if (invalidLoc) {
         setMsg({
@@ -883,6 +913,7 @@ export default function InwardEntry() {
           category: r.category,
           uom: r.uom,
           qty: parseFloat(r.qty),
+          gin: String(r.gin).trim(),
           by: receivedBy,
           location: r.location,
           remarks: r.remarks,
@@ -913,6 +944,14 @@ export default function InwardEntry() {
         });
         return;
       }
+      const missingGin = validRows.find((r) => !String(r.gin || "").trim());
+      if (missingGin) {
+        setMsg({
+          text: `"${missingGin.name}": enter GIN.`,
+          ok: false,
+        });
+        return;
+      }
       const missingLoc = validRows.find((r) => !r.location.trim());
       if (missingLoc) {
         setMsg({
@@ -936,6 +975,7 @@ export default function InwardEntry() {
           category: r.category,
           uom: r.uom,
           qty: parseFloat(r.qty),
+          gin: String(r.gin).trim(),
           location: r.location,
           remarks: r.remarks,
           price: 0,
@@ -1037,6 +1077,7 @@ export default function InwardEntry() {
           "receivedquantity",
         ]);
         const qty = parseFloat(qtyRaw);
+        const gin = pickCol(row, ["gin", "ginno", "ginnumber"]);
         const vendor = pickCol(row, ["vendorname", "vendor", "supplier"]);
         const by = pickCol(row, ["receivedby", "by"]);
         const location = pickCol(row, ["location", "rack", "warehouse"]);
@@ -1053,6 +1094,7 @@ export default function InwardEntry() {
           material: matName || "(blank)",
           vendor: vendor || "—",
           qty: qtyRaw || "—",
+          gin: gin || "—",
           po: po || "—",
           challan: challan || "—",
         };
@@ -1076,6 +1118,10 @@ export default function InwardEntry() {
             ...skipInfo,
             reason: "Qty is missing or not a valid number",
           });
+          continue;
+        }
+        if (!gin) {
+          skips.push({ ...skipInfo, reason: "GIN is blank (GIN is compulsory)" });
           continue;
         }
         if (!vendor) {
@@ -1112,6 +1158,7 @@ export default function InwardEntry() {
           category: m.category,
           uom: m.uom,
           qty,
+          gin: String(gin).trim(),
           by,
           location,
           remarks: pickCol(row, ["remarks", "notes"]),
@@ -1206,6 +1253,7 @@ export default function InwardEntry() {
         "Material",
         "Vendor",
         "Qty",
+        "GIN",
         "PO No",
         "Challan No",
         "Reason skipped",
@@ -1215,6 +1263,7 @@ export default function InwardEntry() {
         s.material,
         s.vendor,
         s.qty,
+        s.gin,
         s.po,
         s.challan,
         s.reason,
@@ -1234,6 +1283,7 @@ export default function InwardEntry() {
         "Vendor Name",
         "Material Name",
         "Qty",
+        "GIN",
         "Received By",
         "Location",
         "Remarks",
@@ -1247,6 +1297,7 @@ export default function InwardEntry() {
           "ABC Suppliers",
           "[Material Name from master]",
           "10",
+          "GIN-001",
           "Store Keeper",
           "Rack A",
           "",
@@ -1445,7 +1496,7 @@ export default function InwardEntry() {
           <div className="hint">
             Required:{" "}
             <strong>
-              Material Name, Qty, Vendor Name, Received By, Location, PO No
+              Material Name, Qty, GIN, Vendor Name, Received By, Location, PO No
             </strong>
             &nbsp;(Challan No is optional).
             <br />
@@ -1529,6 +1580,7 @@ export default function InwardEntry() {
                       <th>Challan</th>
                       <th>PO</th>
                       <th className="num">Qty</th>
+                      <th>GIN</th>
                       <th>Location</th>
                       <th>Action</th>
                     </tr>
@@ -1548,6 +1600,7 @@ export default function InwardEntry() {
                         <td className="mono">{r.challan || "—"}</td>
                         <td className="mono">{r.po || "—"}</td>
                         <td className="num">{formatNum(r.qty)}</td>
+                        <td className="mono">{r.gin || "—"}</td>
                         <td>{r.location || "—"}</td>
                         <td>
                           {r._isReplace ? (
@@ -1628,6 +1681,7 @@ export default function InwardEntry() {
                       <th>Material</th>
                       <th>Vendor</th>
                       <th className="num">Qty</th>
+                      <th>GIN</th>
                       <th>PO No</th>
                       <th>Challan No</th>
                       <th>Reason</th>
@@ -1640,6 +1694,7 @@ export default function InwardEntry() {
                         <td>{s.material}</td>
                         <td>{s.vendor}</td>
                         <td className="num">{s.qty}</td>
+                        <td className="mono">{s.gin || "—"}</td>
                         <td className="mono">{s.po}</td>
                         <td className="mono">{s.challan}</td>
                         <td style={{ color: "var(--rust-dark)" }}>
@@ -1902,7 +1957,7 @@ export default function InwardEntry() {
                   marginTop: -6,
                 }}
               >
-                Edit received qty, location and remarks per item
+                Edit received qty, GIN, location and remarks per item
               </div>
               <div className="tablewrap">
                 <table style={{ minWidth: 700 }}>
@@ -1916,6 +1971,7 @@ export default function InwardEntry() {
                       <th className="num" style={{ minWidth: 90 }}>
                         Recv Qty *
                       </th>
+                      <th style={{ minWidth: 110 }}>GIN *</th>
                       <th style={{ minWidth: 130 }}>Location *</th>
                       <th style={{ minWidth: 130 }}>Remarks</th>
                     </tr>
@@ -1940,6 +1996,16 @@ export default function InwardEntry() {
                               updatePoRow(r._key, { qty: e.target.value })
                             }
                             style={{ width: 80, textAlign: "right" }}
+                          />
+                        </td>
+                        <td style={tdS}>
+                          <input
+                            value={r.gin}
+                            onChange={(e) =>
+                              updatePoRow(r._key, { gin: e.target.value })
+                            }
+                            placeholder="GIN"
+                            style={{ width: "100%" }}
                           />
                         </td>
                         <td style={tdS}>
@@ -1984,6 +2050,7 @@ export default function InwardEntry() {
                       <th style={{ minWidth: 120 }}>Category</th>
                       <th style={{ minWidth: 70 }}>UOM</th>
                       <th style={{ minWidth: 90 }}>Qty *</th>
+                      <th style={{ minWidth: 110 }}>GIN *</th>
                       <th style={{ minWidth: 140 }}>Location *</th>
                       <th style={{ minWidth: 130 }}>Remarks</th>
                       <th></th>
@@ -2087,6 +2154,22 @@ export default function InwardEntry() {
                             style={{
                               width: 80,
                               textAlign: "right",
+                              fontSize: 13,
+                              padding: "6px 8px",
+                              border: "1px solid var(--line)",
+                              borderRadius: 6,
+                            }}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={r.gin}
+                            onChange={(e) =>
+                              updateManualRow(r._key, { gin: e.target.value })
+                            }
+                            placeholder="GIN"
+                            style={{
+                              width: "100%",
                               fontSize: 13,
                               padding: "6px 8px",
                               border: "1px solid var(--line)",
@@ -2313,6 +2396,7 @@ export default function InwardEntry() {
                 <th>Category</th>
                 <th>UOM</th>
                 <th className="num">Qty</th>
+                <th>GIN</th>
                 <th>Received by</th>
                 <th>Location</th>
                 <th>Remarks</th>
@@ -2334,6 +2418,7 @@ export default function InwardEntry() {
                   <td>{e.category}</td>
                   <td>{e.uom}</td>
                   <td className="num">{formatNum(e.qty)}</td>
+                  <td className="mono">{e.gin || "—"}</td>
                   <td>{e.by || "—"}</td>
                   <td>{e.location || "—"}</td>
                   <td>{e.remarks || "—"}</td>
