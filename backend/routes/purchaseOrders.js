@@ -434,7 +434,11 @@ router.post('/', authMiddleware, requireRole(...ALLOWED_ROLES), async (req, res)
     }
     await pr.save();
 
-    res.status(201).json(po);
+    res.status(201).json({
+      ...po.toObject(),
+      prStatus: pr.status,
+      fullyCovered: !!fullyCovered,
+    });
   } catch (err) {
     if (err.code === 11000) return res.status(409).json({ error: 'PO number collision — please retry.' });
     res.status(500).json({ error: err.message });

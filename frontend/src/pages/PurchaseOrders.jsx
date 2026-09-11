@@ -135,47 +135,56 @@ export default function PurchaseOrders() {
   const [priceSaveMsg, setPriceSaveMsg] = useState({});
 
   const load = useCallback(async () => {
-    const [m, reqs, pos, inw, out] = await Promise.all([
-      getMaster(),
-      getPurchaseRequests(),
-      getPurchaseOrders(),
-      getInward(),
-      getOutward(),
-    ]);
-    const masterList = unwrapList(m);
-    let requestList = unwrapList(reqs);
-    let posList = unwrapList(pos);
-    const inTotals = {},
-      outTotals = {};
-    unwrapList(inw).forEach((e) => {
-      inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
-    });
-    unwrapList(out).forEach((e) => {
-      outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
-    });
-    const map = {};
-    masterList.forEach((mat) => {
-      map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0);
-    });
-    setStockMap(map);
-
-    // Heal previous stuck PRs: backfill missing PO line projects + resync status
     try {
-      const heal = await healPendingCreatePOs();
-      if (heal?.healed > 0 || heal?.itemsFixed > 0) {
-        const [reqs2, pos2] = await Promise.all([
-          getPurchaseRequests(),
-          getPurchaseOrders(),
-        ]);
-        requestList = unwrapList(reqs2);
-        posList = unwrapList(pos2);
-      }
-    } catch {
-      /* heal is best-effort; page still loads */
-    }
+      const [m, reqs, pos, inw, out] = await Promise.all([
+        getMaster(),
+        getPurchaseRequests(),
+        getPurchaseOrders(),
+        getInward(),
+        getOutward(),
+      ]);
+      const masterList = unwrapList(m);
+      const requestList = unwrapList(reqs);
+      const posList = unwrapList(pos);
+      const inTotals = {},
+        outTotals = {};
+      unwrapList(inw).forEach((e) => {
+        inTotals[e.name] = (inTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+      });
+      unwrapList(out).forEach((e) => {
+        outTotals[e.name] = (outTotals[e.name] || 0) + (parseFloat(e.qty) || 0);
+      });
+      const map = {};
+      masterList.forEach((mat) => {
+        map[mat.name] = (inTotals[mat.name] || 0) - (outTotals[mat.name] || 0);
+      });
 
-    setPoList(posList);
-    setRequests(requestList);
+      // Show data immediately — never block the table on heal
+      setStockMap(map);
+      setPoList(posList);
+      setRequests(requestList);
+
+      // Heal stuck PRs in the background; refresh lists only if something changed
+      healPendingCreatePOs()
+        .then(async (heal) => {
+          if (!(heal?.healed > 0 || heal?.itemsFixed > 0)) return;
+          const [reqs2, pos2] = await Promise.all([
+            getPurchaseRequests(),
+            getPurchaseOrders(),
+          ]);
+          setRequests(unwrapList(reqs2));
+          setPoList(unwrapList(pos2));
+        })
+        .catch(() => {
+          /* heal is best-effort */
+        });
+    } catch (err) {
+      console.error("Failed to load purchase orders page:", err);
+      setMsg({
+        text: "Failed to load data: " + (err.message || "unknown error"),
+        ok: false,
+      });
+    }
   }, []);
 
   useEffect(() => {
@@ -204,6 +213,8 @@ export default function PurchaseOrders() {
   } = useClientPagination(poList, 25);
 
   // ── Load pending items for a PR in the pending section ───────────────────
+  // Only lines with remaining qty > 0 are kept. Fully ordered lines (PR Qty =
+  // Already Ordered) are dropped from Pending Create PO.
   async function loadPrItems(pr) {
     if (prItemsMap[pr._id]) {
       setExpandedPr((prev) => (prev === pr._id ? null : pr._id));
@@ -215,20 +226,33 @@ export default function PurchaseOrders() {
       const existingPOs = await getPurchaseOrdersByPR(pr._id);
       const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
-      const rows = pr.items.map((it) => {
-        const already = alreadyForPrLine(alreadyOrdered, pr, it);
-        const remaining = Math.max(
-          0,
-          parseFloat((it.qty - already).toFixed(6)),
-        );
-        return { ...it, already, remaining, price: it.price ?? "" };
-      });
+      const rows = pr.items
+        .map((it) => {
+          const already = alreadyForPrLine(alreadyOrdered, pr, it);
+          const remaining = Math.max(
+            0,
+            parseFloat((it.qty - already).toFixed(6)),
+          );
+          return { ...it, already, remaining, price: it.price ?? "" };
+        })
+        .filter((it) => it.remaining > 0.00001);
       setPrItemsMap((prev) => ({ ...prev, [pr._id]: rows }));
     } catch (err) {
       console.error(err);
     } finally {
       setPrItemsLoading((prev) => ({ ...prev, [pr._id]: false }));
     }
+  }
+
+  function remainingLinesCount(pr) {
+    if (prItemsMap[pr._id]) return prItemsMap[pr._id].length;
+    // Until expanded, estimate from poList already in memory
+    const prPos = poList.filter((p) => String(p.prId) === String(pr._id));
+    const alreadyOrdered = buildAlreadyOrderedMap(prPos);
+    return (pr.items || []).filter((it) => {
+      const already = alreadyForPrLine(alreadyOrdered, pr, it);
+      return parseFloat(it.qty) - already > 0.00001;
+    }).length;
   }
 
   // ── Expand/collapse a PO row, loading its activity log the first time ────
@@ -574,7 +598,7 @@ export default function PurchaseOrders() {
       const uniqueProjectNames = [
         ...new Set(poItems.map((it) => it.projectName).filter(Boolean)),
       ];
-      await createPurchaseOrder({
+      const created = await createPurchaseOrder({
         poNumber: poNumber.trim(),
         prNumber: selectedPr.prNumber,
         prId: selectedPr._id,
@@ -593,11 +617,17 @@ export default function PurchaseOrders() {
           price: parseFloat(it.price) || 0,
         })),
       });
-      setMsg({ text: `✓ ${poNumber} created successfully.`, ok: true });
+      const fullyCovered = !!created?.fullyCovered || created?.prStatus === "ordered";
+      setMsg({
+        text: fullyCovered
+          ? `✓ ${poNumber} created. PR ${selectedPr.prNumber} is fully ordered and removed from Pending Create PO.`
+          : `✓ ${poNumber} created. PR ${selectedPr.prNumber} still has remaining items, so it stays in Pending Create PO until all lines are ordered.`,
+        ok: true,
+      });
       setPrItemsMap({});
       setExpandedPr(null);
       await load();
-      setTimeout(resetForm, 1500);
+      setTimeout(resetForm, fullyCovered ? 1500 : 3500);
     } catch (err) {
       setMsg({ text: "Error: " + err.message, ok: false });
     } finally {
@@ -624,7 +654,7 @@ export default function PurchaseOrders() {
         pr.projectName || "",
         pr.requestFrom || "",
         pr.requestedByName || "",
-        pr.items.length,
+        remainingLinesCount(pr),
         STATUS_LABEL[pr.status] || pr.status,
       ]);
 
@@ -647,17 +677,20 @@ export default function PurchaseOrders() {
           const existingPOs = await getPurchaseOrdersByPR(pr._id);
           const alreadyOrdered = buildAlreadyOrderedMap(existingPOs);
 
-          rows = pr.items.map((it) => {
-            const already = alreadyForPrLine(alreadyOrdered, pr, it);
-            const remaining = Math.max(
-              0,
-              parseFloat((it.qty - already).toFixed(6)),
-            );
-            return { ...it, already, remaining };
-          });
+          rows = pr.items
+            .map((it) => {
+              const already = alreadyForPrLine(alreadyOrdered, pr, it);
+              const remaining = Math.max(
+                0,
+                parseFloat((it.qty - already).toFixed(6)),
+              );
+              return { ...it, already, remaining };
+            })
+            .filter((it) => it.remaining > 0.00001);
         }
 
         rows.forEach((it) => {
+          if (it.remaining <= 0.00001) return;
           const stock = stockMap[it.name];
           itemRows.push([
             pr.prNumber,
@@ -1084,7 +1117,7 @@ export default function PurchaseOrders() {
                                     : "var(--text-3)",
                               }}
                             >
-                              {it.alreadyOrdered > 0 ? it.alreadyOrdered : "—"}
+                              {it.alreadyOrdered > 0 ? it.alreadyOrdered : "0"}
                             </td>
                             <td
                               style={{
@@ -1253,6 +1286,9 @@ export default function PurchaseOrders() {
             {exportLoading ? "Exporting…" : "⭳ Export Excel"}
           </button>
         </div>
+        <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: "-8px 0 14px" }}>
+          Fully ordered lines are removed here. Only items with remaining qty stay — when remaining hits 0 for every line, the PR leaves this list.
+        </p>
         {eligiblePRs.length === 0 ? (
           <div className="empty">
             No approved or partially ordered PRs available.
@@ -1267,7 +1303,7 @@ export default function PurchaseOrders() {
                   <th>Project</th>
                   <th>Request From</th>
                   <th>Requested by</th>
-                  <th>Items</th>
+                  <th>Pending items</th>
                   <th>Status</th>
                   <th></th>
                 </tr>
@@ -1286,7 +1322,7 @@ export default function PurchaseOrders() {
                       <td>{pr.projectName || "—"}</td>
                       <td>{pr.requestFrom || "—"}</td>
                       <td>{pr.requestedByName}</td>
-                      <td>{pr.items.length}</td>
+                      <td>{remainingLinesCount(pr)}</td>
                       <td>
                         <span className={`tag ${pr.status}`}>
                           {STATUS_LABEL[pr.status]}
@@ -1317,6 +1353,12 @@ export default function PurchaseOrders() {
                                 style={{ fontSize: 13, color: "var(--text-3)" }}
                               >
                                 Loading items…
+                              </p>
+                            ) : (prItemsMap[pr._id] || []).length === 0 ? (
+                              <p
+                                style={{ fontSize: 13, color: "var(--text-3)" }}
+                              >
+                                No remaining items — all lines are fully ordered.
                               </p>
                             ) : (
                               <div className="tablewrap">
@@ -1429,7 +1471,7 @@ export default function PurchaseOrders() {
                                                   : "var(--text-3)",
                                             }}
                                           >
-                                            {it.already > 0 ? it.already : "—"}
+                                            {it.already > 0 ? it.already : "0"}
                                           </td>
                                           <td
                                             style={{
