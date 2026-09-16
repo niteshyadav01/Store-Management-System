@@ -1231,7 +1231,7 @@ export default function Reports() {
                         {repType === "outward" && (
                           <>
                             <th className="num">
-                              Required Qty{" "}
+                              Req. Qty{" "}
                               <ColFilter
                                 values={(rows || []).map((r) =>
                                   hasReqty(r) ? formatNum(r.reqty) : "—",
@@ -1243,7 +1243,7 @@ export default function Reports() {
                               />
                             </th>
                             <th className="num">
-                              Remaining Qty{" "}
+                              Rem. Qty{" "}
                               <ColFilter
                                 values={(rows || []).map((r) =>
                                   hasReqty(r)
