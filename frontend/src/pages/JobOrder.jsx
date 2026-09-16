@@ -2372,7 +2372,7 @@ function ViewModal({ order, onClose, onEdit }) {
                   <th className="num">Perimeter (mm)</th>
                   <th className="num">Length (mm)</th>
                   <th className="num">Area/nos (Sq in)</th>
-                  <th className="num">Outward</th>
+                  <th className="num">Out</th>
                   <th>Received (where)</th>
                   <th className="num">Pending</th>
                   <th>UOM</th>
@@ -3688,8 +3688,9 @@ export default function JobOrder() {
             className="btn btn-ghost btn-sm"
             style={{ color: "var(--red)" }}
             onClick={() => handleDelete(order)}
+            title="Delete job order"
           >
-            🗑 Delete
+            🗑
           </button>
         )}
         {hasPending && canCreate && (
@@ -4395,7 +4396,7 @@ export default function JobOrder() {
       )}
 
       {/* ── Orders list ── */}
-      <div className="card no-print">
+      <div className="card card-wide no-print">
         <div className="jo-list-head">
           <h3 style={{ margin: 0 }}>
             All Job Orders <span className="pill-count">{visible.length}</span>

@@ -393,7 +393,7 @@ const categoryOptions = dedupeCategories(list.map((m) => m.category));
       )}
 
       {/* Table */}
-      <div className="card">
+      <div className="card card-wide">
         <h3>
           Materials <span className="pill-count">{list.length || 0}</span>
         </h3>
@@ -407,12 +407,12 @@ const categoryOptions = dedupeCategories(list.map((m) => m.category));
         <div
           className="tablewrap"
           style={{
-            overflowX: "scroll",
-            overflowY: "scroll",
+            overflowX: "auto",
+            overflowY: "auto",
             maxHeight: "70vh",
           }}
         >
-          <table style={{ minWidth: "900px" }}>
+          <table>
             <thead
               style={{
                 position: "sticky",
@@ -473,8 +473,9 @@ const categoryOptions = dedupeCategories(list.map((m) => m.category));
                       <button
                         className="btn-del btn-sm"
                         onClick={() => handleDelete(m)}
+                        title="Delete material"
                       >
-                        Remove
+                        🗑
                       </button>
                     </td>
                   )}

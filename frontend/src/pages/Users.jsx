@@ -139,7 +139,7 @@ export default function Users() {
         </form>
       </div>
 
-      <div className="card">
+      <div className="card card-wide">
         <h3>Team Members <span className="pill-count">{users.length}</span></h3>
         <div className="tablewrap">
           <table>
@@ -206,7 +206,7 @@ export default function Users() {
                     </td>
                     <td>
                       {u.username !== currentUser?.username && (
-                        <button className="btn-del btn-sm" onClick={() => handleDelete(u.username)}>Remove</button>
+                        <button className="btn-del btn-sm" onClick={() => handleDelete(u.username)} title="Delete user">🗑</button>
                       )}
                     </td>
                   </tr>

@@ -1369,7 +1369,7 @@ export default function PurchaseRequest() {
         </div>
       )}
 
-      <div className="card">
+      <div className="card card-wide">
         <div
           style={{
             display: "flex",
@@ -1579,7 +1579,7 @@ export default function PurchaseRequest() {
                       onClick={() => toggleExpanded(pr)}
                     >
                       <td className="mono" style={{ fontWeight: 600 }}>{pr.prNumber}</td>
-                      <td>{formatDDMMYYYY(pr.date)}</td>
+                      <td className="nowrap">{formatDDMMYYYY(pr.date)}</td>
                       <td>{pr.projectName || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                       <td>{pr.requestFrom || <span style={{ color: "var(--text-3)" }}>—</span>}</td>
                       <td>{pr.requestedByName}</td>
@@ -1686,7 +1686,7 @@ export default function PurchaseRequest() {
                                     {(pr.status === "partial" || pr.status === "ordered" || pr.status === "received") && (
                                       <>
                                         <th className="num">Ordered Qty</th>
-                                        <th className="num">Balance</th>
+                                        <th className="num">Bal.</th>
                                         <th>Expected Delivery (PO)</th>
                                         <th className="num">Received Qty</th>
                                         <th className="num">Pending Receipt</th>
@@ -1735,7 +1735,7 @@ export default function PurchaseRequest() {
                                         <td>{it.category || "—"}</td>
                                         <td className="num">{formatNum(it.qty)}</td>
                                         <td>{it.uom || "—"}</td>
-                                        <td>{it.expectedDeliveryDate ? formatDDMMYYYY(it.expectedDeliveryDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                                        <td className="nowrap">{it.expectedDeliveryDate ? formatDDMMYYYY(it.expectedDeliveryDate) : <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                                         <td>{it.projectName || pr.projectName || "—"}</td>
                                         <td>{it.remarks || "—"}</td>
                                         <td className="num">

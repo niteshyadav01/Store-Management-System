@@ -197,6 +197,10 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
       setErr("GIN is required.");
       return;
     }
+    if (form.date && form.date > todayStr()) {
+      setErr("Entry date cannot be a future date.");
+      return;
+    }
     setSaving(true);
     try {
       await onSave(entry._id, {
@@ -310,6 +314,7 @@ function EditModal({ entry, master, canSeePrice, onSave, onClose }) {
                 <label>Entry date</label>
                 <input
                   type="date"
+                  max={todayStr()}
                   value={form.date}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, date: e.target.value }))
@@ -858,6 +863,13 @@ export default function InwardEntry() {
       setMsg({ text: "Please enter the entry date.", ok: false });
       return;
     }
+    if (form.date > todayStr()) {
+      setMsg({
+        text: "Entry date cannot be a future date.",
+        ok: false,
+      });
+      return;
+    }
     if (!form.vendor.trim()) {
       setMsg({ text: "Please enter the vendor name.", ok: false });
       return;
@@ -1146,6 +1158,13 @@ export default function InwardEntry() {
 
         const date =
           parseExcelDate(pickCol(row, ["date", "entrydate"])) || today;
+        if (date > today) {
+          skips.push({
+            ...skipInfo,
+            reason: "Entry date is in the future",
+          });
+          continue;
+        }
         const newEntry = {
           date,
           invdate: parseExcelDate(pickCol(row, ["invoicedate", "invdate"])),
@@ -1398,7 +1417,8 @@ export default function InwardEntry() {
 
         /* Recent inward entries — taller rows, taller section */
         .entries-section .tablewrap { max-height: 82vh !important; overflow-x:auto; -webkit-overflow-scrolling: touch; }
-        .entries-section table td, .entries-section table th { padding: 16px 14px; }
+        .entries-section table td, .entries-section table th { padding: 10px 8px; }
+        .entries-section table { width: 100%; }
         .filterbar { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-bottom:12px; }
 
         /* ── Searchable PO dropdown ── */
@@ -1594,7 +1614,7 @@ export default function InwardEntry() {
                         }}
                       >
                         <td className="mono">{r._excelRow}</td>
-                        <td>{formatDateDMY(r.date)}</td>
+                        <td className="nowrap">{formatDateDMY(r.date)}</td>
                         <td style={{ fontWeight: 500 }}>{r.name}</td>
                         <td>{r.vendor || "—"}</td>
                         <td className="mono">{r.challan || "—"}</td>
@@ -1752,6 +1772,7 @@ export default function InwardEntry() {
               <input
                 required
                 type="date"
+                max={todayStr()}
                 value={form.date}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, date: e.target.value }))
@@ -2285,7 +2306,7 @@ export default function InwardEntry() {
       </div>
 
       {/* ── All entries table ── */}
-      <div className="card entries-section">
+      <div className="card card-wide entries-section">
         <div className="filterbar">
           <label
             style={{
@@ -2370,12 +2391,12 @@ export default function InwardEntry() {
         <div
           className="tablewrap"
           style={{
-            overflowX: "scroll",
-            overflowY: "scroll",
+            overflowX: "auto",
+            overflowY: "auto",
             maxHeight: "82vh",
           }}
         >
-          <table style={{ minWidth: "1700px" }}>
+          <table>
             <thead
               style={{
                 position: "sticky",
@@ -2397,7 +2418,7 @@ export default function InwardEntry() {
                 <th>UOM</th>
                 <th className="num">Qty</th>
                 <th>GIN</th>
-                <th>Received by</th>
+                <th>Rec. By</th>
                 <th>Location</th>
                 <th>Remarks</th>
                 {canSeePrice && <th className="num">Price</th>}
@@ -2407,8 +2428,10 @@ export default function InwardEntry() {
             <tbody>
               {pageItems.map((e) => (
                 <tr key={e._id}>
-                  <td>{formatDateDMY(e.date)}</td>
-                  <td>{e.invdate ? formatDateDMY(e.invdate) : "—"}</td>
+                  <td className="nowrap">{formatDateDMY(e.date)}</td>
+                  <td className="nowrap">
+                    {e.invdate ? formatDateDMY(e.invdate) : "—"}
+                  </td>
                   <td>{e.challan || "—"}</td>
                   <td>{e.po || "—"}</td>
                   <td>{e.vendor || "—"}</td>
@@ -2438,7 +2461,7 @@ export default function InwardEntry() {
                           onClick={() => handleDelete(e)}
                           title="Delete"
                         >
-                          🗑 Delete
+                          🗑
                         </button>
                       </div>
                     </td>

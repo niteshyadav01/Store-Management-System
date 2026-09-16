@@ -15,6 +15,7 @@
   --teal-dark:    #143e38;
   --teal-light:   #e6f2f0;
   --amber:        #c8861b;
+  --green:        #2e7d32;
   --red:          #a3322a;
   --red-light:    #fdf0ef;
   --text-2:       #4a4538;
@@ -31,6 +32,8 @@
   --shadow-lg:    0 12px 32px rgba(28,26,22,.12), 0 4px 8px rgba(28,26,22,.06);
   --transition:   150ms cubic-bezier(.4,0,.2,1);
   --input-h:      42px;
+  /* Horizontal padding of .main — full-bleed sections offset by this */
+  --main-pad-x:   24px;
 }
 
 /* ── Reset ─────────────────────────────────────────────────── */
@@ -52,7 +55,7 @@ body {
 .shell { display: flex; min-height: calc(100vh - var(--topbar-h)); }
 .main {
   flex: 1; min-width: 0;
-  padding: 32px 40px 56px;
+  padding: 32px var(--main-pad-x) 56px;
   overflow-y: auto;
 }
 
@@ -468,22 +471,41 @@ body {
 .alert.ok  { background: var(--teal-light);  color: var(--teal-dark); border-color: #a7d4ce; }
 .alert.err { background: var(--red-light);   color: var(--red);       border-color: #f5b8b4; }
 
+/* ── Wide section — trims side padding so tables get the most room.
+   Stays inside the page bounds (no negative margins) so headings and the
+   first column are never cut off at the edge. ─────────────────────────────── */
+.card.card-wide {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
 /* ── Table ─────────────────────────────────────────────────── */
 .tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); border: 1px solid var(--line); }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
 thead { background: var(--paper-dim); }
 th {
-  text-align: left; font-size: 10.5px; text-transform: uppercase;
-  letter-spacing: .8px; color: #7a7262; font-weight: 700;
-  padding: 11px 14px; white-space: nowrap;
+  text-align: left; font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .6px; color: #7a7262; font-weight: 700;
+  padding: 10px 10px;
+  /* Headings always stay on a single line */
+  white-space: nowrap;
   border-bottom: 1px solid var(--line);
 }
-td { padding: 11px 14px; border-bottom: 1px solid var(--line); color: var(--ink); vertical-align: middle; }
+td {
+  padding: 10px 10px; border-bottom: 1px solid var(--line);
+  color: var(--ink); vertical-align: middle;
+  /* Long material names / codes wrap instead of stretching the row */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 tbody tr { transition: background var(--transition); }
 tbody tr:hover { background: var(--paper-dim); }
 tbody tr:last-child td { border-bottom: none; }
-td.num, th.num { text-align: right; font-family: var(--mono); font-size: 12.5px; }
-td.mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: .3px; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-size: 10.5px; }
+/* Numbers and dates stay intact — never split across lines */
+td.num, td.nowrap { white-space: nowrap; overflow-wrap: normal; word-break: normal; }
+td.mono { font-family: var(--mono); font-size: 11.5px; letter-spacing: .3px; }
 .table-center, .table-center th, .table-center td { text-align: center; }
 
 /* Search bar */
@@ -641,17 +663,19 @@ textarea {
 
 /* Large screens: wider main padding */
 @media (min-width: 1280px) {
-  .main { padding: 36px 52px 64px; }
+  .main { padding: 36px var(--main-pad-x) 64px; }
 }
 
 /* Medium desktop */
 @media (max-width: 1100px) {
-  .main { padding: 28px 32px 48px; }
+  :root { --main-pad-x: 18px; }
+  .main { padding: 28px var(--main-pad-x) 48px; }
 }
 
 /* Tablet */
 @media (max-width: 900px) {
-  .main { padding: 24px 20px 40px; }
+  :root { --main-pad-x: 14px; }
+  .main { padding: 24px var(--main-pad-x) 40px; }
   .card { padding: 20px 18px; }
   .pagehead h2 { font-size: 20px; }
   .formgrid { grid-template-columns: 1fr; }
@@ -662,7 +686,8 @@ textarea {
 
 /* Mobile landscape / small tablet */
 @media (max-width: 680px) {
-  .main { padding: 18px 14px 36px; }
+  :root { --main-pad-x: 12px; }
+  .main { padding: 18px var(--main-pad-x) 36px; }
   .card { padding: 16px 14px; }
   .pagehead { margin-bottom: 20px; }
   .pagehead h2 { font-size: 18px; }
@@ -674,8 +699,8 @@ textarea {
 
 /* Mobile portrait */
 @media (max-width: 480px) {
-  :root { --nav-w: 100vw; --input-h: 44px; }
-  .main { padding: 14px 12px 32px; }
+  :root { --nav-w: 100vw; --input-h: 44px; --main-pad-x: 10px; }
+  .main { padding: 14px var(--main-pad-x) 32px; }
   .card { padding: 14px 12px; margin-bottom: 14px; }
   .pagehead { margin-bottom: 16px; flex-direction: column; gap: 8px; }
   .pagehead h2 { font-size: 17px; }
@@ -691,7 +716,7 @@ textarea {
   .login-card h1 { font-size: 18px; }
   .uploadbox { padding: 22px 14px; }
   .uploadbox label { width: 100%; justify-content: center; }
-  td, th { padding: 8px 10px; font-size: 12px; }
+  td, th { padding: 8px 10px; font-size: 11px; }
   .brand-name { font-size: 13px; }
 }
 

@@ -1351,7 +1351,7 @@ export default function OutwardEntry() {
       )}
 
       {/* All entries table */}
-      <div className="card entries-section">
+      <div className="card card-wide entries-section">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
           <label style={{ display: "flex", flexDirection: "column", minWidth: 240, gap: "6px" }}>
             <span style={{ fontSize: 12, color: "#5a5444", fontWeight: 600, letterSpacing: "0.1px" }}>Search</span>
@@ -1483,10 +1483,9 @@ export default function OutwardEntry() {
                 }}
                 onClick={handleBulkDeleteSelected}
                 disabled={!selectedIds.size || bulkDeleting}
+                title="Delete the selected entries"
               >
-                {bulkDeleting
-                  ? "Deleting…"
-                  : `Delete selected (${selectedIds.size})`}
+                {bulkDeleting ? "…" : `🗑 (${selectedIds.size})`}
               </button>
             </>
           )}
@@ -1503,12 +1502,12 @@ export default function OutwardEntry() {
         <div
           className="tablewrap"
           style={{
-            overflowX: "scroll",
-            overflowY: "scroll",
+            overflowX: "auto",
+            overflowY: "auto",
             maxHeight: "82vh",
           }}
         >
-          <table style={{ minWidth: "1500px" }}>
+          <table>
             <thead
               style={{
                 position: "sticky",
@@ -1532,19 +1531,19 @@ export default function OutwardEntry() {
                 )}
                 <th>Date</th>
                 <th>Project</th>
-                <th>Customer PO</th>
+                <th>Cust. PO</th>
                 <th>Slip no</th>
-                <th>Department</th>
-                <th>Received by</th>
+                <th>Dept.</th>
+                <th>Rec. By</th>
                 <th>Issued by</th>
                 <th>Material</th>
                 <th>Type</th>
                 <th>Code</th>
                 <th>Category</th>
-                <th className="num">Required Qty</th>
+                <th className="num">Req. Qty</th>
                 <th className="num">Qty</th>
                 <th>UOM</th>
-                <th className="num">Remaining Qty</th>
+                <th className="num">Rem. Qty</th>
                 <th>Remarks</th>
                 {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
@@ -1569,7 +1568,7 @@ export default function OutwardEntry() {
                         />
                       </td>
                     )}
-                    <td>{formatDateDMY(e.date)}</td>
+                    <td className="nowrap">{formatDateDMY(e.date)}</td>
                     <td>
                       {e.project || (
                         <span style={{ color: "var(--text-3)" }}>—</span>
@@ -1608,7 +1607,7 @@ export default function OutwardEntry() {
                             onClick={() => handleDelete(e)}
                             title="Delete"
                           >
-                            🗑 Delete
+                            🗑
                           </button>
                         </div>
                       </td>

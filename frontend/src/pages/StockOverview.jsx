@@ -1357,7 +1357,7 @@ export default function StockOverview() {
 
       {/* ── Table ── */}
       <div
-        className="card"
+        className="card card-wide"
         style={{ minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}
       >
         <h3
@@ -1468,7 +1468,7 @@ export default function StockOverview() {
             WebkitOverflowScrolling: "touch",
           }}
         >
-          <table style={{ minWidth: isNarrow ? 980 : 1180 }}>
+          <table style={{ minWidth: isNarrow ? 980 : 0, width: "100%" }}>
             <thead
               style={{
                 position: "sticky",
@@ -1574,7 +1574,7 @@ export default function StockOverview() {
                       gap: 4,
                     }}
                   >
-                    Inward{" "}
+                    IN{" "}
                     <ColFilter
                       values={searched.map((r) => formatNum(r.inQty))}
                       selected={cf.inQty}
@@ -1590,7 +1590,7 @@ export default function StockOverview() {
                       gap: 4,
                     }}
                   >
-                    Outward{" "}
+                    Out{" "}
                     <ColFilter
                       values={searched.map((r) => formatNum(r.outQty))}
                       selected={cf.outQty}
@@ -1606,7 +1606,7 @@ export default function StockOverview() {
                       gap: 4,
                     }}
                   >
-                    Balance{" "}
+                    Bal.{" "}
                     <ColFilter
                       values={searched.map((r) => formatNum(r.stock))}
                       selected={cf.stock}

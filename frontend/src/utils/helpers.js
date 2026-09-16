@@ -18,8 +18,13 @@ export function formatINR(n) {
   return '₹' + rounded.toLocaleString('en-IN');
 }
 
+// Local calendar date as yyyy-mm-dd. Built from the local parts, not
+// toISOString(), so IST users before 05:30 don't get yesterday's date.
 export function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 // Display a stored date as dd/mm/yyyy.

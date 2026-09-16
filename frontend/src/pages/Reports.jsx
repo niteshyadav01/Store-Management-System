@@ -739,22 +739,24 @@ export default function Reports() {
            document to scroll horizontally — scrolling stays inside .tablewrap */
         .reports-page-guard { overflow-x: hidden; }
 
-        .reports-section table th,
+        /* Wrap long values so every column fits without side-scrolling.
+           Headings stay on one line. */
+        .reports-section table th { white-space: nowrap; }
         .reports-section table td {
-          max-width: 260px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .reports-section table td.wrap-cell {
+          max-width: 240px;
           white-space: normal;
+          overflow-wrap: anywhere;
+          word-break: break-word;
         }
-        .reports-section table th.col-remarks,
+        .reports-section table td.nowrap {
+          white-space: nowrap;
+          overflow-wrap: normal;
+          word-break: normal;
+        }
         .reports-section table td.col-remarks {
           max-width: 180px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
       `}</style>
       <div className="reports-page-guard">
@@ -975,7 +977,7 @@ export default function Reports() {
 
         {/* Results table */}
         {rows !== null && (
-          <div className="card reports-section">
+          <div className="card card-wide reports-section">
             <h3>
               {repType === "both"
                 ? "Stock balance by material"
@@ -987,12 +989,12 @@ export default function Reports() {
             <div
               className="tablewrap"
               style={{
-                overflowX: "scroll",
-                overflowY: "scroll",
+                overflowX: "auto",
+                overflowY: "auto",
                 maxHeight: "60vh",
               }}
             >
-              <table style={{ minWidth: "1300px" }}>
+              <table>
                 {repType === "both" ? (
                   <>
                     <thead
@@ -1054,8 +1056,8 @@ export default function Reports() {
                             }
                           />
                         </th>
-                        <th className="num">
-                          Inward qty{" "}
+                        <th className="num" style={{ color: "var(--green)" }}>
+                          IN{" "}
                           <ColFilter
                             values={(rows || []).map((r) => formatNum(r.inQty))}
                             selected={cfBoth.inQty}
@@ -1064,8 +1066,8 @@ export default function Reports() {
                             }
                           />
                         </th>
-                        <th className="num">
-                          Outward qty{" "}
+                        <th className="num" style={{ color: "var(--red)" }}>
+                          Out{" "}
                           <ColFilter
                             values={(rows || []).map((r) =>
                               formatNum(r.outQty),
@@ -1076,8 +1078,8 @@ export default function Reports() {
                             }
                           />
                         </th>
-                        <th className="num">
-                          Balance{" "}
+                        <th className="num" style={{ color: "var(--amber)" }}>
+                          Bal.{" "}
                           <ColFilter
                             values={(rows || []).map((r) =>
                               formatNum(r.balance),
@@ -1089,7 +1091,7 @@ export default function Reports() {
                           />
                         </th>
                         <th className="num">
-                          Minimum stock{" "}
+                          Min. Stock{" "}
                           <ColFilter
                             values={(rows || []).map((r) =>
                               formatNum(r.minStock),
@@ -1142,32 +1144,8 @@ export default function Reports() {
                           <td>{r.uom}</td>
                           <td className="num">{formatNum(r.inQty)}</td>
                           <td className="num">{formatNum(r.outQty)}</td>
-                          <td className="num">
-                            <strong
-                              style={{
-                                color:
-                                  r.balance <= 0
-                                    ? "var(--red)"
-                                    : r.balance < 10
-                                      ? "var(--amber)"
-                                      : "var(--teal-dark)",
-                              }}
-                            >
-                              {formatNum(r.balance)}
-                            </strong>
-                          </td>
-                          <td className="num">
-                            <span
-                              style={{
-                                color:
-                                  r.balance < r.minStock
-                                    ? "var(--red)"
-                                    : "inherit",
-                              }}
-                            >
-                              {formatNum(r.minStock)}
-                            </span>
-                          </td>
+                          <td className="num">{formatNum(r.balance)}</td>
+                          <td className="num">{formatNum(r.minStock)}</td>
                           {canSeePrice && (
                             <>
                               <td className="num">{formatINR(r.avgPrice)}</td>
@@ -1350,7 +1328,7 @@ export default function Reports() {
                     <tbody>
                       {pageItems.map((r, i) => (
                         <tr key={i}>
-                          <td>{toDDMMYYYY(r.date)}</td>
+                          <td className="nowrap">{toDDMMYYYY(r.date)}</td>
                           <td className="wrap-cell" style={{ fontWeight: 500 }}>
                             {r.name}
                           </td>

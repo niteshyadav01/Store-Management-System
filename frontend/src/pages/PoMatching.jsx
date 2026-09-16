@@ -82,7 +82,7 @@ export default function PoMatching() {
         ))}
       </div>
 
-      <div className="card">
+      <div className="card card-wide">
         {/* Search + filter bar */}
         <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center',  }}>
           <input
@@ -133,8 +133,8 @@ export default function PoMatching() {
                       onClick={() => setExpanded(isOpen ? null : po._id)}
                     >
                       <td className="mono" style={{ fontWeight: 700 }}>{po.poNumber}</td>
-                      <td>{toDDMMYYYY(po.poDate)}</td>
-                      <td>{toDDMMYYYY(po.poExpectedDate) || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
+                      <td className="nowrap">{toDDMMYYYY(po.poDate)}</td>
+                      <td className="nowrap">{toDDMMYYYY(po.poExpectedDate) || <span style={{ color: 'var(--text-3)' }}>—</span>}</td>
                       <td className="mono">{po.prNumber}</td>
                       <td>{po.vendorName}</td>
                       <td className="num">{po.items.length}</td>
@@ -174,7 +174,7 @@ export default function PoMatching() {
                             <div style={{ fontWeight: 600, fontSize: 12.5, marginBottom: 10, color: 'var(--text-2)' }}>
                               Item breakdown — {po.poNumber} / {po.vendorName}
                             </div>
-                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                               <thead>
                                 <tr style={{ background: 'var(--paper)' }}>
                                   {['Material','Code','UOM','Unit Price','Ordered Qty','Received Qty','Pending Qty','Match %'].map(h => (

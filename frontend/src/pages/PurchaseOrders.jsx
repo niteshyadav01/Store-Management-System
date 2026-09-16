@@ -1262,7 +1262,7 @@ export default function PurchaseOrders() {
       )}
 
       {/* ── Pending PRs section ───────────────────────────────────────────── */}
-      <div className="card">
+      <div className="card card-wide">
         <div
           style={{
             display: "flex",
@@ -1318,7 +1318,7 @@ export default function PurchaseOrders() {
                       <td className="mono" style={{ fontWeight: 600 }}>
                         {pr.prNumber}
                       </td>
-                      <td>{toDDMMYYYY(pr.date)}</td>
+                      <td className="nowrap">{toDDMMYYYY(pr.date)}</td>
                       <td>{pr.projectName || "—"}</td>
                       <td>{pr.requestFrom || "—"}</td>
                       <td>{pr.requestedByName}</td>
@@ -1362,7 +1362,7 @@ export default function PurchaseOrders() {
                               </p>
                             ) : (
                               <div className="tablewrap">
-                                <table style={{ fontSize: 13 }}>
+                                <table style={{ fontSize: 12 }}>
                                   <thead>
                                     <tr>
                                       <th style={thStyle}>Material</th>
@@ -1608,7 +1608,7 @@ export default function PurchaseOrders() {
       </div>
 
       {/* ── All POs list ──────────────────────────────────────────────────── */}
-      <div className="card">
+      <div className="card card-wide">
         <div
           style={{
             display: "flex",
@@ -1688,7 +1688,7 @@ export default function PurchaseOrders() {
                           {po.poNumber}
                         </span>
                       </td>
-                      <td>{toDDMMYYYY(po.poDate)}</td>
+                      <td className="nowrap">{toDDMMYYYY(po.poDate)}</td>
                       <td>
                         {po.poExpectedDate ? (
                           toDDMMYYYY(po.poExpectedDate)
@@ -1739,9 +1739,7 @@ export default function PurchaseOrders() {
                               disabled={deleteLoadingId === po._id}
                               title="Delete purchase order"
                             >
-                              {deleteLoadingId === po._id
-                                ? "Deleting…"
-                                : "🗑 Delete"}
+                              {deleteLoadingId === po._id ? "…" : "🗑"}
                             </button>
                           )}
                         </div>
@@ -1767,7 +1765,7 @@ export default function PurchaseOrders() {
                               </p>
                             ) : (
                               <div className="tablewrap">
-                                <table style={{ fontSize: 13 }}>
+                                <table style={{ fontSize: 12 }}>
                                   <thead>
                                     <tr>
                                       <th style={thStyle}>Material</th>
@@ -2135,7 +2133,7 @@ export default function PurchaseOrders() {
                 <div className="empty">No items available.</div>
               ) : (
                 <div className="tablewrap">
-                  <table style={{ fontSize: 13 }}>
+                  <table style={{ fontSize: 12 }}>
                     <thead>
                       <tr>
                         <th>Material</th>

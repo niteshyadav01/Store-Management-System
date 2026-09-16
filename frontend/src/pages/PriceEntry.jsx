@@ -879,7 +879,7 @@ export default function PriceEntry() {
         </div>
       </div>
 
-      <div className="card">
+      <div className="card card-wide">
         <h3>
           Inward entries{" "}
           <span className="pill-count">{filtered.length || 0}</span>
@@ -1133,12 +1133,12 @@ export default function PriceEntry() {
         <div
           className="tablewrap"
           style={{
-            overflowX: "scroll",
-            overflowY: "scroll",
+            overflowX: "auto",
+            overflowY: "auto",
             maxHeight: "70vh",
           }}
         >
-          <table style={{ minWidth: "1300px" }}>
+          <table>
             <thead style={{ position: "sticky", top: 0, zIndex: 2 }}>
               <tr style={{ background: "var(--paper-dim)" }}>
                 <th>
@@ -1301,8 +1301,10 @@ export default function PriceEntry() {
                       isZero ? { background: "var(--red-light)" } : undefined
                     }
                   >
-                    <td>{toDDMMYYYY(e.date)}</td>
-                    <td>{monthKeyToLabel(toMonthKey(e.date))}</td>
+                    <td className="nowrap">{toDDMMYYYY(e.date)}</td>
+                    <td className="nowrap">
+                      {monthKeyToLabel(toMonthKey(e.date))}
+                    </td>
                     <td>
                       {e.vendor || (
                         <span style={{ color: "var(--text-3)" }}>—</span>

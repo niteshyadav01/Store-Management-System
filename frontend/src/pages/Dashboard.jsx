@@ -750,7 +750,7 @@ function AdminDashboard({
               <tbody>
                 {pendingPriceItems.map((e) => (
                   <tr key={e._id}>
-                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td className="nowrap">{toDDMMYYYY(e.date)}</td>
                     <td style={{ fontWeight: 600 }}>{e.name}</td>
                     <td className="mono">{e.code || "—"}</td>
                     <td>{e.vendor || "—"}</td>
@@ -1084,7 +1084,7 @@ function PurchaseDashboard({
               <tbody>
                 {pendingPriceItems.map((e) => (
                   <tr key={e._id}>
-                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td className="nowrap">{toDDMMYYYY(e.date)}</td>
                     <td style={{ fontWeight: 600 }}>{e.name}</td>
                     <td className="mono">{e.code || "—"}</td>
                     <td>{e.vendor || "—"}</td>
@@ -1469,7 +1469,7 @@ function StoreDashboard({
               <tbody>
                 {inward.map((e) => (
                   <tr key={e._id}>
-                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td className="nowrap">{toDDMMYYYY(e.date)}</td>
                     <td style={{ fontWeight: 600 }}>{e.name}</td>
                     <td className="mono">{e.code || "—"}</td>
                     <td>{e.vendor || "—"}</td>
@@ -1505,7 +1505,7 @@ function StoreDashboard({
               <tbody>
                 {outward.map((e) => (
                   <tr key={e._id}>
-                    <td>{toDDMMYYYY(e.date)}</td>
+                    <td className="nowrap">{toDDMMYYYY(e.date)}</td>
                     <td style={{ fontWeight: 600 }}>{e.name}</td>
                     <td className="mono">{e.code || "—"}</td>
                     <td className="num">{formatNum(e.qty)}</td>
@@ -1587,7 +1587,7 @@ function PRTable({
                 <td className="mono" style={{ fontWeight: 600 }}>
                   {pr.prNumber}
                 </td>
-                <td>{toDDMMYYYY(pr.date)}</td>
+                <td className="nowrap">{toDDMMYYYY(pr.date)}</td>
                 <td>{pr.projectName || "—"}</td>
                 <td>{pr.requestFrom || "—"}</td>
                 <td>{pr.requestedByName}</td>
@@ -1742,8 +1742,8 @@ function POTable({ pos }) {
                 <td className="mono" style={{ fontWeight: 600 }}>
                   {po.poNumber}
                 </td>
-                <td>{toDDMMYYYY(po.poDate)}</td>
-                <td>
+                <td className="nowrap">{toDDMMYYYY(po.poDate)}</td>
+                <td className="nowrap">
                   {po.poExpectedDate ? toDDMMYYYY(po.poExpectedDate) : "—"}
                 </td>
                 <td className="mono">{po.prNumber}</td>
