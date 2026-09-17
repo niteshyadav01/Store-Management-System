@@ -20,6 +20,7 @@ import {
   formatDateDMY,
 } from "../utils/helpers";
 import Pagination from "../components/Pagination";
+import ColFilter from "../components/ColFilter";
 import useClientPagination from "../hooks/useClientPagination";
 
 function normalizeOutwardEntry(entry) {
@@ -113,6 +114,53 @@ function isDateInRange(value, fromDate, toDate) {
   if (end && current > end) return false;
   return true;
 }
+
+// Newest first: latest entry date on top, and within the same date the most
+// recently saved entry wins.
+function byNewestFirst(a, b) {
+  const da = parseDateValue(a?.date)?.getTime() || 0;
+  const db = parseDateValue(b?.date)?.getTime() || 0;
+  if (da !== db) return db - da;
+  const ca = new Date(a?.createdAt || 0).getTime() || 0;
+  const cb = new Date(b?.createdAt || 0).getTime() || 0;
+  if (ca !== cb) return cb - ca;
+  return String(b?._id || "").localeCompare(String(a?._id || ""));
+}
+
+function hasRequiredQty(entry) {
+  return (
+    entry?.reqty !== undefined && entry?.reqty !== null && entry?.reqty !== ""
+  );
+}
+
+// The text each column shows — used both for the filter dropdown options and
+// for matching, so what you tick is exactly what you see in the table.
+const COL_TEXT = {
+  date: (e) => formatDateDMY(e.date),
+  project: (e) => e.project || "—",
+  custpo: (e) => e.custpo || "—",
+  slip: (e) => e.slip || "—",
+  dept: (e) => e.dept || "—",
+  recby: (e) => e.recby || "—",
+  by: (e) => e.by || "—",
+  name: (e) => e.name || "",
+  type: (e) => e.type || "",
+  code: (e) => e.code || "",
+  category: (e) => e.category || "",
+  reqty: (e) => (hasRequiredQty(e) ? String(formatNum(e.reqty)) : "—"),
+  qty: (e) => String(formatNum(e.qty)),
+  uom: (e) => e.uom || "",
+  remaining: (e) =>
+    hasRequiredQty(e)
+      ? String(formatNum(Number(e.reqty) - Number(e.qty)))
+      : "—",
+  remarks: (e) => e.remarks || "—",
+};
+
+const EMPTY_COL_FILTERS = Object.keys(COL_TEXT).reduce(
+  (acc, key) => ({ ...acc, [key]: [] }),
+  {},
+);
 
 function matchesSearchText(entry, query) {
   const text = (query || "").trim().toLowerCase();
@@ -543,6 +591,7 @@ export default function OutwardEntry() {
   const [searchText, setSearchText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [cf, setCf] = useState(EMPTY_COL_FILTERS);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
@@ -556,14 +605,38 @@ export default function OutwardEntry() {
     load();
   }, [load]);
 
-  const filteredEntries = entries.filter((entry) => {
-    return (
-      isDateInRange(entry.date, fromDate, toDate) &&
-      matchesSearchText(entry, searchText)
+  // Search + date range first; the column dropdowns list the values left in
+  // this set, then narrow it further (same flow as the Live Stock page).
+  const searchedEntries = [...entries]
+    .sort(byNewestFirst)
+    .filter(
+      (entry) =>
+        isDateInRange(entry.date, fromDate, toDate) &&
+        matchesSearchText(entry, searchText),
     );
-  });
+  const colFilterValues = (key) => searchedEntries.map(COL_TEXT[key]);
+  const setColFilter = (key) => (v) => setCf((f) => ({ ...f, [key]: v }));
+  const filteredEntries = searchedEntries.filter((entry) =>
+    Object.keys(cf).every(
+      (key) => !cf[key].length || cf[key].includes(COL_TEXT[key](entry)),
+    ),
+  );
   const { pageItems, page, pageSize, total, setPage, setPageSize } =
     useClientPagination(filteredEntries, 25);
+
+  // A table heading with the Live Stock style filter dropdown next to it.
+  const colTh = (label, col, num) => (
+    <th className={num ? "num" : undefined}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {label}{" "}
+        <ColFilter
+          values={colFilterValues(col)}
+          selected={cf[col]}
+          onChange={setColFilter(col)}
+        />
+      </span>
+    </th>
+  );
 
   const hasDateFilter = Boolean(fromDate || toDate);
   const showBulkSelect = canBulkDeleteFiltered && hasDateFilter;
@@ -573,7 +646,7 @@ export default function OutwardEntry() {
 
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [fromDate, toDate, searchText]);
+  }, [fromDate, toDate, searchText, cf]);
 
   function toggleSelect(id) {
     setSelectedIds((prev) => {
@@ -1453,6 +1526,7 @@ export default function OutwardEntry() {
               setSearchText("");
               setFromDate("");
               setToDate("");
+              setCf(EMPTY_COL_FILTERS);
               setSelectedIds(new Set());
             }}
           >
@@ -1529,22 +1603,22 @@ export default function OutwardEntry() {
                     />
                   </th>
                 )}
-                <th>Date</th>
-                <th>Project</th>
-                <th>Cust. PO</th>
-                <th>Slip no</th>
-                <th>Dept.</th>
-                <th>Rec. By</th>
-                <th>Issued by</th>
-                <th>Material</th>
-                <th>Type</th>
-                <th>Code</th>
-                <th>Category</th>
-                <th className="num">Req. Qty</th>
-                <th className="num">Qty</th>
-                <th>UOM</th>
-                <th className="num">Rem. Qty</th>
-                <th>Remarks</th>
+                {colTh("Date", "date")}
+                {colTh("Project", "project")}
+                {colTh("Cust. PO", "custpo")}
+                {colTh("Slip no", "slip")}
+                {colTh("Dept.", "dept")}
+                {colTh("Rec. By", "recby")}
+                {colTh("Issued by", "by")}
+                {colTh("Material", "name")}
+                {colTh("Type", "type")}
+                {colTh("Code", "code")}
+                {colTh("Category", "category")}
+                {colTh("Req. Qty", "reqty", true)}
+                {colTh("Qty", "qty", true)}
+                {colTh("UOM", "uom")}
+                {colTh("Rem. Qty", "remaining", true)}
+                {colTh("Remarks", "remarks")}
                 {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
             </thead>

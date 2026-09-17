@@ -22,6 +22,7 @@ import {
   formatDateDMY,
 } from "../utils/helpers";
 import Pagination from "../components/Pagination";
+import ColFilter from "../components/ColFilter";
 import useClientPagination from "../hooks/useClientPagination";
 
 const EMPTY = {
@@ -97,6 +98,44 @@ function isDateInRange(value, fromDate, toDate) {
   if (end && current > end) return false;
   return true;
 }
+
+// Newest first: latest entry date on top, and within the same date the most
+// recently saved entry wins.
+function byNewestFirst(a, b) {
+  const da = parseDateValue(a?.date)?.getTime() || 0;
+  const db = parseDateValue(b?.date)?.getTime() || 0;
+  if (da !== db) return db - da;
+  const ca = new Date(a?.createdAt || 0).getTime() || 0;
+  const cb = new Date(b?.createdAt || 0).getTime() || 0;
+  if (ca !== cb) return cb - ca;
+  return String(b?._id || "").localeCompare(String(a?._id || ""));
+}
+
+// The text each column shows — used both for the filter dropdown options and
+// for matching, so what you tick is exactly what you see in the table.
+const COL_TEXT = {
+  date: (e) => formatDateDMY(e.date),
+  invdate: (e) => (e.invdate ? formatDateDMY(e.invdate) : "—"),
+  challan: (e) => e.challan || "—",
+  po: (e) => e.po || "—",
+  vendor: (e) => e.vendor || "—",
+  name: (e) => e.name || "",
+  type: (e) => e.type || "",
+  code: (e) => e.code || "",
+  category: (e) => e.category || "",
+  uom: (e) => e.uom || "",
+  qty: (e) => String(formatNum(e.qty)),
+  gin: (e) => e.gin || "—",
+  by: (e) => e.by || "—",
+  location: (e) => e.location || "—",
+  remarks: (e) => e.remarks || "—",
+  price: (e) => String(formatNum(e.price)),
+};
+
+const EMPTY_COL_FILTERS = Object.keys(COL_TEXT).reduce(
+  (acc, key) => ({ ...acc, [key]: [] }),
+  {},
+);
 
 function matchesSearchText(entry, query) {
   const text = (query || "").trim().toLowerCase();
@@ -577,6 +616,7 @@ export default function InwardEntry() {
   const [searchText, setSearchText] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [cf, setCf] = useState(EMPTY_COL_FILTERS);
 
   // ── Staged upload (waits for confirmation) ────────────────────────────
   const [pending, setPending] = useState(null);
@@ -625,12 +665,36 @@ export default function InwardEntry() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state, poList, navigate, location.pathname]);
 
-  const filteredEntries = entries.filter((entry) => {
-    return (
-      isDateInRange(entry.date, fromDate, toDate) &&
-      matchesSearchText(entry, searchText)
+  // Search + date range first; the column dropdowns list the values left in
+  // this set, then narrow it further (same flow as the Live Stock page).
+  const searchedEntries = [...entries]
+    .sort(byNewestFirst)
+    .filter(
+      (entry) =>
+        isDateInRange(entry.date, fromDate, toDate) &&
+        matchesSearchText(entry, searchText),
     );
-  });
+  const colFilterValues = (key) => searchedEntries.map(COL_TEXT[key]);
+  const setColFilter = (key) => (v) => setCf((f) => ({ ...f, [key]: v }));
+  const filteredEntries = searchedEntries.filter((entry) =>
+    Object.keys(cf).every(
+      (key) => !cf[key].length || cf[key].includes(COL_TEXT[key](entry)),
+    ),
+  );
+
+  // A table heading with the Live Stock style filter dropdown next to it.
+  const colTh = (label, col, num) => (
+    <th className={num ? "num" : undefined}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        {label}{" "}
+        <ColFilter
+          values={colFilterValues(col)}
+          selected={cf[col]}
+          onChange={setColFilter(col)}
+        />
+      </span>
+    </th>
+  );
   const { pageItems, page, pageSize, total, setPage, setPageSize } =
     useClientPagination(filteredEntries, 25);
 
@@ -2378,6 +2442,7 @@ export default function InwardEntry() {
               setSearchText("");
               setFromDate("");
               setToDate("");
+              setCf(EMPTY_COL_FILTERS);
             }}
           >
             Clear
@@ -2406,22 +2471,22 @@ export default function InwardEntry() {
               }}
             >
               <tr>
-                <th>Date</th>
-                <th>Inv date</th>
-                <th>Challan / Inv no</th>
-                <th>PO no</th>
-                <th>Vendor</th>
-                <th>Material</th>
-                <th>Type</th>
-                <th>Code</th>
-                <th>Category</th>
-                <th>UOM</th>
-                <th className="num">Qty</th>
-                <th>GIN</th>
-                <th>Rec. By</th>
-                <th>Location</th>
-                <th>Remarks</th>
-                {canSeePrice && <th className="num">Price</th>}
+                {colTh("Date", "date")}
+                {colTh("Inv date", "invdate")}
+                {colTh("Challan / Inv no", "challan")}
+                {colTh("PO no", "po")}
+                {colTh("Vendor", "vendor")}
+                {colTh("Material", "name")}
+                {colTh("Type", "type")}
+                {colTh("Code", "code")}
+                {colTh("Category", "category")}
+                {colTh("UOM", "uom")}
+                {colTh("Qty", "qty", true)}
+                {colTh("GIN", "gin")}
+                {colTh("Rec. By", "by")}
+                {colTh("Location", "location")}
+                {colTh("Remarks", "remarks")}
+                {canSeePrice && colTh("Price", "price", true)}
                 {canEditDelete && <th style={{ minWidth: 110 }}>Actions</th>}
               </tr>
             </thead>
